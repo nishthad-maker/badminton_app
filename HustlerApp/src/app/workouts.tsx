@@ -1,23 +1,77 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+import workouts from '../data/workouts';
 
 export default function WorkoutsScreen() {
+  const { category } = useLocalSearchParams();
+  const exercises = (workouts as any)[category as string] || [];
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Lower Body Day</Text>
-    </View>
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>
+        {category === 'lower' && 'Lower Body Day'}
+        {category === 'upper' && 'Upper Body Day'}
+        {category === 'core' && 'Core Day'}
+      </Text>
+      {exercises.map((exercise: any, index: number) => (
+        <View key={index} style={styles.card}>
+          <Text style={styles.cardTitle}>{exercise.name}</Text>
+          <Text style={styles.cardDesc}>{exercise.description}</Text>
+          <View style={styles.tagRow}>
+  {exercise.muscles.map((muscle: any, i: number) => (
+    <Text key={i} style={styles.tag}>{muscle}</Text>
+  ))}
+</View>
+        </View>
+      ))}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: '#0D0D0D',
     padding: 24,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: 'white',
-    marginTop: 60,
+    color: '#FF6B00',
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  card: {
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FF6B00',
+    padding: 16,
+    marginBottom: 16,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 6,
+  },
+  cardDesc: {
+    fontSize: 13,
+    color: '#A89880',
+    lineHeight: 20,
+  },
+  tagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+  },
+  tag: {
+    backgroundColor: '#2D1B0E',
+    color: '#FF6B00',
+    fontSize: 11,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    marginRight: 6,
+    marginTop: 4,
   },
 });
