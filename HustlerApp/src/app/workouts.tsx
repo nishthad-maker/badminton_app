@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   cardDesc: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#A89880',
     lineHeight: 20,
   },

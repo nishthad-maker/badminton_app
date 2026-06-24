@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   cardSub: {
-    fontSize: 13,
+    fontSize: 16,
     color: '#A89880',
     marginTop: 4,
   },

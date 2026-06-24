@@ -16,16 +16,26 @@ export default function ExerciseScreen() {
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>{name}</Text>
-      <Text style={styles.description}>{description}</Text>
-      <Text style={styles.stepsTitle}>Steps</Text>
-      {exercise?.steps.map((step: string, index: number) => (
-        <View key={index} style={styles.stepRow}>
-          <View style={styles.stepNumber}>
-            <Text style={styles.stepNum}>{index + 1}</Text>
-          </View>
-          <Text style={styles.stepText}>{step}</Text>
+      <View style={styles.tabRow}>
+        <View style={styles.activeTab}>
+          <Text style={styles.activeTabText}>How To</Text>
         </View>
-      ))}
+        <View style={styles.inactiveTab}>
+          <Text style={styles.inactiveTabText}>Notes</Text>
+        </View>
+      </View>
+      <Text style={styles.description}>{description}</Text>
+      <View style={styles.stepsCard}>
+        <Text style={styles.stepsTitle}>Steps</Text>
+        {exercise?.steps.map((step: string, index: number) => (
+          <View key={index} style={styles.stepRow}>
+            <View style={styles.stepNumber}>
+              <Text style={styles.stepNum}>{index + 1}</Text>
+            </View>
+            <Text style={styles.stepText}>{step}</Text>
+          </View>
+        ))}
+      </View>
     </ScrollView>
   );
 }
@@ -43,16 +53,51 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 12,
   },
+  tabRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+    marginBottom: 20,
+  },
+  activeTab: {
+    backgroundColor: '#FF6B00',
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 8,
+  },
+  activeTabText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  inactiveTab: {
+    backgroundColor: '#2D2D2D',
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 8,
+  },
+  inactiveTabText: {
+    color: 'gray',
+    fontSize: 14,
+  },
   description: {
     fontSize: 14,
     color: '#A89880',
     lineHeight: 22,
+    marginBottom: 16,
+  },
+  stepsCard: {
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FF6B00',
+    padding: 16,
+    marginTop: 8,
   },
   stepsTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#FF6B00',
-    marginTop: 24,
     marginBottom: 12,
   },
   stepRow: {
