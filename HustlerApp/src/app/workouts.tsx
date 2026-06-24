@@ -1,10 +1,11 @@
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { useLocalSearchParams, router } from 'expo-router';
 import workouts from '../data/workouts';
 
 export default function WorkoutsScreen() {
   const { category } = useLocalSearchParams();
   const exercises = (workouts as any)[category as string] || [];
+
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>
@@ -13,15 +14,25 @@ export default function WorkoutsScreen() {
         {category === 'core' && 'Core Day'}
       </Text>
       {exercises.map((exercise: any, index: number) => (
-        <View key={index} style={styles.card}>
+        <TouchableOpacity 
+          key={index} 
+          style={styles.card}
+          onPress={() => router.push({
+            pathname: '/exercise',
+            params: {
+              name: exercise.name,
+              description: exercise.description,
+            }
+          })}
+        >
           <Text style={styles.cardTitle}>{exercise.name}</Text>
           <Text style={styles.cardDesc}>{exercise.description}</Text>
           <View style={styles.tagRow}>
-  {exercise.muscles.map((muscle: any, i: number) => (
-    <Text key={i} style={styles.tag}>{muscle}</Text>
-  ))}
-</View>
-        </View>
+            {exercise.muscles.map((muscle: any, i: number) => (
+              <Text key={i} style={styles.tag}>{muscle}</Text>
+            ))}
+          </View>
+        </TouchableOpacity>
       ))}
     </ScrollView>
   );
