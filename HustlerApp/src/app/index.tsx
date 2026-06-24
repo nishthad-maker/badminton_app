@@ -1,18 +1,19 @@
 import {View, Text, StyleSheet, TouchableOpacity} from 'react-native';  
+import { router } from 'expo-router';
 export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>HUSTLER</Text>
       <Text style={styles.tagline}>Train Hard. Stay Consistent.</Text>
-    <TouchableOpacity style={styles.card}>
+    <TouchableOpacity style={styles.card} onPress={() => router.push('/workouts')}>
       <Text style={styles.cardTitle}>Lower Body Day</Text>
       <Text style={styles.cardSub}>Quads, Hamstrings, Glutes</Text>
     </TouchableOpacity>
-    <TouchableOpacity style={styles.card}>
+    <TouchableOpacity style={styles.card} onPress={() => router.push('/workouts')}>
       <Text style={styles.cardTitle}>Upper Body Day</Text>
       <Text style={styles.cardSub}>Chest, Back, Shoulders</Text>
     </TouchableOpacity>
-    <TouchableOpacity style={styles.card}>
+    <TouchableOpacity style={styles.card} onPress={() => router.push('/workouts')}>
       <Text style={styles.cardTitle}>Core Day</Text>
       <Text style={styles.cardSub}>Abs, Obliques, Lower Back</Text>
     </TouchableOpacity>
