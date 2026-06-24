@@ -8,26 +8,51 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.logoRow}>
-      <View style={styles.logoCircle}>
-      <Octicons name="flame" size={28} color="#FF6B00" />
-    </View>
-    <View>
-    <Text style={styles.title}>HUSTLER</Text>
-    <Text style={styles.tagline}>Train Hard. Stay Consistent.</Text>
-    </View>
-  </View>
+        <View style={styles.logoCircle}>
+          <Octicons name="flame" size={28} color="#FF6B00" />
+        </View>
+        <View>
+          <Text style={styles.title}>HUSTLER</Text>
+          <Text style={styles.tagline}>Train Hard. Stay Consistent.</Text>
+        </View>
+      </View>
+
       <TouchableOpacity style={styles.card} onPress={() => router.push('/workouts?category=lower')}>
-        <Text style={styles.cardTitle}>Lower Body Day</Text>
-        <Text style={styles.cardSub}>Quads, Hamstrings, Glutes</Text>
+        <View style={styles.cardRow}>
+          <View style={styles.iconBox}>
+            <Ionicons name="footsteps-sharp" size={24} color="#FF6B00" />
+          </View>
+          <View>
+            <Text style={styles.cardTitle}>Lower Body Day</Text>
+            <Text style={styles.cardSub}>Quads, Hamstrings, Glutes</Text>
+          </View>
+        </View>
       </TouchableOpacity>
+
       <TouchableOpacity style={styles.card} onPress={() => router.push('/workouts?category=upper')}>
-        <Text style={styles.cardTitle}>Upper Body Day</Text>
-        <Text style={styles.cardSub}>Chest, Back, Shoulders</Text>
+        <View style={styles.cardRow}>
+          <View style={styles.iconBox}>
+            <FontAwesome6 name="dumbbell" size={24} color="#FF6B00" />
+          </View>
+          <View>
+            <Text style={styles.cardTitle}>Upper Body Day</Text>
+            <Text style={styles.cardSub}>Chest, Back, Shoulders</Text>
+          </View>
+        </View>
       </TouchableOpacity>
+
       <TouchableOpacity style={styles.card} onPress={() => router.push('/workouts?category=core')}>
-        <Text style={styles.cardTitle}>Core Day</Text>
-        <Text style={styles.cardSub}>Abs, Obliques, Lower Back</Text>
+        <View style={styles.cardRow}>
+          <View style={styles.iconBox}>
+            <Octicons name="zap" size={24} color="#FF6B00" />
+          </View>
+          <View>
+            <Text style={styles.cardTitle}>Core Day</Text>
+            <Text style={styles.cardSub}>Abs, Obliques, Lower Back</Text>
+          </View>
+        </View>
       </TouchableOpacity>
+
     </View>
   );
 }
@@ -60,7 +85,7 @@ const styles = StyleSheet.create({
   tagline: {
     fontSize: 14,
     color: '#A89880',
-    marginTop: 8,
+    marginTop: 4,
     marginBottom: 30,
   },
   card: {
@@ -70,6 +95,19 @@ const styles = StyleSheet.create({
     borderColor: '#FF6B00',
     padding: 16,
     marginBottom: 16,
+  },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  iconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#2D1B0E',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cardTitle: {
     fontSize: 18,
