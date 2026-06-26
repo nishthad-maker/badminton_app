@@ -1,88 +1,167 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
+import { useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
 import workouts from '../data/workouts';
+import { Colors } from '@/constants/theme';
+
+const CATEGORY_TITLES: Record<string, string> = {
+  strength: 'Strength Training',
+  footwork: 'Footwork Drills',
+  endurance: 'Endurance',
+};
+
+const FILTERS: Record<string, string[]> = {
+  strength: ['All', 'Lower', 'Upper', 'Core'],
+  footwork: [],
+  endurance: [],
+};
 
 export default function WorkoutsScreen() {
   const { category } = useLocalSearchParams();
-  const exercises = (workouts as any)[category as string] || [];
+  const categoryKey = category as string;
+  const allExercises = (workouts as any)[categoryKey] || [];
+  const filters = FILTERS[categoryKey] || [];
+  const [activeFilter, setActiveFilter] = useState('All');
+
+  const filtered = activeFilter === 'All'
+    ? allExercises
+    : allExercises.filter((e: any) => e.subcategory === activeFilter.toLowerCase());
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.title}>
-        {category === 'lower' && 'Lower Body Day'}
-        {category === 'upper' && 'Upper Body Day'}
-        {category === 'core' && 'Core Day'}
-      </Text>
-      {exercises.map((exercise: any, index: number) => (
-        <TouchableOpacity 
-          key={index} 
-          style={styles.card}
-          onPress={() => router.push({
-            pathname: '/exercise',
-            params: {
-              name: exercise.name,
-              description: exercise.description,
-            }
-          })}
+    <LinearGradient
+      colors={[Colors.backgroundTop, Colors.backgroundBottom]}
+      style={styles.container}
+    >
+      <Text style={styles.title}>{CATEGORY_TITLES[categoryKey]}</Text>
+
+      {/* Filter Pills */}
+      {filters.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterRow}
+          contentContainerStyle={styles.filterContent}
         >
-          <Text style={styles.cardTitle}>{exercise.name}</Text>
-          <Text style={styles.cardDesc}>{exercise.description}</Text>
-          <View style={styles.tagRow}>
-            {exercise.muscles.map((muscle: any, i: number) => (
-              <Text key={i} style={styles.tag}>{muscle}</Text>
-            ))}
-          </View>
-        </TouchableOpacity>
-      ))}
-    </ScrollView>
+          {filters.map((filter) => (
+            <TouchableOpacity
+              key={filter}
+              style={[styles.pill, activeFilter === filter && styles.pillActive]}
+              onPress={() => setActiveFilter(filter)}
+            >
+              <Text style={[styles.pillText, activeFilter === filter && styles.pillTextActive]}>
+                {filter}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+
+      {/* Exercise Cards */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
+        {filtered.map((exercise: any, index: number) => (
+          <TouchableOpacity
+            key={index}
+            style={styles.card}
+            onPress={() => router.push({
+              pathname: '/exercise',
+              params: {
+                name: exercise.name,
+                description: exercise.description,
+                steps: JSON.stringify(exercise.steps),
+                muscles: JSON.stringify(exercise.muscles),
+                category: categoryKey,
+              }
+            })}
+          >
+            <Text style={styles.cardTitle}>{exercise.name}</Text>
+            <Text style={styles.cardDesc}>{exercise.description}</Text>
+            <View style={styles.tagRow}>
+              {exercise.muscles.map((muscle: string, i: number) => (
+                <View key={i} style={styles.tag}>
+                  <Text style={styles.tagText}>{muscle}</Text>
+                </View>
+              ))}
+            </View>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0D0D0D',
     padding: 24,
+    paddingTop: 16,
   },
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: 'bold',
-    color: '#FF6B00',
-    marginTop: 20,
-    marginBottom: 20,
+    color: Colors.textPrimary,
+    marginBottom: 16,
+  },
+  filterRow: {
+    flexGrow: 0,
+    marginBottom: 16,
+  },
+  filterContent: {
+    gap: 8,
+    paddingRight: 8,
+  },
+  listContent: {
+    paddingBottom: 24,
+  },
+  pill: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: Colors.backgroundCard,
+  },
+  pillActive: {
+    backgroundColor: Colors.accent,
+  },
+  pillText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  pillTextActive: {
+    color: '#FFFFFF',
   },
   card: {
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: Colors.backgroundCard,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#FF6B00',
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   cardTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: Colors.textPrimary,
     marginBottom: 6,
   },
   cardDesc: {
     fontSize: 13,
-    color: '#A89880',
+    color: Colors.textSecondary,
     lineHeight: 20,
   },
   tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginTop: 8,
+    marginTop: 10,
+    gap: 6,
   },
   tag: {
-    backgroundColor: '#2D1B0E',
-    color: '#FF6B00',
-    fontSize: 11,
+    backgroundColor: Colors.accentMuted,
+    borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 20,
-    marginRight: 6,
-    marginTop: 4,
+  },
+  tagText: {
+    color: Colors.accent,
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

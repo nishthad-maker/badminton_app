@@ -1,17 +1,22 @@
 import { Stack } from 'expo-router';
+import { Colors } from '@/constants/theme';
 
 export default function Layout() {
   return (
     <Stack
       screenOptions={{
         headerStyle: {
-          backgroundColor: '#0D0D0D',
+          backgroundColor: Colors.backgroundTop,
         },
-        headerTintColor: '#FF6B00',
+        headerTintColor: Colors.accent,
         headerTitleStyle: {
           fontWeight: 'bold',
         },
       }}
-    />
+    >
+      <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="workouts" options={{ title: 'Workouts' }} />
+      <Stack.Screen name="exercise" options={{ title: '' }} />
+    </Stack>
   );
 }

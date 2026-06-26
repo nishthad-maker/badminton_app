@@ -1,7 +1,8 @@
 const workouts = {
-  lower: [
+  strength: [
     {
       name: 'Lateral Lunge with Dumbbells',
+      subcategory: 'lower',
       description: 'Strengthens inner thighs and glutes for side-to-side court movement. Do before practice to improve court movement and control.',
       muscles: ['Inner Thighs', 'Glutes', 'Quads'],
       steps: [
@@ -15,6 +16,7 @@ const workouts = {
     },
     {
       name: 'Single-leg Deadlift',
+      subcategory: 'lower',
       description: 'Builds hamstrings and balance on one leg. Great for landing stability and recovery steps on court.',
       muscles: ['Hamstrings', 'Glutes'],
       steps: [
@@ -28,6 +30,7 @@ const workouts = {
     },
     {
       name: 'Knee Extension',
+      subcategory: 'lower',
       description: 'Strengthens quads to help you push off, jump, and absorb force. Do near the start of your leg workout.',
       muscles: ['Quads'],
       steps: [
@@ -41,6 +44,7 @@ const workouts = {
     },
     {
       name: 'Toe-Pog Hops',
+      subcategory: 'lower',
       description: 'Trains calves and quick foot bounce for fast badminton movement. Do before practice as a speed drill.',
       muscles: ['Calves', 'Ankles', 'Feet'],
       steps: [
@@ -54,6 +58,7 @@ const workouts = {
     },
     {
       name: 'Single Leg Hip Thrust',
+      subcategory: 'lower',
       description: 'Targets glutes for explosive power and single-leg strength. Great for sprinting, lunging and strong push-offs.',
       muscles: ['Glutes', 'Hamstrings'],
       steps: [
@@ -65,10 +70,9 @@ const workouts = {
         'Lower your hips down slowly and repeat.',
       ],
     },
-  ],
-  upper: [
     {
       name: 'Band External Rotations',
+      subcategory: 'upper',
       description: 'Makes your shoulder strong for smashing and clearing. Do before badminton or on upper-body day to protect your shoulder.',
       muscles: ['Shoulders', 'Rotator Cuff'],
       steps: [
@@ -82,6 +86,7 @@ const workouts = {
     },
     {
       name: 'Scapular Push-ups',
+      subcategory: 'upper',
       description: 'Helps your shoulder blades move the right way for fast racket swings. Do in warm-ups before practice so your shoulders stay steady.',
       muscles: ['Shoulder Blades', 'Shoulders'],
       steps: [
@@ -95,6 +100,7 @@ const workouts = {
     },
     {
       name: 'Single-arm Cable Rows',
+      subcategory: 'upper',
       description: 'Strengthens the pulling side of your body for better racket power. Do during strength training to make your back and arms work better together.',
       muscles: ['Back', 'Biceps'],
       steps: [
@@ -108,6 +114,7 @@ const workouts = {
     },
     {
       name: 'Overhead Medicine Ball Slams',
+      subcategory: 'upper',
       description: 'Trains the fast power you use when hitting hard shots. Do early in a workout or before training when you want to feel explosive.',
       muscles: ['Shoulders', 'Arms'],
       steps: [
@@ -121,6 +128,7 @@ const workouts = {
     },
     {
       name: 'Face Pulls',
+      subcategory: 'upper',
       description: 'Builds your back and rear shoulder muscles to help you stay strong and avoid injury. Do in upper-body workouts to help with posture and racket control.',
       muscles: ['Upper Back', 'Rear Shoulders'],
       steps: [
@@ -132,11 +140,10 @@ const workouts = {
         'Slowly return to the start.',
       ],
     },
-  ],
-  core: [
     {
       name: 'Pallof Press',
-      description: 'Helps you stay firm when you lunge, reach, and hit from one side of the court. Do before practice so your body does not turn too much when you smash or defend.',
+      subcategory: 'core',
+      description: 'Helps you stay firm when you lunge, reach, and hit from one side of the court.',
       muscles: ['Core', 'Obliques'],
       steps: [
         'Stand sideways next to a band or cable.',
@@ -149,7 +156,8 @@ const workouts = {
     },
     {
       name: 'Russian Twist',
-      description: 'Helps your body turn fast for smashes, clears, and drives. Do on core day to build twisting strength for badminton movement.',
+      subcategory: 'core',
+      description: 'Helps your body turn fast for smashes, clears, and drives.',
       muscles: ['Core', 'Obliques'],
       steps: [
         'Sit on the floor and bend your knees.',
@@ -162,7 +170,8 @@ const workouts = {
     },
     {
       name: 'Side Plank Rotations',
-      description: 'Makes your side core strong for reaching and recovering on one leg. Do after warm-up or in core training to stay steady during rallies.',
+      subcategory: 'core',
+      description: 'Makes your side core strong for reaching and recovering on one leg.',
       muscles: ['Side Core'],
       steps: [
         'Lie on one side and lift your body onto one elbow.',
@@ -175,7 +184,8 @@ const workouts = {
     },
     {
       name: 'Standing Cable Chop',
-      description: 'Trains your body to twist with power like in real badminton shots. Do in core or upper-body workouts to help with hitting and fast movement.',
+      subcategory: 'core',
+      description: 'Trains your body to twist with power like in real badminton shots.',
       muscles: ['Core', 'Obliques'],
       steps: [
         'Stand next to a cable or band.',
@@ -188,7 +198,8 @@ const workouts = {
     },
     {
       name: 'Lunge Hold Press',
-      description: 'Helps you stay strong while one leg is forward, just like a badminton lunge. Do during core training or before practice to improve control and balance.',
+      subcategory: 'core',
+      description: 'Helps you stay strong while one leg is forward, just like a badminton lunge.',
       muscles: ['Core'],
       steps: [
         'Step one foot forward into a lunge.',
@@ -197,6 +208,128 @@ const workouts = {
         'Push your hands straight out in front of you.',
         'Bring it back to your chest.',
         'Hold the lunge position the whole time.',
+      ],
+    },
+  ],
+  footwork: [
+    {
+      name: 'Agility Ladder Session',
+      subcategory: 'footwork',
+      description: 'This helps your feet move fast and stay light. Do it in warm-ups or footwork practice to get quicker steps on court.',
+      muscles: ['Feet', 'Calves', 'Ankles'],
+      steps: [
+        'Put the ladder on the floor.',
+        'Step through each box quickly.',
+        'Stay light on your feet.',
+        'Keep your knees bent a little.',
+        'Move fast, but stay in control.',
+      ],
+    },
+    {
+      name: '4-Shot Attack Pattern',
+      subcategory: 'footwork',
+      description: 'This trains you to move front, back, and side to side like in a real rally. Do it in practice when you want to build a match-like movement.',
+      muscles: ['Legs', 'Core', 'Shoulders'],
+      steps: [
+        'Start in the middle ready position.',
+        'Move to the front, then back, then side, then the other side.',
+        'Use quick steps each time.',
+        'Return to the center after each shot.',
+        'Keep repeating in a smooth pattern.',
+      ],
+    },
+    {
+      name: 'Low Stance Recovery Drill',
+      subcategory: 'footwork',
+      description: 'This teaches you to stay low and ready, so you can move faster. Do it before practice or during footwork training to improve balance and speed.',
+      muscles: ['Quads', 'Glutes', 'Core'],
+      steps: [
+        'Bend your knees and sit low.',
+        'Keep your chest up.',
+        'Stay on the balls of your feet.',
+        'Move left, right, forward, and back while staying low.',
+        'Keep your body ready like a match position.',
+      ],
+    },
+    {
+      name: 'Multi-Directional Call-Out Drill',
+      subcategory: 'footwork',
+      description: 'This makes you react fast because you do not know where the next move is. Do it in practice when you want to train real game reactions and quick thinking.',
+      muscles: ['Legs', 'Glutes', 'Calves'],
+      steps: [
+        'Start standing ready in the middle.',
+        'Have someone call a direction or point to a corner.',
+        'Move quickly to that spot.',
+        'Come back to base after each move.',
+        'Stay alert because the next direction changes.',
+      ],
+    },
+    {
+      name: 'Rear-Court Recovery Drill',
+      subcategory: 'footwork',
+      description: 'This helps you get back to base quickly after moving to the back. Do it in footwork practice to get better at recovering after clears and smashes.',
+      muscles: ['Legs', 'Core', 'Ankles'],
+      steps: [
+        'Start in the middle.',
+        'Move fast to the back court.',
+        'Imagine hitting a high shot or smash.',
+        'Push back quickly to the middle.',
+        'Repeat and stay balanced.',
+      ],
+    },
+  ],
+  endurance: [
+    {
+      name: 'Interval Running',
+      subcategory: 'endurance',
+      description: 'Go hard for a short time, then rest or go easy, and repeat. Do this when you want to train your body to recover fast after tough rallies.',
+      muscles: ['Heart', 'Lungs', 'Legs'],
+      steps: [
+        'Pick one cardio move like running or cycling.',
+        'Go hard for a short time, like 20 to 30 seconds.',
+        'Then go easy or rest for a short time, like 30 to 60 seconds.',
+        'Repeat the hard and easy parts many times.',
+        'Finish with a slow cool down.',
+      ],
+    },
+    {
+      name: 'Skipping Rope',
+      subcategory: 'endurance',
+      description: 'Hold the rope, stay on your toes, and bounce lightly as the rope spins. Do this before training or on cardio days to improve stamina and keep your feet light.',
+      muscles: ['Calves', 'Ankles', 'Core', 'Shoulders'],
+      steps: [
+        'Hold the rope handles in both hands.',
+        'Swing the rope over your head.',
+        'Jump lightly when the rope comes down.',
+        'Stay on the balls of your feet.',
+        'Keep going in a smooth rhythm.',
+      ],
+    },
+    {
+      name: 'Long Steady Cardio',
+      subcategory: 'endurance',
+      description: 'Run, bike, or row at a pace where you can still talk. Do this on endurance days to build your base stamina and help you last longer in matches.',
+      muscles: ['Heart', 'Lungs', 'Legs'],
+      steps: [
+        'Pick one: running, cycling, or rowing.',
+        'Start slow and keep a steady pace.',
+        'Breathe normally and do not go too hard.',
+        'Keep going for 20 to 40 minutes.',
+        'Stop, cool down, and rest.',
+      ],
+    },
+    {
+      name: 'Court Shuttle Runs',
+      subcategory: 'endurance',
+      description: 'Builds badminton-style stamina because you sprint, stop, and go again like in a real match. Do them on endurance days or before practice after your warm-up.',
+      muscles: ['Legs', 'Calves', 'Glutes', 'Core'],
+      steps: [
+        'Start at the center of the court in a ready stance.',
+        'Sprint to one line or corner.',
+        'Touch the line with your hand or foot.',
+        'Sprint back to the center right away.',
+        'Repeat to different lines or corners.',
+        'Rest, then do another round.',
       ],
     },
   ],
