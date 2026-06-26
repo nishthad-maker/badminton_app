@@ -22,6 +22,7 @@ export default function Layout() {
       <Stack.Screen name="workouts" options={{ title: 'Workouts' }} />
       <Stack.Screen name="exercise" options={{ title: '' }} />
       <Stack.Screen name="profile" options={{ title: 'Profile' }} />
+      <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
     </Stack>
   );
 }
