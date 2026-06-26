@@ -12,44 +12,51 @@ export default function SignUpScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSignUp = async () => {
-    if (!fullName || !email || !password || !confirmPassword) {
-      Alert.alert('Missing fields', 'Please fill in all fields.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      Alert.alert('Password mismatch', 'Passwords do not match.');
-      return;
-    }
-    if (password.length < 6) {
-      Alert.alert('Weak password', 'Password must be at least 6 characters.');
-      return;
-    }
+ const handleSignUp = async () => {
+  if (!fullName || !email || !password || !confirmPassword) {
+    Alert.alert('Missing fields', 'Please fill in all fields.');
+    return;
+  }
+  if (password !== confirmPassword) {
+    Alert.alert('Password mismatch', 'Passwords do not match.');
+    return;
+  }
+  if (password.length < 6) {
+    Alert.alert('Weak password', 'Password must be at least 6 characters.');
+    return;
+  }
 
-    setLoading(true);
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName }
-      }
-    });
+  setLoading(true);
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { full_name: fullName }
+    }
+  });
+
+  if (error) {
     setLoading(false);
+    Alert.alert('Sign up failed', error.message);
+    return;
+  }
 
-    if (error) {
-      Alert.alert('Sign up failed', error.message);
-    } else if (data.user) {
-      await supabase.from('profiles').insert({
+  if (data.user) {
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .upsert({
         id: data.user.id,
         full_name: fullName,
       });
-      Alert.alert(
-        'Account created!',
-        'Please check your email to verify your account, then sign in.',
-        [{ text: 'OK', onPress: () => router.replace('/login' as any) }]
-      );
+
+    if (profileError) {
+      console.log('Profile error:', profileError);
     }
-  };
+  }
+
+  setLoading(false);
+  router.replace('/categories' as any);
+};
 
   return (
     <LinearGradient

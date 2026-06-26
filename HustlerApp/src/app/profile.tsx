@@ -52,7 +52,7 @@ export default function ProfileScreen() {
         <View style={styles.avatar}>
           <MaterialCommunityIcons name="account" size={48} color={Colors.accent} />
         </View>
-        <Text style={styles.name}>{profile?.full_name || 'Athlete'}</Text>
+        <Text style={styles.name}>{profile?.full_name || user?.user_metadata?.full_name || 'Athlete'}</Text>
         <Text style={styles.email}>{user?.email}</Text>
       </View>
 
