@@ -10,12 +10,20 @@ export default function CategoriesScreen() {
       colors={[Colors.backgroundTop, Colors.backgroundBottom]}
       style={styles.container}
     >
+      {/* Profile Button */}
+      <TouchableOpacity
+        style={styles.profileBtn}
+        onPress={() => router.push('/profile' as any)}
+      >
+        <MaterialCommunityIcons name="account-circle" size={32} color={Colors.accent} />
+      </TouchableOpacity>
+
       <Text style={styles.title}>Workouts</Text>
 
       <View style={styles.cards}>
         <TouchableOpacity
           style={styles.card}
-          onPress={() => router.push('/workouts?category=footwork')}
+          onPress={() => router.push('/workouts?category=footwork' as any)}
         >
           <View style={styles.iconBox}>
             <MaterialCommunityIcons name="badminton" size={24} color={Colors.accent} />
@@ -28,7 +36,7 @@ export default function CategoriesScreen() {
 
         <TouchableOpacity
           style={styles.card}
-          onPress={() => router.push('/workouts?category=strength')}
+          onPress={() => router.push('/workouts?category=strength' as any)}
         >
           <View style={styles.iconBox}>
             <MaterialCommunityIcons name="dumbbell" size={24} color={Colors.accent} />
@@ -41,7 +49,7 @@ export default function CategoriesScreen() {
 
         <TouchableOpacity
           style={styles.card}
-          onPress={() => router.push('/workouts?category=endurance')}
+          onPress={() => router.push('/workouts?category=endurance' as any)}
         >
           <View style={styles.iconBox}>
             <MaterialCommunityIcons name="lightning-bolt" size={24} color={Colors.accent} />
@@ -61,6 +69,12 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 24,
     paddingTop: 16,
+  },
+  profileBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 24,
+    zIndex: 10,
   },
   title: {
     fontSize: 28,
