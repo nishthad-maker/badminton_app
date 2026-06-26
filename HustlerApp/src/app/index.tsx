@@ -1,7 +1,6 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Colors } from '@/constants/theme';
 
 export default function HomeScreen() {
@@ -10,62 +9,45 @@ export default function HomeScreen() {
       colors={[Colors.backgroundTop, Colors.backgroundBottom]}
       style={styles.container}
     >
-      {/* Logo + Tagline */}
+      {/* Logo */}
       <View style={styles.header}>
-        <Text style={styles.logo}>Hustler</Text>
+        <Image
+          source={require('../../assets/images/logo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
         <Text style={styles.headline}>TRAIN SMART. DOMINATE.</Text>
         <Text style={styles.tagline}>Your personal badminton training coach</Text>
       </View>
 
-      {/* Category Cards */}
-      <View style={styles.cards}>
-        <TouchableOpacity style={styles.card} onPress={() => router.push('/workouts?category=footwork')}>
-          <View style={styles.iconBox}>
-            <MaterialCommunityIcons name="badminton" size={24} color={Colors.accent} />
-          </View>
-          <View>
-            <Text style={styles.cardTitle}>Footwork Drills</Text>
-            <Text style={styles.cardSub}>Speed, Agility, Court Movement</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.card} onPress={() => router.push('/workouts?category=strength')}>
-          <View style={styles.iconBox}>
-            <MaterialCommunityIcons name="dumbbell" size={24} color={Colors.accent} />
-          </View>
-          <View>
-            <Text style={styles.cardTitle}>Strength Training</Text>
-            <Text style={styles.cardSub}>Legs, Core, Upper Body</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.card} onPress={() => router.push('/workouts?category=endurance')}>
-          <View style={styles.iconBox}>
-            <MaterialCommunityIcons name="lightning-bolt" size={24} color={Colors.accent} />
-          </View>
-          <View>
-            <Text style={styles.cardTitle}>Endurance</Text>
-            <Text style={styles.cardSub}>Stamina, Rally Fitness, Interval</Text>
-          </View>
-        </TouchableOpacity>
+      {/* Racquet Hero Image */}
+      <View style={styles.heroContainer}>
+        <Image
+          source={require('../../assets/images/badminton.png')}
+          style={styles.heroImage}
+          resizeMode="contain"
+        />
       </View>
 
-      {/* Stats + CTA */}
-      <View style={styles.footer}>
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>24+</Text>
-            <Text style={styles.statLabel}>Exercises</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>3+</Text>
-            <Text style={styles.statLabel}>Categories</Text>
-          </View>
-        </View>
-        <TouchableOpacity style={styles.ctaButton}>
-          <Text style={styles.ctaText}>Get Started</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Stats */}
+      <View style={styles.statsRow}>
+  <View style={[styles.statCard, styles.statCardLeft]}>
+    <Text style={styles.statNumber}>24+</Text>
+    <Text style={styles.statLabel}>Exercises</Text>
+  </View>
+  <View style={[styles.statCard, styles.statCardRight]}>
+    <Text style={styles.statNumber}>3+</Text>
+    <Text style={styles.statLabel}>Categories</Text>
+  </View>
+</View>
+
+      {/* CTA */}
+      <TouchableOpacity
+        style={styles.ctaButton}
+        onPress={() => router.push('/workouts?category=strength')}
+      >
+        <Text style={styles.ctaText}>Get Started</Text>
+      </TouchableOpacity>
 
     </LinearGradient>
   );
@@ -75,74 +57,60 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 24,
+    alignItems: 'center',
   },
   header: {
+    alignItems: 'center',
     marginTop: 60,
-    marginBottom: 32,
   },
   logo: {
-    fontSize: 42,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
-    marginBottom: 8,
+    width: 200,
+    height: 80,
+    marginBottom: 16,
   },
   headline: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: 'bold',
     color: Colors.textPrimary,
     letterSpacing: 1,
+    textAlign: 'center',
   },
   tagline: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.textSecondary,
     marginTop: 6,
+    textAlign: 'center',
   },
-  cards: {
-    flex: 1,
-    gap: 12,
-  },
-  card: {
-    backgroundColor: Colors.backgroundCard,
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  iconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: Colors.accentMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
-  },
-  cardSub: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    marginTop: 3,
-  },
-  footer: {
-    marginTop: 24,
-    marginBottom: 16,
-    gap: 16,
-  },
+  heroContainer: {
+  flex: 1,
+  width: '120%',
+  marginLeft: '10%',
+  justifyContent: 'center',
+},
+heroImage: {
+  width: '100%',
+  height: 300,
+},
   statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: Colors.backgroundCard,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-  },
+  flexDirection: 'row',
+  gap: 12,
+  width: '100%',
+  marginBottom: 16,
+  alignItems: 'center',
+},
+statCard: {
+  flex: 1,
+  backgroundColor: 'rgba(255,255,255,0.08)',
+  borderRadius: 16,
+  padding: 20,
+  alignItems: 'flex-start',
+},
+statCardLeft: {
+  transform: [{ rotate: '-5deg' }],
+},
+statCardRight: {
+  transform: [{ rotate: '5deg' }],
+},
   statNumber: {
     fontSize: 28,
     fontWeight: 'bold',
@@ -158,6 +126,8 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     paddingVertical: 16,
     alignItems: 'center',
+    width: '100%',
+    marginBottom: 24,
   },
   ctaText: {
     fontSize: 16,

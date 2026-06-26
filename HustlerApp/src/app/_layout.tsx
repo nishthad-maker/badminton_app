@@ -15,6 +15,7 @@ export default function Layout() {
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="categories" options={{ title: 'Workouts' }} />
       <Stack.Screen name="workouts" options={{ title: 'Workouts' }} />
       <Stack.Screen name="exercise" options={{ title: '' }} />
     </Stack>

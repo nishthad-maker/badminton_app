@@ -143,13 +143,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   cardDesc: {
-<<<<<<< HEAD
     fontSize: 13,
     color: Colors.textSecondary,
-=======
-    fontSize: 14,
-    color: '#A89880',
->>>>>>> 9752f88a97c22f90578da29b30501d2daa0cd04a
     lineHeight: 20,
   },
   tagRow: {
