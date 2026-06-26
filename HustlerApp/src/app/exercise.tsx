@@ -113,22 +113,22 @@ export default function ExerciseScreen() {
   };
 
   const renderInput = (placeholder: string, value: string, setValue: (v: string) => void, keyboardType: any = 'default') => (
-  <TextInput
-    style={styles.input}
-    placeholder={placeholder}
-    placeholderTextColor={Colors.textSecondary}
-    value={value}
-    onChangeText={(text) => {
-      if (keyboardType === 'numeric') {
-        const cleaned = text.replace(/[^0-9.]/g, '');
-        setValue(cleaned);
-      } else {
-        setValue(text);
-      }
-    }}
-    keyboardType={keyboardType}
-  />
-);
+    <TextInput
+      style={styles.input}
+      placeholder={placeholder}
+      placeholderTextColor={Colors.textSecondary}
+      value={value}
+      onChangeText={(text) => {
+        if (keyboardType === 'numeric') {
+          const cleaned = text.replace(/[^0-9.]/g, '');
+          setValue(cleaned);
+        } else {
+          setValue(text);
+        }
+      }}
+      keyboardType={keyboardType}
+    />
+  );
 
   const renderFeeling = () => (
     <View>
@@ -167,13 +167,13 @@ export default function ExerciseScreen() {
         {category === 'footwork' && (
           <View style={styles.historyFields}>
             <Text style={styles.historyField}>🔁 {(session as FootworkSession).sets} sets</Text>
-            <Text style={styles.historyField}>⏱ {(session as FootworkSession).duration}</Text>
+            <Text style={styles.historyField}>⏱ {(session as FootworkSession).duration} min</Text>
             <Text style={styles.historyField}>{FEELING_LABELS[(session as FootworkSession).feeling]}</Text>
           </View>
         )}
         {category === 'endurance' && (
           <View style={styles.historyFields}>
-            <Text style={styles.historyField}>⏱ {(session as EnduranceSession).duration}</Text>
+            <Text style={styles.historyField}>⏱ {(session as EnduranceSession).duration} min</Text>
             {(session as EnduranceSession).distance ? (
               <Text style={styles.historyField}>📍 {(session as EnduranceSession).distance}km</Text>
             ) : null}
@@ -214,8 +214,11 @@ export default function ExerciseScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
         {activeTab === 'howto' && (
           <View>
             <Text style={styles.description}>{description}</Text>
@@ -234,7 +237,6 @@ export default function ExerciseScreen() {
 
         {activeTab === 'notes' && (
           <View>
-            {/* Log Entry */}
             <View style={styles.sessionCard}>
               <Text style={styles.sectionLabel}>LOG SESSION</Text>
 
@@ -271,13 +273,11 @@ export default function ExerciseScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Session History */}
             <View style={styles.sessionCard}>
               <Text style={styles.sectionLabel}>SESSION HISTORY</Text>
               {renderSessionHistory()}
             </View>
 
-            {/* General Notes */}
             <View style={styles.sessionCard}>
               <Text style={styles.sectionLabel}>GENERAL NOTES</Text>
               <TextInput
@@ -292,7 +292,6 @@ export default function ExerciseScreen() {
             </View>
           </View>
         )}
-
       </ScrollView>
     </LinearGradient>
   );
