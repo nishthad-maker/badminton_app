@@ -44,7 +44,7 @@ export default function HomeScreen() {
       {/* CTA */}
       <TouchableOpacity
         style={styles.ctaButton}
-        onPress={() => router.push('/workouts?category=strength')}
+        onPress={() => router.push('/login' as any)}
       >
         <Text style={styles.ctaText}>Get Started</Text>
       </TouchableOpacity>
