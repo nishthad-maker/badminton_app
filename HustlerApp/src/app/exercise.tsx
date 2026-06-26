@@ -1,8 +1,9 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, router } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '../lib/supabase';
 import { Colors } from '@/constants/theme';
 
 type StrengthSession = {
@@ -37,6 +38,7 @@ export default function ExerciseScreen() {
   const [activeTab, setActiveTab] = useState<'howto' | 'notes'>('howto');
   const [sessions, setSessions] = useState<Session[]>([]);
   const [generalNote, setGeneralNote] = useState('');
+  const [user, setUser] = useState<any>(null);
 
   // Strength fields
   const [weight, setWeight] = useState('');
@@ -54,7 +56,6 @@ export default function ExerciseScreen() {
   // Shared
   const [feeling, setFeeling] = useState(-1);
 
-  const storageKey = `session_${name}`;
   const noteKey = `note_${name}`;
 
   useEffect(() => {
@@ -63,8 +64,21 @@ export default function ExerciseScreen() {
 
   const loadData = async () => {
     try {
-      const saved = await AsyncStorage.getItem(storageKey);
-      if (saved) setSessions(JSON.parse(saved));
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+
+      if (currentUser) {
+        const { data } = await supabase
+          .from('session_logs')
+          .select('*')
+          .eq('user_id', currentUser.id)
+          .eq('exercise_name', name as string)
+          .order('created_at', { ascending: false });
+
+        if (data) setSessions(data.map((row: any) => row.log_data));
+      }
+
       const note = await AsyncStorage.getItem(noteKey);
       if (note) setGeneralNote(note);
     } catch (e) {
@@ -102,9 +116,25 @@ export default function ExerciseScreen() {
       setDuration(''); setDistance(''); setFeeling(-1);
     }
 
-    const updated = [newSession, ...sessions];
-    setSessions(updated);
-    await AsyncStorage.setItem(storageKey, JSON.stringify(updated));
+    if (user) {
+      await supabase.from('session_logs').insert({
+        user_id: user.id,
+        exercise_name: name as string,
+        category: category as string,
+        log_data: newSession,
+      });
+      const updated = [newSession, ...sessions];
+      setSessions(updated);
+    } else {
+      Alert.alert(
+        'Not signed in',
+        'Sign in to save your progress across devices.',
+        [
+          { text: 'Sign In', onPress: () => router.push('/login' as any) },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
+    }
   };
 
   const saveNote = async (text: string) => {
@@ -237,41 +267,54 @@ export default function ExerciseScreen() {
 
         {activeTab === 'notes' && (
           <View>
-            <View style={styles.sessionCard}>
-              <Text style={styles.sectionLabel}>LOG SESSION</Text>
+            {!user ? (
+              <View style={styles.sessionCard}>
+                <Text style={styles.sectionLabel}>SESSION LOG</Text>
+                <Text style={styles.emptyText}>Sign in to save and track your progress.</Text>
+                <TouchableOpacity
+                  style={styles.addButton}
+                  onPress={() => router.push('/login' as any)}
+                >
+                  <Text style={styles.addButtonText}>Sign In</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.sessionCard}>
+                <Text style={styles.sectionLabel}>LOG SESSION</Text>
 
-              {category === 'strength' && (
-                <View style={styles.inputRow}>
-                  {renderInput('Weight (kg)', weight, setWeight, 'numeric')}
-                  {renderInput('Sets', sets, setSets, 'numeric')}
-                  {renderInput('Reps', reps, setReps, 'numeric')}
-                </View>
-              )}
-
-              {category === 'footwork' && (
-                <View>
+                {category === 'strength' && (
                   <View style={styles.inputRow}>
-                    {renderInput('Sets', fwSets, setFwSets, 'numeric')}
-                    {renderInput('Duration (min)', fwDuration, setFwDuration, 'numeric')}
+                    {renderInput('Weight (kg)', weight, setWeight, 'numeric')}
+                    {renderInput('Sets', sets, setSets, 'numeric')}
+                    {renderInput('Reps', reps, setReps, 'numeric')}
                   </View>
-                  {renderFeeling()}
-                </View>
-              )}
+                )}
 
-              {category === 'endurance' && (
-                <View>
-                  <View style={styles.inputRow}>
-                    {renderInput('Duration (min)', duration, setDuration, 'numeric')}
-                    {renderInput('Distance (km)', distance, setDistance, 'numeric')}
+                {category === 'footwork' && (
+                  <View>
+                    <View style={styles.inputRow}>
+                      {renderInput('Sets', fwSets, setFwSets, 'numeric')}
+                      {renderInput('Duration (min)', fwDuration, setFwDuration, 'numeric')}
+                    </View>
+                    {renderFeeling()}
                   </View>
-                  {renderFeeling()}
-                </View>
-              )}
+                )}
 
-              <TouchableOpacity style={styles.addButton} onPress={saveSession}>
-                <Text style={styles.addButtonText}>+ Save Session</Text>
-              </TouchableOpacity>
-            </View>
+                {category === 'endurance' && (
+                  <View>
+                    <View style={styles.inputRow}>
+                      {renderInput('Duration (min)', duration, setDuration, 'numeric')}
+                      {renderInput('Distance (km)', distance, setDistance, 'numeric')}
+                    </View>
+                    {renderFeeling()}
+                  </View>
+                )}
+
+                <TouchableOpacity style={styles.addButton} onPress={saveSession}>
+                  <Text style={styles.addButtonText}>+ Save Session</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <View style={styles.sessionCard}>
               <Text style={styles.sectionLabel}>SESSION HISTORY</Text>
@@ -482,6 +525,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 13,
     fontStyle: 'italic',
+    marginBottom: 12,
   },
   notesInput: {
     color: Colors.textPrimary,

@@ -103,8 +103,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   filterRow: {
-    flexGrow: 0,
-    marginBottom: 16,
+  flexGrow: 0,
+  marginBottom: 16,
+  height: 44,
   },
   filterContent: {
     gap: 8,
