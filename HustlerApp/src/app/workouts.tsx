@@ -71,6 +71,8 @@ export default function WorkoutsScreen() {
                 steps: JSON.stringify(exercise.steps),
                 muscles: JSON.stringify(exercise.muscles),
                 category: categoryKey,
+                videoUrl: exercise.videoUrl ?? '',
+                imageUrl: exercise.imageUrl ?? '',
               }
             })}
           >
@@ -103,9 +105,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   filterRow: {
-  flexGrow: 0,
-  marginBottom: 16,
-  height: 44,
+    flexGrow: 0,
+    marginBottom: 16,
+    minHeight: 44,
   },
   filterContent: {
     gap: 8,

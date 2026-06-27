@@ -32,7 +32,7 @@ export default function HomeScreen() {
       {/* Stats */}
       <View style={styles.statsRow}>
   <View style={[styles.statCard, styles.statCardLeft]}>
-    <Text style={styles.statNumber}>24+</Text>
+    <Text style={styles.statNumber}>20+</Text>
     <Text style={styles.statLabel}>Exercises</Text>
   </View>
   <View style={[styles.statCard, styles.statCardRight]}>

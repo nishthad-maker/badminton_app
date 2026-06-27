@@ -1,8 +1,9 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { supabase } from '../lib/supabase';
 import { Colors } from '@/constants/theme';
 
@@ -32,9 +33,18 @@ type Session = StrengthSession | FootworkSession | EnduranceSession;
 const FEELING_LABELS = ['😞 Bad', '😐 OK', '😄 Great'];
 
 export default function ExerciseScreen() {
-  const { name, description, steps, muscles, category } = useLocalSearchParams();
+  const { name, description, steps, muscles, category, videoUrl, imageUrl } = useLocalSearchParams();
   const stepList: string[] = JSON.parse(steps as string || '[]');
   const muscleList: string[] = JSON.parse(muscles as string || '[]');
+  console.log('PARAMS:', { videoUrl, imageUrl });
+  const hasVideo = !!(videoUrl && videoUrl !== '');
+  const hasImage = !!(imageUrl && imageUrl === 'local');
+
+  const player = useVideoPlayer(hasVideo ? (videoUrl as string) : null, (p) => {
+    p.loop = true;
+    p.play();
+  });
+
   const [activeTab, setActiveTab] = useState<'howto' | 'notes'>('howto');
   const [sessions, setSessions] = useState<Session[]>([]);
   const [generalNote, setGeneralNote] = useState('');
@@ -214,6 +224,28 @@ export default function ExerciseScreen() {
     ));
   };
 
+  const renderMedia = () => {
+    if (hasVideo) {
+      return (
+        <VideoView
+  player={player}
+  style={styles.video}
+  contentFit="cover"
+/>
+      );
+    }
+    if (hasImage) {
+      return (
+        <Image
+          source={require('../../assets/images/plank.jpg')}
+          style={styles.image}
+          resizeMode="cover"
+        />
+      );
+    }
+    return null;
+  };
+
   return (
     <LinearGradient
       colors={[Colors.backgroundTop, Colors.backgroundBottom]}
@@ -251,6 +283,9 @@ export default function ExerciseScreen() {
       >
         {activeTab === 'howto' && (
           <View>
+            {/* Video or Image */}
+            {renderMedia()}
+
             <Text style={styles.description}>{description}</Text>
             <View style={styles.stepsCard}>
               {stepList.map((step, i) => (
@@ -393,6 +428,19 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingBottom: 40,
+  },
+  video: {
+    width: '100%',
+    height: 220,
+    borderRadius: 12,
+    marginBottom: 16,
+    backgroundColor: Colors.backgroundCard,
+  },
+  image: {
+    width: '100%',
+    height: 220,
+    borderRadius: 12,
+    marginBottom: 16,
   },
   description: {
     fontSize: 14,
