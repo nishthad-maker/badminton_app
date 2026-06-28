@@ -9,12 +9,14 @@ const CATEGORY_TITLES: Record<string, string> = {
   strength: 'Strength Training',
   footwork: 'Footwork Drills',
   endurance: 'Endurance',
+  recovery: 'Recovery',
 };
 
 const FILTERS: Record<string, string[]> = {
   strength: ['All', 'Lower', 'Upper', 'Core'],
   footwork: [],
   endurance: [],
+  recovery: [],
 };
 
 export default function WorkoutsScreen() {
@@ -35,7 +37,6 @@ export default function WorkoutsScreen() {
     >
       <Text style={styles.title}>{CATEGORY_TITLES[categoryKey]}</Text>
 
-      {/* Filter Pills */}
       {filters.length > 0 && (
         <ScrollView
           horizontal
@@ -57,7 +58,6 @@ export default function WorkoutsScreen() {
         </ScrollView>
       )}
 
-      {/* Exercise Cards */}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
         {filtered.map((exercise: any, index: number) => (
           <TouchableOpacity
@@ -73,6 +73,7 @@ export default function WorkoutsScreen() {
                 category: categoryKey,
                 videoUrl: exercise.videoUrl ?? '',
                 imageUrl: exercise.imageUrl ?? '',
+                logType: exercise.logType ?? 'strength',
               }
             })}
           >
@@ -93,78 +94,19 @@ export default function WorkoutsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 24,
-    paddingTop: 16,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
-    marginBottom: 16,
-  },
-  filterRow: {
-    flexGrow: 0,
-    marginBottom: 16,
-    minHeight: 44,
-  },
-  filterContent: {
-    gap: 8,
-    paddingRight: 8,
-  },
-  listContent: {
-    paddingBottom: 24,
-  },
-  pill: {
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Colors.backgroundCard,
-  },
-  pillActive: {
-    backgroundColor: Colors.accent,
-  },
-  pillText: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  pillTextActive: {
-    color: '#FFFFFF',
-  },
-  card: {
-    backgroundColor: Colors.backgroundCard,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 14,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
-    marginBottom: 6,
-  },
-  cardDesc: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    lineHeight: 20,
-  },
-  tagRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 10,
-    gap: 6,
-  },
-  tag: {
-    backgroundColor: Colors.accentMuted,
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  tagText: {
-    color: Colors.accent,
-    fontSize: 11,
-    fontWeight: '600',
-  },
+  container: { flex: 1, padding: 24, paddingTop: 16 },
+  title: { fontSize: 26, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 16 },
+  filterRow: { flexGrow: 0, marginBottom: 16, minHeight: 44 },
+  filterContent: { gap: 8, paddingRight: 8 },
+  listContent: { paddingBottom: 24 },
+  pill: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.backgroundCard },
+  pillActive: { backgroundColor: Colors.accent },
+  pillText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  pillTextActive: { color: '#FFFFFF' },
+  card: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, marginBottom: 14 },
+  cardTitle: { fontSize: 16, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 6 },
+  cardDesc: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, gap: 6 },
+  tag: { backgroundColor: Colors.accentMuted, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  tagText: { color: Colors.accent, fontSize: 11, fontWeight: '600' },
 });

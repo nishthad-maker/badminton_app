@@ -18,22 +18,24 @@ type FootworkSession = {
   date: string;
   sets: string;
   duration: string;
-  feeling: number;
 };
 
 type EnduranceSession = {
   date: string;
   duration: string;
   distance: string;
-  feeling: number;
 };
 
-type Session = StrengthSession | FootworkSession | EnduranceSession;
+type SetsDurationSession = {
+  date: string;
+  sets: string;
+  duration: string;
+};
 
-const FEELING_LABELS = ['😞 Bad', '😐 OK', '😄 Great'];
+type Session = StrengthSession | FootworkSession | EnduranceSession | SetsDurationSession;
 
 export default function ExerciseScreen() {
-  const { name, description, steps, muscles, category, videoUrl, imageUrl } = useLocalSearchParams();
+  const { name, description, steps, muscles, category, videoUrl, imageUrl, logType } = useLocalSearchParams();
   const stepList: string[] = JSON.parse(steps as string || '[]');
   const muscleList: string[] = JSON.parse(muscles as string || '[]');
 
@@ -55,16 +57,13 @@ export default function ExerciseScreen() {
   const [sets, setSets] = useState('');
   const [reps, setReps] = useState('');
 
-  // Footwork fields
+  // Footwork / sets-duration fields
   const [fwSets, setFwSets] = useState('');
   const [fwDuration, setFwDuration] = useState('');
 
-  // Endurance fields
+  // Endurance duration-distance fields
   const [duration, setDuration] = useState('');
   const [distance, setDistance] = useState('');
-
-  // Shared
-  const [feeling, setFeeling] = useState(-1);
 
   const noteKey = `note_${name}`;
 
@@ -104,26 +103,17 @@ export default function ExerciseScreen() {
     let newSession: Session;
 
     if (category === 'strength') {
-      if (!weight || !sets || !reps) {
-        Alert.alert('Missing fields', 'Please fill in weight, sets, and reps.');
-        return;
-      }
       newSession = { date, weight, sets, reps } as StrengthSession;
       setWeight(''); setSets(''); setReps('');
     } else if (category === 'footwork') {
-      if (!fwSets || !fwDuration || feeling === -1) {
-        Alert.alert('Missing fields', 'Please fill in sets, duration, and feeling.');
-        return;
-      }
-      newSession = { date, sets: fwSets, duration: fwDuration, feeling } as FootworkSession;
-      setFwSets(''); setFwDuration(''); setFeeling(-1);
+      newSession = { date, sets: fwSets, duration: fwDuration } as FootworkSession;
+      setFwSets(''); setFwDuration('');
+    } else if (logType === 'sets-duration') {
+      newSession = { date, sets: fwSets, duration: fwDuration } as SetsDurationSession;
+      setFwSets(''); setFwDuration('');
     } else {
-      if (!duration || feeling === -1) {
-        Alert.alert('Missing fields', 'Please fill in duration and feeling.');
-        return;
-      }
-      newSession = { date, duration, distance, feeling } as EnduranceSession;
-      setDuration(''); setDistance(''); setFeeling(-1);
+      newSession = { date, duration, distance } as EnduranceSession;
+      setDuration(''); setDistance('');
     }
 
     if (user) {
@@ -170,25 +160,6 @@ export default function ExerciseScreen() {
     />
   );
 
-  const renderFeeling = () => (
-    <View>
-      <Text style={styles.fieldLabel}>Feeling</Text>
-      <View style={styles.feelingRow}>
-        {FEELING_LABELS.map((label, i) => (
-          <TouchableOpacity
-            key={i}
-            style={[styles.feelingBtn, feeling === i && styles.feelingBtnActive]}
-            onPress={() => setFeeling(i)}
-          >
-            <Text style={[styles.feelingText, feeling === i && styles.feelingTextActive]}>
-              {label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
-  );
-
   const renderSessionHistory = () => {
     if (sessions.length === 0) {
       return <Text style={styles.emptyText}>No sessions logged yet.</Text>;
@@ -199,25 +170,27 @@ export default function ExerciseScreen() {
         <Text style={styles.historyDate}>{session.date}</Text>
         {category === 'strength' && (
           <View style={styles.historyFields}>
-            <Text style={styles.historyField}>⚖️ {(session as StrengthSession).weight}kg</Text>
-            <Text style={styles.historyField}>🔁 {(session as StrengthSession).sets} sets</Text>
-            <Text style={styles.historyField}>💪 {(session as StrengthSession).reps} reps</Text>
+            {(session as StrengthSession).weight ? <Text style={styles.historyField}>⚖️ {(session as StrengthSession).weight}kg</Text> : null}
+            {(session as StrengthSession).sets ? <Text style={styles.historyField}>🔁 {(session as StrengthSession).sets} sets</Text> : null}
+            {(session as StrengthSession).reps ? <Text style={styles.historyField}>💪 {(session as StrengthSession).reps} reps</Text> : null}
           </View>
         )}
         {category === 'footwork' && (
           <View style={styles.historyFields}>
-            <Text style={styles.historyField}>🔁 {(session as FootworkSession).sets} sets</Text>
-            <Text style={styles.historyField}>⏱ {(session as FootworkSession).duration} min</Text>
-            <Text style={styles.historyField}>{FEELING_LABELS[(session as FootworkSession).feeling]}</Text>
+            {(session as FootworkSession).sets ? <Text style={styles.historyField}>🔁 {(session as FootworkSession).sets} sets</Text> : null}
+            {(session as FootworkSession).duration ? <Text style={styles.historyField}>⏱ {(session as FootworkSession).duration} min</Text> : null}
           </View>
         )}
-        {category === 'endurance' && (
+        {category === 'endurance' && logType === 'sets-duration' && (
           <View style={styles.historyFields}>
-            <Text style={styles.historyField}>⏱ {(session as EnduranceSession).duration} min</Text>
-            {(session as EnduranceSession).distance ? (
-              <Text style={styles.historyField}>📍 {(session as EnduranceSession).distance}km</Text>
-            ) : null}
-            <Text style={styles.historyField}>{FEELING_LABELS[(session as EnduranceSession).feeling]}</Text>
+            {(session as SetsDurationSession).sets ? <Text style={styles.historyField}>🔁 {(session as SetsDurationSession).sets} sets</Text> : null}
+            {(session as SetsDurationSession).duration ? <Text style={styles.historyField}>⏱ {(session as SetsDurationSession).duration} min</Text> : null}
+          </View>
+        )}
+        {category === 'endurance' && logType !== 'sets-duration' && (
+          <View style={styles.historyFields}>
+            {(session as EnduranceSession).duration ? <Text style={styles.historyField}>⏱ {(session as EnduranceSession).duration} min</Text> : null}
+            {(session as EnduranceSession).distance ? <Text style={styles.historyField}>📍 {(session as EnduranceSession).distance}km</Text> : null}
           </View>
         )}
       </View>
@@ -318,7 +291,7 @@ export default function ExerciseScreen() {
                 {category === 'strength' && (
                   <View>
                     <View style={styles.inputRow}>
-                      {renderInput('Weight (kg)', weight, setWeight, 'numeric')}
+                      {renderInput('Weight', weight, setWeight, 'numeric')}
                       {renderInput('Sets', sets, setSets, 'numeric')}
                     </View>
                     <View style={styles.inputRow}>
@@ -328,22 +301,23 @@ export default function ExerciseScreen() {
                 )}
 
                 {category === 'footwork' && (
-                  <View>
-                    <View style={styles.inputRow}>
-                      {renderInput('Sets', fwSets, setFwSets, 'numeric')}
-                      {renderInput('Duration', fwDuration, setFwDuration, 'numeric')}
-                    </View>
-                    {renderFeeling()}
+                  <View style={styles.inputRow}>
+                    {renderInput('Sets', fwSets, setFwSets, 'numeric')}
+                    {renderInput('Duration', fwDuration, setFwDuration, 'numeric')}
                   </View>
                 )}
 
-                {category === 'endurance' && (
-                  <View>
-                    <View style={styles.inputRow}>
-                      {renderInput('Duration', duration, setDuration, 'numeric')}
-                      {renderInput('Distance', distance, setDistance, 'numeric')}
-                    </View>
-                    {renderFeeling()}
+                {category === 'endurance' && logType === 'sets-duration' && (
+                  <View style={styles.inputRow}>
+                    {renderInput('Sets', fwSets, setFwSets, 'numeric')}
+                    {renderInput('Duration', fwDuration, setFwDuration, 'numeric')}
+                  </View>
+                )}
+
+                {category === 'endurance' && logType !== 'sets-duration' && (
+                  <View style={styles.inputRow}>
+                    {renderInput('Duration', duration, setDuration, 'numeric')}
+                    {renderInput('Distance', distance, setDistance, 'numeric')}
                   </View>
                 )}
 
@@ -378,210 +352,36 @@ export default function ExerciseScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 24,
-    paddingTop: 16,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
-    marginBottom: 12,
-  },
-  tagRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 20,
-  },
-  tag: {
-    backgroundColor: Colors.accentMuted,
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  tagText: {
-    color: Colors.accent,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  tabRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 20,
-  },
-  tab: {
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: Colors.backgroundCard,
-  },
-  tabActive: {
-    backgroundColor: Colors.accent,
-  },
-  tabText: {
-    color: Colors.textSecondary,
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  tabTextActive: {
-    color: '#FFFFFF',
-  },
-  content: {
-    paddingBottom: 40,
-  },
-  video: {
-    width: '100%',
-    height: 300,
-    borderRadius: 12,
-    marginBottom: 16,
-    backgroundColor: Colors.backgroundCard,
-  },
-  image: {
-    width: '100%',
-    height: 220,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  description: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    lineHeight: 22,
-    marginBottom: 20,
-  },
-  stepsCard: {
-    backgroundColor: Colors.backgroundCard,
-    borderRadius: 12,
-    padding: 16,
-    gap: 14,
-  },
-  stepRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  stepNumber: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepNumberText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 13,
-  },
-  stepText: {
-    flex: 1,
-    color: Colors.textPrimary,
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  sessionCard: {
-    backgroundColor: Colors.backgroundCard,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-  },
-  sectionLabel: {
-    color: Colors.accent,
-    fontWeight: 'bold',
-    fontSize: 12,
-    letterSpacing: 1,
-    marginBottom: 14,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  input: { 
-  flex: 1, 
-  backgroundColor: Colors.accentMuted, 
-  borderRadius: 8, 
-  paddingVertical: 10, 
-  paddingHorizontal: 12, 
-  color: Colors.textPrimary, 
-  fontSize: 14, 
-  textAlign: 'center'
-   },
-  fieldLabel: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    marginBottom: 8,
-  },
-  feelingRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  feelingBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: Colors.accentMuted,
-    alignItems: 'center',
-  },
-  feelingBtnActive: {
-    backgroundColor: Colors.accent,
-  },
-  feelingText: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-  },
-  feelingTextActive: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-  },
-  addButton: {
-    backgroundColor: Colors.accent,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  addButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  historyRow: {
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    paddingVertical: 10,
-  },
-  historyDate: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-    marginBottom: 6,
-  },
-  historyFields: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  historyField: {
-    color: Colors.textPrimary,
-    fontSize: 13,
-    backgroundColor: Colors.accentMuted,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  emptyText: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    fontStyle: 'italic',
-    marginBottom: 12,
-  },
-  notesInput: {
-    color: Colors.textPrimary,
-    fontSize: 13,
-    lineHeight: 22,
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
+  container: { flex: 1, padding: 24, paddingTop: 16 },
+  title: { fontSize: 24, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 12 },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 20 },
+  tag: { backgroundColor: Colors.accentMuted, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  tagText: { color: Colors.accent, fontSize: 11, fontWeight: '600' },
+  tabRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  tab: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20, backgroundColor: Colors.backgroundCard },
+  tabActive: { backgroundColor: Colors.accent },
+  tabText: { color: Colors.textSecondary, fontWeight: '600', fontSize: 14 },
+  tabTextActive: { color: '#FFFFFF' },
+  content: { paddingBottom: 40 },
+  video: { width: '100%', height: 300, borderRadius: 12, marginBottom: 16, backgroundColor: Colors.backgroundCard },
+  image: { width: '100%', height: 220, borderRadius: 12, marginBottom: 16 },
+  description: { fontSize: 14, color: Colors.textSecondary, lineHeight: 22, marginBottom: 20 },
+  stepsCard: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, gap: 14 },
+  stepRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  stepNumber: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center' },
+  stepNumberText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 },
+  stepText: { flex: 1, color: Colors.textPrimary, fontSize: 14, lineHeight: 22 },
+  sessionCard: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, marginBottom: 16 },
+  sectionLabel: { color: Colors.accent, fontWeight: 'bold', fontSize: 12, letterSpacing: 1, marginBottom: 14 },
+  inputRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  input: { flex: 1, backgroundColor: Colors.accentMuted, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 12, color: Colors.textPrimary, fontSize: 12, textAlign: 'center' },
+  addButton: { backgroundColor: Colors.accent, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
+  addButtonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
+  historyRow: { borderBottomWidth: 1, borderBottomColor: Colors.border, paddingVertical: 10 },
+  historyDate: { color: Colors.textSecondary, fontSize: 12, marginBottom: 6 },
+  historyFields: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  historyField: { color: Colors.textPrimary, fontSize: 13, backgroundColor: Colors.accentMuted, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  emptyText: { color: Colors.textSecondary, fontSize: 13, fontStyle: 'italic', marginBottom: 12 },
+  notesInput: { color: Colors.textPrimary, fontSize: 13, lineHeight: 22, minHeight: 80, textAlignVertical: 'top' },
+  fieldLabel: { color: Colors.textSecondary, fontSize: 13, marginBottom: 8 },
 });

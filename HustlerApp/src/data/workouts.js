@@ -3,10 +3,10 @@ const VIDEOS = `${SUPABASE_URL}/storage/v1/object/public/excersies-videos`;
 
 const workouts = {
   strength: [
-    // Lower Body
     {
       name: 'Bulgarian Squat',
       subcategory: 'lower',
+      logType: 'strength',
       description: 'One leg gets stronger for lunges, jumps, and fast movement on court. Do it on leg day so you can build balance and power one side at a time.',
       muscles: ['Quads', 'Glutes', 'Hamstrings'],
       videoUrl: `${VIDEOS}/Strength/bulgarian-squat.mov`,
@@ -22,6 +22,7 @@ const workouts = {
     {
       name: 'Deadlift',
       subcategory: 'lower',
+      logType: 'strength',
       description: 'Back, glutes, and legs get stronger for better power and stability. Do it on a lower-body day when you want to build strong hips and legs.',
       muscles: ['Glutes', 'Hamstrings', 'Lower Back'],
       videoUrl: `${VIDEOS}/Strength/deadlift.mov`,
@@ -37,6 +38,7 @@ const workouts = {
     {
       name: 'Leg Extension',
       subcategory: 'lower',
+      logType: 'strength',
       description: 'This mainly strengthens your quadriceps, which help you push off, jump, and absorb force. Do it when you want to build front-thigh strength, usually near the start or middle of your leg workout.',
       muscles: ['Quads'],
       videoUrl: `${VIDEOS}/Strength/leg-extension.mov`,
@@ -53,6 +55,7 @@ const workouts = {
     {
       name: 'Calf Raise',
       subcategory: 'lower',
+      logType: 'strength',
       description: 'Calves are stronger for quick steps, jumping, and staying light on your feet. Do it after leg workouts or on badminton training days to help with court speed.',
       muscles: ['Calves', 'Ankles', 'Feet'],
       videoUrl: `${VIDEOS}/Strength/calf-raise.mov`,
@@ -68,6 +71,7 @@ const workouts = {
     {
       name: 'Goblet Squat',
       subcategory: 'lower',
+      logType: 'strength',
       description: 'Legs and core get stronger while keeping your body upright. Do it in lower-body workouts to build strength for better movement and balance.',
       muscles: ['Quads', 'Glutes', 'Core'],
       videoUrl: null,
@@ -83,6 +87,7 @@ const workouts = {
     {
       name: 'Jump Squat',
       subcategory: 'lower',
+      logType: 'strength',
       description: 'Builds explosive leg power for jumping, smashing, and quick bursts on court. Do it early in your leg workout when your legs are fresh.',
       muscles: ['Quads', 'Glutes', 'Calves'],
       videoUrl: `${VIDEOS}/Strength/squat-jump.mp4`,
@@ -95,11 +100,10 @@ const workouts = {
         'Go straight into the next squat and repeat.',
       ],
     },
-
-    // Upper Body
     {
       name: 'Shoulder Press',
       subcategory: 'upper',
+      logType: 'strength',
       description: 'Shoulders get stronger for powerful smashes and clears. Do it on upper-body days so your shoulder can handle racket work better.',
       muscles: ['Shoulders', 'Triceps'],
       videoUrl: `${VIDEOS}/Strength/shoulder-press.mov`,
@@ -115,6 +119,7 @@ const workouts = {
     {
       name: 'Push Ups',
       subcategory: 'upper',
+      logType: 'strength',
       description: 'Makes your chest, shoulders, and arms stronger for hitting and controlling the racket. Do it in upper-body workouts or as a warm-up when you want to build pushing strength.',
       muscles: ['Chest', 'Shoulders', 'Triceps', 'Core'],
       videoUrl: `${VIDEOS}/Strength/push-ups.mov`,
@@ -130,6 +135,7 @@ const workouts = {
     {
       name: 'Overhead Triceps',
       subcategory: 'upper',
+      logType: 'strength',
       description: 'The back of your arms get stronger for faster and more stable racket swings. Do it on the upper-body day after your main lifts to support strong overhead shots.',
       muscles: ['Triceps', 'Shoulders'],
       videoUrl: `${VIDEOS}/Strength/overhead-triceps.mov`,
@@ -145,6 +151,7 @@ const workouts = {
     {
       name: 'Overhead Medicine Ball Slams',
       subcategory: 'upper',
+      logType: 'strength',
       description: 'This trains the fast power you use when hitting hard shots. Do it early in a workout or before training when you want to feel explosive.',
       muscles: ['Shoulders', 'Arms'],
       videoUrl: `${VIDEOS}/Strength/ball-slam.mov`,
@@ -158,11 +165,10 @@ const workouts = {
         'Make each slam fast and powerful.',
       ],
     },
-
-    // Core
     {
       name: 'Plank',
       subcategory: 'core',
+      logType: 'strength',
       description: 'Core stays tight so you can stay strong and balanced on court. Do it in core training or warm-ups to build stability.',
       muscles: ['Core', 'Shoulders', 'Glutes'],
       videoUrl: null,
@@ -178,6 +184,7 @@ const workouts = {
     {
       name: 'Russian Twist',
       subcategory: 'core',
+      logType: 'strength',
       description: 'This helps your body turn fast for smashes, clears, and drives. Do it on core day to build twisting strength for badminton movement.',
       muscles: ['Core', 'Obliques'],
       videoUrl: `${VIDEOS}/Strength/russian-twist.mov`,
@@ -194,6 +201,7 @@ const workouts = {
     {
       name: 'Leg Raise',
       subcategory: 'core',
+      logType: 'strength',
       description: 'Lower abs get stronger for better control when you move, jump, and recover. Do it in core workouts when you want to build stomach strength.',
       muscles: ['Lower Abs', 'Core', 'Hip Flexors'],
       videoUrl: `${VIDEOS}/Strength/leg-raise.mov`,
@@ -212,6 +220,7 @@ const workouts = {
     {
       name: 'Agility Ladder Session',
       subcategory: 'footwork',
+      logType: 'footwork',
       description: 'This helps your feet move fast and stay light. Do it in warm-ups or footwork practice to get quicker steps on court.',
       muscles: ['Feet', 'Calves', 'Ankles'],
       videoUrl: null,
@@ -227,6 +236,7 @@ const workouts = {
     {
       name: 'Corner Shuttle Defence',
       subcategory: 'footwork',
+      logType: 'footwork',
       description: 'Builds the habit of moving out, defending, and returning to base again and again.',
       muscles: ['Feet', 'Ankles', 'Calves', 'Thighs'],
       videoUrl: null,
@@ -243,7 +253,8 @@ const workouts = {
     {
       name: 'Split-Step Reaction',
       subcategory: 'footwork',
-      description: 'You bounce or tap lightly in the center, then as soon as a direction is called or shown, you do a quick split step and explode to that side. It helps with reaction speed, balance, and first-step acceleration in badminton.',
+      logType: 'footwork',
+      description: 'You bounce or tap lightly in the center, then as soon as a direction is called or shown, you do a quick split step and explode to that side.',
       muscles: ['Feet', 'Ankles', 'Calves', 'Hips', 'Core'],
       videoUrl: null,
       imageUrl: null,
@@ -262,6 +273,7 @@ const workouts = {
     {
       name: 'Interval Running',
       subcategory: 'endurance',
+      logType: 'sets-duration',
       description: 'Go hard for a short time, then rest or go easy, and repeat. Do this when you want to train your body to recover fast after tough rallies.',
       muscles: ['Heart', 'Lungs', 'Legs'],
       videoUrl: `${VIDEOS}/Endurance/cycling.mov`,
@@ -277,6 +289,7 @@ const workouts = {
     {
       name: 'Skipping Rope',
       subcategory: 'endurance',
+      logType: 'sets-duration',
       description: 'Hold the rope, stay on your toes, and bounce lightly as the rope spins. Do this before training or on cardio days to improve stamina and keep your feet light.',
       muscles: ['Calves', 'Ankles', 'Core', 'Shoulders'],
       videoUrl: `${VIDEOS}/Endurance/skipping-rope.mov`,
@@ -292,6 +305,7 @@ const workouts = {
     {
       name: 'Long Steady Cardio',
       subcategory: 'endurance',
+      logType: 'duration-distance',
       description: 'Run, bike, or row at a pace where you can still talk. Do this on endurance days to build your base stamina and help you last longer in matches.',
       muscles: ['Heart', 'Lungs', 'Legs'],
       videoUrl: `${VIDEOS}/Endurance/running.mov`,
@@ -307,7 +321,8 @@ const workouts = {
     {
       name: 'Court Shuttle Runs',
       subcategory: 'endurance',
-      description: 'Builds badminton-style stamina because you sprint, stop, and go again like in a real match. Do them on endurance days or before practice after your warm-up to wake up your legs and get your body ready for fast rallies.',
+      logType: 'duration-distance',
+      description: 'Builds badminton-style stamina because you sprint, stop, and go again like in a real match.',
       muscles: ['Legs', 'Calves', 'Glutes', 'Core'],
       videoUrl: null,
       imageUrl: null,

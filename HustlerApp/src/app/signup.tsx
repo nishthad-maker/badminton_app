@@ -55,7 +55,7 @@ export default function SignUpScreen() {
   }
 
   setLoading(false);
-  router.replace('/categories' as any);
+  router.replace('/(tabs)' as any);
 };
 
   return (
