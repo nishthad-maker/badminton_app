@@ -166,7 +166,7 @@ const workouts = {
       description: 'Core stays tight so you can stay strong and balanced on court. Do it in core training or warm-ups to build stability.',
       muscles: ['Core', 'Shoulders', 'Glutes'],
       videoUrl: null,
-      imageUrl: require('../../assets/images/plank.jpg'),
+      imageUrl: 'local',
       steps: [
         'Put your forearms on the floor.',
         'Stretch your legs behind you.',
@@ -264,7 +264,7 @@ const workouts = {
       subcategory: 'endurance',
       description: 'Go hard for a short time, then rest or go easy, and repeat. Do this when you want to train your body to recover fast after tough rallies.',
       muscles: ['Heart', 'Lungs', 'Legs'],
-      videoUrl: `${VIDEOS}/Endurance/running.mov`,
+      videoUrl: `${VIDEOS}/Endurance/cycling.mov`,
       imageUrl: null,
       steps: [
         'Pick one cardio move like running or cycling.',
@@ -294,7 +294,7 @@ const workouts = {
       subcategory: 'endurance',
       description: 'Run, bike, or row at a pace where you can still talk. Do this on endurance days to build your base stamina and help you last longer in matches.',
       muscles: ['Heart', 'Lungs', 'Legs'],
-      videoUrl: `${VIDEOS}/Endurance/cycling.mov`,
+      videoUrl: `${VIDEOS}/Endurance/running.mov`,
       imageUrl: null,
       steps: [
         'Pick one: running, cycling, or rowing.',

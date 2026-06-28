@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -36,7 +36,7 @@ export default function ExerciseScreen() {
   const { name, description, steps, muscles, category, videoUrl, imageUrl } = useLocalSearchParams();
   const stepList: string[] = JSON.parse(steps as string || '[]');
   const muscleList: string[] = JSON.parse(muscles as string || '[]');
-  console.log('PARAMS:', { videoUrl, imageUrl });
+
   const hasVideo = !!(videoUrl && videoUrl !== '');
   const hasImage = !!(imageUrl && imageUrl === 'local');
 
@@ -228,10 +228,10 @@ export default function ExerciseScreen() {
     if (hasVideo) {
       return (
         <VideoView
-  player={player}
-  style={styles.video}
-  contentFit="cover"
-/>
+          player={player}
+          style={styles.video}
+          contentFit="contain"
+        />
       );
     }
     if (hasImage) {
@@ -283,9 +283,7 @@ export default function ExerciseScreen() {
       >
         {activeTab === 'howto' && (
           <View>
-            {/* Video or Image */}
             {renderMedia()}
-
             <Text style={styles.description}>{description}</Text>
             <View style={styles.stepsCard}>
               {stepList.map((step, i) => (
@@ -318,10 +316,14 @@ export default function ExerciseScreen() {
                 <Text style={styles.sectionLabel}>LOG SESSION</Text>
 
                 {category === 'strength' && (
-                  <View style={styles.inputRow}>
-                    {renderInput('Weight (kg)', weight, setWeight, 'numeric')}
-                    {renderInput('Sets', sets, setSets, 'numeric')}
-                    {renderInput('Reps', reps, setReps, 'numeric')}
+                  <View>
+                    <View style={styles.inputRow}>
+                      {renderInput('Weight (kg)', weight, setWeight, 'numeric')}
+                      {renderInput('Sets', sets, setSets, 'numeric')}
+                    </View>
+                    <View style={styles.inputRow}>
+                      {renderInput('Reps', reps, setReps, 'numeric')}
+                    </View>
                   </View>
                 )}
 
@@ -329,7 +331,7 @@ export default function ExerciseScreen() {
                   <View>
                     <View style={styles.inputRow}>
                       {renderInput('Sets', fwSets, setFwSets, 'numeric')}
-                      {renderInput('Duration (min)', fwDuration, setFwDuration, 'numeric')}
+                      {renderInput('Duration', fwDuration, setFwDuration, 'numeric')}
                     </View>
                     {renderFeeling()}
                   </View>
@@ -338,8 +340,8 @@ export default function ExerciseScreen() {
                 {category === 'endurance' && (
                   <View>
                     <View style={styles.inputRow}>
-                      {renderInput('Duration (min)', duration, setDuration, 'numeric')}
-                      {renderInput('Distance (km)', distance, setDistance, 'numeric')}
+                      {renderInput('Duration', duration, setDuration, 'numeric')}
+                      {renderInput('Distance', distance, setDistance, 'numeric')}
                     </View>
                     {renderFeeling()}
                   </View>
@@ -431,7 +433,7 @@ const styles = StyleSheet.create({
   },
   video: {
     width: '100%',
-    height: 220,
+    height: 300,
     borderRadius: 12,
     marginBottom: 16,
     backgroundColor: Colors.backgroundCard,
@@ -496,16 +498,16 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 12,
   },
-  input: {
-    flex: 1,
-    backgroundColor: Colors.accentMuted,
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    color: Colors.textPrimary,
-    fontSize: 14,
-    textAlign: 'center',
-  },
+  input: { 
+  flex: 1, 
+  backgroundColor: Colors.accentMuted, 
+  borderRadius: 8, 
+  paddingVertical: 10, 
+  paddingHorizontal: 12, 
+  color: Colors.textPrimary, 
+  fontSize: 14, 
+  textAlign: 'center'
+   },
   fieldLabel: {
     color: Colors.textSecondary,
     fontSize: 13,
