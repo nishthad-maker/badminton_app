@@ -19,6 +19,7 @@ export default function TrainScreen() {
       style={styles.container}
     >
       <Text style={styles.title}>Train</Text>
+      <Text style={styles.Sub}>Choose a training category</Text>
       <View style={styles.cards}>
         <TouchableOpacity style={styles.card} onPress={() => navigate('strength')}>
           <View style={[styles.iconBox, { backgroundColor: 'rgba(46,204,113,0.15)' }]}>
@@ -67,6 +68,7 @@ export default function TrainScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 24, paddingTop: 60 },
   title: { fontSize: 28, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 24 },
+  Sub: { fontSize: 16, color: Colors.textSecondary, marginTop: -15, marginBottom: 24 },
   cards: { gap: 12 },
   card: {
     backgroundColor: Colors.backgroundCard,
