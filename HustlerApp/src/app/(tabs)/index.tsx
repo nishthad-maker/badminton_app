@@ -9,10 +9,10 @@ import { supabase } from '../../lib/supabase';
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const navigate = (category: string) => {
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && window.location) {
     window.location.href = `/workouts?category=${category}`;
   } else {
-    router.navigate({ pathname: '/workouts', params: { category } });
+    router.push({ pathname: '/workouts', params: { category } });
   }
 };
 
@@ -95,6 +95,7 @@ export default function HomeScreen() {
       case 'strength': return '#2ECC71';
       case 'footwork': return '#3498DB';
       case 'endurance': return '#E67E22';
+      case 'recovery': return '#9B59B6';
       default: return Colors.accent;
     }
   };
@@ -104,6 +105,7 @@ export default function HomeScreen() {
       case 'strength': return 'dumbbell';
       case 'footwork': return 'badminton';
       case 'endurance': return 'lightning-bolt';
+      case 'recovery': return 'heart-pulse';
       default: return 'star';
     }
   };
@@ -190,6 +192,21 @@ export default function HomeScreen() {
             <Text style={styles.categorySub}>4 workouts</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Recovery Card */}
+        <TouchableOpacity
+          style={styles.recoveryCard}
+          onPress={() => navigate('recovery')}
+        >
+          <View style={[styles.iconBox, { backgroundColor: 'rgba(155,89,182,0.15)' }]}>
+            <MaterialCommunityIcons name="heart-pulse" size={22} color="#9B59B6" />
+          </View>
+          <View style={styles.recoveryInfo}>
+            <Text style={styles.recoveryTitle}>Recovery</Text>
+            <Text style={styles.recoverySub}>Stretching, Foam Rolling, Breathing</Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
+        </TouchableOpacity>
 
         {/* Recent Activity */}
         <Text style={styles.sectionTitle}>Recent Activity</Text>
@@ -289,7 +306,7 @@ const styles = StyleSheet.create({
   categoryCards: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 24,
+    marginBottom: 12,
   },
   categoryCard: {
     flex: 1,
@@ -317,6 +334,18 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
   },
+  recoveryCard: {
+    backgroundColor: Colors.backgroundCard,
+    borderRadius: 14,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 24,
+  },
+  recoveryInfo: { flex: 1 },
+  recoveryTitle: { fontSize: 15, fontWeight: 'bold', color: Colors.textPrimary },
+  recoverySub: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
   activityCard: {
     backgroundColor: Colors.backgroundCard,
     borderRadius: 16,

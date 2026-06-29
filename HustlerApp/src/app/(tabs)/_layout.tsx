@@ -8,13 +8,13 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-  backgroundColor: Colors.backgroundTop,
-  borderTopColor: 'rgba(255,255,255,0.08)',
-  borderTopWidth: 1,
-  height: 80,
-  paddingBottom: 16,
-  paddingTop: 8,
-},
+          backgroundColor: Colors.backgroundTop,
+          borderTopColor: 'rgba(255,255,255,0.08)',
+          borderTopWidth: 1,
+          height: 80,
+          paddingBottom: 16,
+          paddingTop: 8,
+        },
         tabBarActiveTintColor: Colors.accent,
         tabBarInactiveTintColor: Colors.textSecondary,
         tabBarLabelStyle: {
@@ -33,14 +33,14 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-  name="workouts"
-  options={{
-    title: 'Train',
-    tabBarIcon: ({ color, size }) => (
-      <MaterialCommunityIcons name="lightning-bolt" size={size} color={color} />
-    ),
-  }}
-/>
+        name="workouts"
+        options={{
+          title: 'Train',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="lightning-bolt" size={size} color={color} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="community"
         options={{

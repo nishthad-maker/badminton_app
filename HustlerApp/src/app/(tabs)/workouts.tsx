@@ -1,14 +1,14 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Colors } from '@/constants/theme';
 
 const navigate = (category: string) => {
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && window.location) {
     window.location.href = `/workouts?category=${category}`;
   } else {
-    router.navigate({ pathname: '/workouts', params: { category } });
+    const { router } = require('expo-router');
+    router.push({ pathname: '/workouts', params: { category } });
   }
 };
 
@@ -19,12 +19,8 @@ export default function TrainScreen() {
       style={styles.container}
     >
       <Text style={styles.title}>Train</Text>
-
       <View style={styles.cards}>
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => navigate('strength')}
-        >
+        <TouchableOpacity style={styles.card} onPress={() => navigate('strength')}>
           <View style={[styles.iconBox, { backgroundColor: 'rgba(46,204,113,0.15)' }]}>
             <MaterialCommunityIcons name="dumbbell" size={24} color={Colors.accent} />
           </View>
@@ -34,10 +30,7 @@ export default function TrainScreen() {
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => navigate('footwork')}
-        >
+        <TouchableOpacity style={styles.card} onPress={() => navigate('footwork')}>
           <View style={[styles.iconBox, { backgroundColor: 'rgba(52,152,219,0.15)' }]}>
             <MaterialCommunityIcons name="badminton" size={24} color="#3498DB" />
           </View>
@@ -47,10 +40,7 @@ export default function TrainScreen() {
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => navigate('endurance')}
-        >
+        <TouchableOpacity style={styles.card} onPress={() => navigate('endurance')}>
           <View style={[styles.iconBox, { backgroundColor: 'rgba(230,126,34,0.15)' }]}>
             <MaterialCommunityIcons name="lightning-bolt" size={24} color="#E67E22" />
           </View>
@@ -60,10 +50,7 @@ export default function TrainScreen() {
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => navigate('recovery')}
-        >
+        <TouchableOpacity style={styles.card} onPress={() => navigate('recovery')}>
           <View style={[styles.iconBox, { backgroundColor: 'rgba(155,89,182,0.15)' }]}>
             <MaterialCommunityIcons name="heart-pulse" size={24} color="#9B59B6" />
           </View>

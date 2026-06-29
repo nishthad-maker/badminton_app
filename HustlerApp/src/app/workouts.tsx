@@ -2,6 +2,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-nati
 import { useLocalSearchParams, router } from 'expo-router';
 import { useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import workouts from '../data/workouts';
 import { Colors } from '@/constants/theme';
 
@@ -30,11 +31,23 @@ export default function WorkoutsScreen() {
     ? allExercises
     : allExercises.filter((e: any) => e.subcategory === activeFilter.toLowerCase());
 
+  const goBack = () => {
+    if (typeof window !== 'undefined') {
+      window.location.href = '/';
+    } else {
+      router.back();
+    }
+  };
+
   return (
     <LinearGradient
       colors={[Colors.backgroundTop, Colors.backgroundBottom]}
       style={styles.container}
     >
+      <TouchableOpacity style={styles.backBtn} onPress={goBack}>
+        <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
+      </TouchableOpacity>
+
       <Text style={styles.title}>{CATEGORY_TITLES[categoryKey]}</Text>
 
       {filters.length > 0 && (
@@ -95,6 +108,7 @@ export default function WorkoutsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 24, paddingTop: 16 },
+  backBtn: { marginBottom: 8, alignSelf: 'flex-start' },
   title: { fontSize: 26, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 16 },
   filterRow: { flexGrow: 0, marginBottom: 16, minHeight: 44 },
   filterContent: { gap: 8, paddingRight: 8 },

@@ -32,7 +32,27 @@ type SetsDurationSession = {
   duration: string;
 };
 
-type Session = StrengthSession | FootworkSession | EnduranceSession | SetsDurationSession;
+type RecoverySession = {
+  date: string;
+  duration: string;
+  feeling: number;
+};
+
+type Session = StrengthSession | FootworkSession | EnduranceSession | SetsDurationSession | RecoverySession;
+
+const FEELING_LABELS = ['😞 Bad', '😐 OK', '😄 Great'];
+
+const getLocalImage = (key: string) => {
+  switch (key) {
+    case 'local': return require('../../assets/images/plank.jpg');
+    case 'icebath': return require('../../assets/images/icebath.png');
+    case 'foam': return require('../../assets/images/foam.png');
+    case 'upperstretch': return require('../../assets/images/upperstretch.png');
+    case 'lowerstretch': return require('../../assets/images/lowerstretch.png');
+    case 'breath': return require('../../assets/images/breath.png');
+    default: return null;
+  }
+};
 
 export default function ExerciseScreen() {
   const { name, description, steps, muscles, category, videoUrl, imageUrl, logType } = useLocalSearchParams();
@@ -40,7 +60,6 @@ export default function ExerciseScreen() {
   const muscleList: string[] = JSON.parse(muscles as string || '[]');
 
   const hasVideo = !!(videoUrl && videoUrl !== '');
-  const hasImage = !!(imageUrl && imageUrl === 'local');
 
   const player = useVideoPlayer(hasVideo ? (videoUrl as string) : null, (p) => {
     p.loop = true;
@@ -52,18 +71,18 @@ export default function ExerciseScreen() {
   const [generalNote, setGeneralNote] = useState('');
   const [user, setUser] = useState<any>(null);
 
-  // Strength fields
   const [weight, setWeight] = useState('');
   const [sets, setSets] = useState('');
   const [reps, setReps] = useState('');
 
-  // Footwork / sets-duration fields
   const [fwSets, setFwSets] = useState('');
   const [fwDuration, setFwDuration] = useState('');
 
-  // Endurance duration-distance fields
   const [duration, setDuration] = useState('');
   const [distance, setDistance] = useState('');
+
+  const [recoveryDuration, setRecoveryDuration] = useState('');
+  const [feeling, setFeeling] = useState(-1);
 
   const noteKey = `note_${name}`;
 
@@ -108,6 +127,9 @@ export default function ExerciseScreen() {
     } else if (category === 'footwork') {
       newSession = { date, sets: fwSets, duration: fwDuration } as FootworkSession;
       setFwSets(''); setFwDuration('');
+    } else if (category === 'recovery') {
+      newSession = { date, duration: recoveryDuration, feeling } as RecoverySession;
+      setRecoveryDuration(''); setFeeling(-1);
     } else if (logType === 'sets-duration') {
       newSession = { date, sets: fwSets, duration: fwDuration } as SetsDurationSession;
       setFwSets(''); setFwDuration('');
@@ -160,6 +182,25 @@ export default function ExerciseScreen() {
     />
   );
 
+  const renderFeeling = () => (
+    <View>
+      <Text style={styles.fieldLabel}>Feeling</Text>
+      <View style={styles.feelingRow}>
+        {FEELING_LABELS.map((label, i) => (
+          <TouchableOpacity
+            key={i}
+            style={[styles.feelingBtn, feeling === i && styles.feelingBtnActive]}
+            onPress={() => setFeeling(i)}
+          >
+            <Text style={[styles.feelingText, feeling === i && styles.feelingTextActive]}>
+              {label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
   const renderSessionHistory = () => {
     if (sessions.length === 0) {
       return <Text style={styles.emptyText}>No sessions logged yet.</Text>;
@@ -193,6 +234,12 @@ export default function ExerciseScreen() {
             {(session as EnduranceSession).distance ? <Text style={styles.historyField}>📍 {(session as EnduranceSession).distance}km</Text> : null}
           </View>
         )}
+        {category === 'recovery' && (
+          <View style={styles.historyFields}>
+            {(session as RecoverySession).duration ? <Text style={styles.historyField}>⏱ {(session as RecoverySession).duration} min</Text> : null}
+            {(session as RecoverySession).feeling !== undefined && (session as RecoverySession).feeling >= 0 ? <Text style={styles.historyField}>{FEELING_LABELS[(session as RecoverySession).feeling]}</Text> : null}
+          </View>
+        )}
       </View>
     ));
   };
@@ -207,14 +254,17 @@ export default function ExerciseScreen() {
         />
       );
     }
-    if (hasImage) {
-      return (
-        <Image
-          source={require('../../assets/images/plank.jpg')}
-          style={styles.image}
-          resizeMode="cover"
-        />
-      );
+    if (imageUrl && imageUrl !== '') {
+      const localImage = getLocalImage(imageUrl as string);
+      if (localImage) {
+        return (
+          <Image
+            source={localImage}
+            style={styles.image}
+            resizeMode="cover"
+          />
+        );
+      }
     }
     return null;
   };
@@ -321,6 +371,15 @@ export default function ExerciseScreen() {
                   </View>
                 )}
 
+                {category === 'recovery' && (
+                  <View>
+                    <View style={styles.inputRow}>
+                      {renderInput('Duration (min)', recoveryDuration, setRecoveryDuration, 'numeric')}
+                    </View>
+                    {renderFeeling()}
+                  </View>
+                )}
+
                 <TouchableOpacity style={styles.addButton} onPress={saveSession}>
                   <Text style={styles.addButtonText}>+ Save Session</Text>
                 </TouchableOpacity>
@@ -364,7 +423,7 @@ const styles = StyleSheet.create({
   tabTextActive: { color: '#FFFFFF' },
   content: { paddingBottom: 40 },
   video: { width: '100%', height: 300, borderRadius: 12, marginBottom: 16, backgroundColor: Colors.backgroundCard },
-  image: { width: '100%', height: 220, borderRadius: 12, marginBottom: 16 },
+  image: { width: '100%', height: 330, borderRadius: 12, marginBottom: 16 },
   description: { fontSize: 14, color: Colors.textSecondary, lineHeight: 22, marginBottom: 20 },
   stepsCard: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, gap: 14 },
   stepRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
@@ -375,6 +434,12 @@ const styles = StyleSheet.create({
   sectionLabel: { color: Colors.accent, fontWeight: 'bold', fontSize: 12, letterSpacing: 1, marginBottom: 14 },
   inputRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   input: { flex: 1, backgroundColor: Colors.accentMuted, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 12, color: Colors.textPrimary, fontSize: 12, textAlign: 'center' },
+  fieldLabel: { color: Colors.textSecondary, fontSize: 13, marginBottom: 8 },
+  feelingRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  feelingBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, backgroundColor: Colors.accentMuted, alignItems: 'center' },
+  feelingBtnActive: { backgroundColor: Colors.accent },
+  feelingText: { color: Colors.textSecondary, fontSize: 12 },
+  feelingTextActive: { color: '#FFFFFF', fontWeight: 'bold' },
   addButton: { backgroundColor: Colors.accent, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
   addButtonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
   historyRow: { borderBottomWidth: 1, borderBottomColor: Colors.border, paddingVertical: 10 },
@@ -383,5 +448,4 @@ const styles = StyleSheet.create({
   historyField: { color: Colors.textPrimary, fontSize: 13, backgroundColor: Colors.accentMuted, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   emptyText: { color: Colors.textSecondary, fontSize: 13, fontStyle: 'italic', marginBottom: 12 },
   notesInput: { color: Colors.textPrimary, fontSize: 13, lineHeight: 22, minHeight: 80, textAlignVertical: 'top' },
-  fieldLabel: { color: Colors.textSecondary, fontSize: 13, marginBottom: 8 },
 });
