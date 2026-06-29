@@ -18,7 +18,7 @@ const navigate = (category: string) => {
 
 export default function HomeScreen() {
   const [userName, setUserName] = useState('');
-  const [totalSessions, setTotalSessions] = useState(0);
+  const [streak, setStreak] = useState(0);
   const [weekSessions, setWeekSessions] = useState<string[]>([]);
   const [recentSessions, setRecentSessions] = useState<any[]>([]);
 
@@ -72,9 +72,25 @@ export default function HomeScreen() {
 
       if (!data) return;
 
-      setTotalSessions(data.length);
       setRecentSessions(data.slice(0, 3));
 
+      // Calculate streak — consecutive days trained
+      const dates = [...new Set(data.map(s =>
+        new Date(s.created_at).toDateString()
+      ))];
+      let currentStreak = 0;
+      for (let i = 0; i < 365; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        if (dates.includes(d.toDateString())) {
+          currentStreak++;
+        } else if (i > 0) {
+          break;
+        }
+      }
+      setStreak(currentStreak);
+
+      // Get days worked out this week
       const startOfWeek = new Date(today);
       startOfWeek.setDate(today.getDate() - todayDayIndex);
       startOfWeek.setHours(0, 0, 0, 0);
@@ -125,8 +141,8 @@ export default function HomeScreen() {
           </View>
           <View style={styles.streakBadge}>
             <Text style={styles.streakEmoji}>🔥</Text>
-            <Text style={styles.streakCount}>{totalSessions}</Text>
-            <Text style={styles.streakLabel}>sessions</Text>
+            <Text style={styles.streakCount}>{streak}</Text>
+            <Text style={styles.streakLabel}>day streak</Text>
           </View>
         </View>
 
