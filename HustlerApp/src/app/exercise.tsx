@@ -18,6 +18,25 @@ type Session = StrengthSession | FootworkSession | EnduranceSession | SetsDurati
 
 const FEELING_LABELS = ['😞 Bad', '😐 OK', '😄 Great'];
 
+const showAlert = (title: string, message: string) => {
+  if (typeof window !== 'undefined') {
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+};
+
+const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+  if (typeof window !== 'undefined') {
+    if (window.confirm(`${title}\n\n${message}`)) onConfirm();
+  } else {
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: onConfirm },
+    ]);
+  }
+};
+
 const getLocalImage = (key: string) => {
   switch (key) {
     case 'local': return require('../../assets/images/plank.jpg');
@@ -33,7 +52,6 @@ const getLocalImage = (key: string) => {
 const getSkillRecommendation = (logType: string, skillLevel: string) => {
   const level = skillLevel?.toLowerCase() ?? 'beginner';
 
-  // Advanced users get history-based recommendations only
   if (level === 'advanced') return null;
 
   if (logType === 'plank') {
@@ -53,9 +71,9 @@ const getSkillRecommendation = (logType: string, skillLevel: string) => {
     return '3 sets • 25 reps • 20 sec';
   }
   if (logType === 'sets-duration') {
-  if (level === 'intermediate') return '3 sets • 20 min';
-  return '2 sets • 15 min';
-}
+    if (level === 'intermediate') return '3 sets • 20 min';
+    return '2 sets • 15 min';
+  }
   if (logType === 'duration-distance') {
     if (level === 'intermediate') return '25 min';
     return '15 min';
@@ -77,7 +95,8 @@ export default function ExerciseScreen() {
   });
 
   const [activeTab, setActiveTab] = useState<'howto' | 'notes'>('howto');
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [sessionIds, setSessionIds] = useState<string[]>([]);
   const [generalNote, setGeneralNote] = useState('');
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
@@ -111,7 +130,7 @@ export default function ExerciseScreen() {
       if (currentUser) {
         const { data: profileData } = await supabase
           .from('profiles')
-          .select('skill_level')
+          .select('skill_level, age')
           .eq('id', currentUser.id)
           .single();
         if (profileData) setProfile(profileData);
@@ -122,7 +141,11 @@ export default function ExerciseScreen() {
           .eq('user_id', currentUser.id)
           .eq('exercise_name', name as string)
           .order('created_at', { ascending: false });
-        if (data) setSessions(data.map((row: any) => row.log_data));
+
+        if (data) {
+          setSessions(data.map((row: any) => row.log_data));
+          setSessionIds(data.map((row: any) => row.id));
+        }
 
         if (logType === 'strength') {
           const { data: settings } = await supabase
@@ -134,18 +157,14 @@ export default function ExerciseScreen() {
 
           if (settings?.starting_weight) {
             setStartingWeight(settings.starting_weight);
+            setStartingWeightInput(String(settings.starting_weight));
             buildWeightRecommendation(settings.starting_weight, data ?? [], profileData?.skill_level);
           } else {
             setShowWeightPrompt(true);
           }
         } else if (logType !== 'recovery') {
           const rec = getSkillRecommendation(logType as string, profileData?.skill_level);
-          if (rec) {
-            buildNonWeightRecommendation(logType as string, data ?? [], profileData?.skill_level, rec);
-          } else {
-            // Advanced user with no default rec
-            buildNonWeightRecommendation(logType as string, data ?? [], profileData?.skill_level, '');
-          }
+          buildNonWeightRecommendation(logType as string, data ?? [], profileData?.skill_level, rec ?? '');
         }
       }
 
@@ -179,10 +198,18 @@ export default function ExerciseScreen() {
     const lastReps = parseInt(lastSession.reps) || 8;
 
     if (last3.length >= 3) {
+      const weights = last3.map((s: any) => parseFloat(s.weight) || 0);
+      // weights[0] is most recent, weights[2] is oldest of the 3
+      const isConsistentOrIncreasing = weights[0] >= weights[1] && weights[1] >= weights[2];
       const allSameWeight = last3.every((s: any) => parseFloat(s.weight) === lastWeight);
-      if (allSameWeight) {
+
+      if (allSameWeight && isConsistentOrIncreasing) {
         const newWeight = lastWeight + 2.5;
         setRecommendation(`💪 Ready to progress! Try ${newWeight}kg • ${lastSets} sets • ${lastReps} reps`);
+        return;
+      }
+      if (!isConsistentOrIncreasing) {
+        setRecommendation(`Let's rebuild consistency: ${lastWeight}kg • ${lastSets} sets • ${lastReps} reps`);
         return;
       }
     }
@@ -205,7 +232,6 @@ export default function ExerciseScreen() {
       if (baseRec) {
         setRecommendation(`🎯 Target: ${baseRec}`);
       } else {
-        // Advanced with some history
         const last = sessionData[0] as any;
         if (lt === 'plank') {
           setRecommendation(`Keep going! ${last.sets} sets • ${last.time} sec each`);
@@ -222,7 +248,35 @@ export default function ExerciseScreen() {
       return;
     }
 
-    // 3+ sessions — show progression for everyone
+    // Check consistency over last 3 sessions
+    const last3 = sessionData.slice(0, 3);
+    const getMetric = (s: any) => {
+      if (lt === 'plank') return parseInt(s.time) || 0;
+      if (lt === 'reps-sets' || lt === 'skipping') return parseInt(s.reps) || 0;
+      if (lt === 'footwork' || lt === 'sets-duration') return parseInt(s.sets) || 0;
+      if (lt === 'duration-distance') return parseInt(s.duration) || 0;
+      return 0;
+    };
+    const metrics = last3.map(getMetric);
+    const isConsistentOrIncreasing = metrics[0] >= metrics[1] && metrics[1] >= metrics[2];
+
+    if (!isConsistentOrIncreasing) {
+      const last = sessionData[0] as any;
+      if (lt === 'plank') {
+        setRecommendation(`Let's rebuild consistency: ${last.sets} sets • ${last.time} sec each`);
+      } else if (lt === 'reps-sets') {
+        setRecommendation(`Let's rebuild consistency: ${last.sets} sets • ${last.reps} reps`);
+      } else if (lt === 'footwork' || lt === 'sets-duration') {
+        setRecommendation(`Let's rebuild consistency: ${last.sets} sets`);
+      } else if (lt === 'skipping') {
+        setRecommendation(`Let's rebuild consistency: ${last.sets} sets • ${last.reps} reps`);
+      } else if (lt === 'duration-distance') {
+        setRecommendation(`Let's rebuild consistency: ${last.duration} min`);
+      }
+      return;
+    }
+
+    // Progress!
     if (lt === 'plank') {
       const last = sessionData[0] as any;
       const lastTime = parseInt(last.time) || 20;
@@ -261,64 +315,92 @@ export default function ExerciseScreen() {
     });
     setStartingWeight(w);
     setShowWeightPrompt(false);
-    buildWeightRecommendation(w, sessions as any[], profile?.skill_level);
+    buildWeightRecommendation(w, sessions, profile?.skill_level);
   };
 
   const saveSession = async () => {
-    const date = new Date().toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric'
-    });
+  const date = new Date().toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric'
+  });
 
-    let newSession: any;
+  let newSession: any;
 
-    if (category === 'strength') {
-      if (logType === 'plank') {
-        newSession = { date, sets, time: reps };
-      } else if (logType === 'reps-sets') {
-        newSession = { date, sets, reps };
-      } else {
-        newSession = { date, weight, sets, reps };
-      }
-      setWeight(''); setSets(''); setReps('');
-    } else if (category === 'footwork') {
-      newSession = { date, sets: fwSets, duration: fwDuration };
-      setFwSets(''); setFwDuration('');
-    } else if (category === 'recovery') {
-      newSession = { date, duration: recoveryDuration, feeling };
-      setRecoveryDuration(''); setFeeling(-1);
-    } else if (logType === 'skipping') {
-      newSession = { date, sets: fwSets, reps, time: duration };
-      setFwSets(''); setReps(''); setDuration('');
-    } else if (logType === 'sets-duration') {
-      newSession = { date, sets: fwSets, duration: fwDuration };
-      setFwSets(''); setFwDuration('');
+  if (category === 'strength') {
+    if (logType === 'plank') {
+      newSession = { date, sets, time: reps };
+    } else if (logType === 'reps-sets') {
+      newSession = { date, sets, reps };
     } else {
-      newSession = { date, duration, distance };
-      setDuration(''); setDistance('');
+      newSession = { date, weight, sets, reps };
     }
+    setWeight(''); setSets(''); setReps('');
+  } else if (category === 'footwork') {
+    newSession = { date, sets: fwSets, duration: fwDuration };
+    setFwSets(''); setFwDuration('');
+  } else if (category === 'recovery') {
+    newSession = { date, duration: recoveryDuration, feeling };
+    setRecoveryDuration(''); setFeeling(-1);
+  } else if (logType === 'skipping') {
+    newSession = { date, sets: fwSets, reps, time: duration };
+    setFwSets(''); setReps(''); setDuration('');
+  } else if (logType === 'sets-duration') {
+    newSession = { date, sets: fwSets, duration: fwDuration };
+    setFwSets(''); setFwDuration('');
+  } else {
+    newSession = { date, duration, distance };
+    setDuration(''); setDistance('');
+  }
 
-    if (user) {
-      await supabase.from('session_logs').insert({
-        user_id: user.id,
-        exercise_name: name as string,
-        category: category as string,
-        log_data: newSession,
-      });
-      const updated = [newSession, ...sessions];
-      setSessions(updated);
+  const hasAnyValue = Object.entries(newSession).some(([key, v]) =>
+    key !== 'date' && v !== '' && v !== undefined && v !== -1
+  );
+  if (!hasAnyValue) {
+    showAlert('Nothing to save', 'Please log at least one value before saving.');
+    return;
+  }
+
+  if (user) {
+    const { data: inserted } = await supabase.from('session_logs').insert({
+      user_id: user.id,
+      exercise_name: name as string,
+      category: category as string,
+      log_data: newSession,
+    }).select();
+
+    const updatedSessions = [newSession, ...sessions];
+    const updatedIds = inserted && inserted[0] ? [inserted[0].id, ...sessionIds] : sessionIds;
+    setSessions(updatedSessions);
+    setSessionIds(updatedIds);
+
+    if (logType === 'strength' && startingWeight) {
+      buildWeightRecommendation(startingWeight, updatedSessions, profile?.skill_level);
+    } else if (logType !== 'recovery' && logType) {
+      const rec = getSkillRecommendation(logType as string, profile?.skill_level);
+      buildNonWeightRecommendation(logType as string, updatedSessions, profile?.skill_level, rec ?? '');
+    }
+  } else {
+    showAlert('Not signed in', 'Sign in to save your progress across devices.');
+  }
+};
+
+  const deleteSession = async (index: number) => {
+    showConfirm('Delete Session', 'Are you sure you want to delete this session?', async () => {
+      const idToDelete = sessionIds[index];
+      if (idToDelete) {
+        await supabase.from('session_logs').delete().eq('id', idToDelete);
+      }
+      const updatedSessions = sessions.filter((_, i) => i !== index);
+      const updatedIds = sessionIds.filter((_, i) => i !== index);
+      setSessions(updatedSessions);
+      setSessionIds(updatedIds);
+
       if (logType === 'strength' && startingWeight) {
-        buildWeightRecommendation(startingWeight, [newSession, ...sessions] as any[], profile?.skill_level);
+        buildWeightRecommendation(startingWeight, updatedSessions, profile?.skill_level);
+      } else if (logType !== 'recovery' && logType) {
+        const rec = getSkillRecommendation(logType as string, profile?.skill_level);
+        buildNonWeightRecommendation(logType as string, updatedSessions, profile?.skill_level, rec ?? '');
       }
-    } else {
-      Alert.alert(
-        'Not signed in',
-        'Sign in to save your progress across devices.',
-        [
-          { text: 'Sign In', onPress: () => router.push('/login' as any) },
-          { text: 'Cancel', style: 'cancel' }
-        ]
-      );
-    }
+    });
   };
 
   const saveNote = async (text: string) => {
@@ -369,7 +451,12 @@ export default function ExerciseScreen() {
     }
     return sessions.map((session: any, i) => (
       <View key={i} style={styles.historyRow}>
-        <Text style={styles.historyDate}>{session.date}</Text>
+        <View style={styles.historyTop}>
+          <Text style={styles.historyDate}>{session.date}</Text>
+          <TouchableOpacity onPress={() => deleteSession(i)}>
+            <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />
+          </TouchableOpacity>
+        </View>
 
         {category === 'strength' && (
           <View style={styles.historyFields}>
@@ -517,7 +604,7 @@ export default function ExerciseScreen() {
           <View>
             {user && showWeightPrompt && logType === 'strength' && (
               <View style={styles.weightPromptCard}>
-                <Text style={styles.weightPromptTitle}>🏋️ Set Your Starting Weight</Text>
+                <Text style={styles.weightPromptTitle}>🏋️ {startingWeight ? 'Update' : 'Set'} Your Starting Weight</Text>
                 <Text style={styles.weightPromptDesc}>
                   Enter the weight you can comfortably lift for this exercise. We'll use this to build your personalized recommendations.
                 </Text>
@@ -539,24 +626,31 @@ export default function ExerciseScreen() {
             )}
 
             {user && recommendation !== '' && category !== 'recovery' && (
-  <View style={styles.recommendationCard}>
-    <Text style={styles.recommendationLabel}>💡 TODAY'S TARGET</Text>
-    <Text style={styles.recommendationText}>{recommendation}</Text>
-    {!profile?.age && (
-      <TouchableOpacity onPress={() => {
-        if (typeof window !== 'undefined') {
-          window.location.href = '/onboarding';
-        } else {
-          router.push('/onboarding' as any);
-        }
-      }}>
-        <Text style={styles.onboardingHint}>
-          Complete your profile for personalized recommendations →
-        </Text>
-      </TouchableOpacity>
-    )}
-  </View>
-)}
+              <View style={styles.recommendationCard}>
+                <View style={styles.recommendationHeader}>
+                  <Text style={styles.recommendationLabel}>💡 TODAY'S TARGET</Text>
+                  {logType === 'strength' && startingWeight && !showWeightPrompt && (
+                    <TouchableOpacity onPress={() => setShowWeightPrompt(true)}>
+                      <Text style={styles.editLink}>Edit weight</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <Text style={styles.recommendationText}>{recommendation}</Text>
+                {!profile?.age && (
+                  <TouchableOpacity onPress={() => {
+                    if (typeof window !== 'undefined') {
+                      window.location.href = '/onboarding';
+                    } else {
+                      router.push('/onboarding' as any);
+                    }
+                  }}>
+                    <Text style={styles.onboardingHint}>
+                      Complete your profile for personalized recommendations →
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
 
             {!user ? (
               <View style={styles.sessionCard}>
@@ -687,7 +781,7 @@ const styles = StyleSheet.create({
   tabTextActive: { color: '#FFFFFF' },
   content: { paddingBottom: 40 },
   video: { width: '100%', height: 300, borderRadius: 12, marginBottom: 16, backgroundColor: Colors.backgroundCard },
-  image: { width: '100%', height: 340, borderRadius: 12, marginBottom: 16 },
+  image: { width: '100%', height: 320, borderRadius: 12, marginBottom: 16 },
   description: { fontSize: 14, color: Colors.textSecondary, lineHeight: 22, marginBottom: 20 },
   stepsCard: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, gap: 14 },
   stepRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
@@ -732,8 +826,21 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: Colors.accent,
   },
-  recommendationLabel: { fontSize: 10, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1, marginBottom: 4 },
+  recommendationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  recommendationLabel: { fontSize: 10, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1 },
+  editLink: { fontSize: 11, color: Colors.accent, fontWeight: '600', textDecorationLine: 'underline' },
   recommendationText: { fontSize: 16, fontWeight: 'bold', color: '#FFFFFF' },
+  onboardingHint: {
+    fontSize: 11,
+    color: Colors.accent,
+    marginTop: 8,
+    fontWeight: '600',
+  },
   sessionCard: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, marginBottom: 16 },
   sectionLabel: { color: Colors.accent, fontWeight: 'bold', fontSize: 12, letterSpacing: 1, marginBottom: 14 },
   inputRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
@@ -766,7 +873,13 @@ const styles = StyleSheet.create({
   addButton: { backgroundColor: Colors.accent, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
   addButtonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
   historyRow: { borderBottomWidth: 1, borderBottomColor: Colors.border, paddingVertical: 10 },
-  historyDate: { color: Colors.textSecondary, fontSize: 12, marginBottom: 6 },
+  historyTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  historyDate: { color: Colors.textSecondary, fontSize: 12 },
   historyFields: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   historyField: {
     color: Colors.textPrimary,
@@ -793,10 +906,4 @@ const styles = StyleSheet.create({
     minHeight: 80,
     textAlignVertical: 'top',
   },
-  onboardingHint: {
-  fontSize: 11,
-  color: Colors.accent,
-  marginTop: 8,
-  fontWeight: '600',
-},
 });
