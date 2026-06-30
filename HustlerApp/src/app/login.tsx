@@ -16,11 +16,31 @@ export default function LoginScreen() {
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
     if (error) {
+      setLoading(false);
       Alert.alert('Login failed', error.message);
+      return;
+    }
+
+    // Check if user has completed onboarding
+    if (data.user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('age')
+        .eq('id', data.user.id)
+        .single();
+
+      setLoading(false);
+
+      if (!profile?.age) {
+        router.replace('/onboarding' as any);
+      } else {
+        router.replace('/(tabs)' as any);
+      }
     } else {
+      setLoading(false);
       router.replace('/(tabs)' as any);
     }
   };
@@ -75,10 +95,6 @@ export default function LoginScreen() {
         <TouchableOpacity onPress={() => router.push('/signup' as any)}>
           <Text style={styles.linkText}>Don't have an account? <Text style={styles.link}>Sign Up</Text></Text>
         </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => router.push('/categories' as any)}>
-          <Text style={styles.skipText}>Skip for now</Text>
-        </TouchableOpacity>
       </View>
     </LinearGradient>
   );
@@ -91,28 +107,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logo: {
-    width: 160,
-    height: 60,
-    marginBottom: 32,
-  },
-  card: {
-    backgroundColor: Colors.backgroundCard,
-    borderRadius: 16,
-    padding: 24,
-    width: '100%',
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
-    marginBottom: 24,
-  },
-  label: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    marginBottom: 8,
-  },
+  logo: { width: 160, height: 60, marginBottom: 32 },
+  card: { backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 24, width: '100%' },
+  title: { fontSize: 22, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 24 },
+  label: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8 },
   input: {
     backgroundColor: Colors.backgroundTop,
     borderRadius: 10,
@@ -124,12 +122,12 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   forgotText: {
-  color: Colors.textSecondary,
-  fontSize: 13,
-  textAlign: 'left',
-  textDecorationLine: 'underline',
-  marginBottom: 16,
-},
+    color: Colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'left',
+    textDecorationLine: 'underline',
+    marginBottom: 16,
+  },
   button: {
     backgroundColor: Colors.accent,
     borderRadius: 30,
@@ -137,28 +135,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
-  linkText: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  link: {
-    color: Colors.accent,
-    fontWeight: 'bold',
-  },
-  skipText: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    textAlign: 'center',
-    textDecorationLine: 'underline',
-  },
+  buttonDisabled: { opacity: 0.6 },
+  buttonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
+  linkText: { color: Colors.textSecondary, fontSize: 13, textAlign: 'center' },
+  link: { color: Colors.accent, fontWeight: 'bold' },
 });

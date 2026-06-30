@@ -539,11 +539,24 @@ export default function ExerciseScreen() {
             )}
 
             {user && recommendation !== '' && category !== 'recovery' && (
-              <View style={styles.recommendationCard}>
-                <Text style={styles.recommendationLabel}>💡 TODAY'S TARGET</Text>
-                <Text style={styles.recommendationText}>{recommendation}</Text>
-              </View>
-            )}
+  <View style={styles.recommendationCard}>
+    <Text style={styles.recommendationLabel}>💡 TODAY'S TARGET</Text>
+    <Text style={styles.recommendationText}>{recommendation}</Text>
+    {!profile?.age && (
+      <TouchableOpacity onPress={() => {
+        if (typeof window !== 'undefined') {
+          window.location.href = '/onboarding';
+        } else {
+          router.push('/onboarding' as any);
+        }
+      }}>
+        <Text style={styles.onboardingHint}>
+          Complete your profile for personalized recommendations →
+        </Text>
+      </TouchableOpacity>
+    )}
+  </View>
+)}
 
             {!user ? (
               <View style={styles.sessionCard}>
@@ -674,7 +687,7 @@ const styles = StyleSheet.create({
   tabTextActive: { color: '#FFFFFF' },
   content: { paddingBottom: 40 },
   video: { width: '100%', height: 300, borderRadius: 12, marginBottom: 16, backgroundColor: Colors.backgroundCard },
-  image: { width: '100%', height: 320, borderRadius: 12, marginBottom: 16 },
+  image: { width: '100%', height: 340, borderRadius: 12, marginBottom: 16 },
   description: { fontSize: 14, color: Colors.textSecondary, lineHeight: 22, marginBottom: 20 },
   stepsCard: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, gap: 14 },
   stepRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
@@ -780,4 +793,10 @@ const styles = StyleSheet.create({
     minHeight: 80,
     textAlignVertical: 'top',
   },
+  onboardingHint: {
+  fontSize: 11,
+  color: Colors.accent,
+  marginTop: 8,
+  fontWeight: '600',
+},
 });

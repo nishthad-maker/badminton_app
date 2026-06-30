@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Colors } from '@/constants/theme';
@@ -19,6 +20,7 @@ export default function HomeScreen() {
   const [recoveryCount, setRecoveryCount] = useState(0);
   const [weekDonedays, setWeekDoneDays] = useState<string[]>([]);
   const [recentSessions, setRecentSessions] = useState<any[]>([]);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   const today = new Date();
   const todayDayIndex = today.getDay() === 0 ? 6 : today.getDay() - 1;
@@ -52,29 +54,27 @@ export default function HomeScreen() {
       const user = session?.user;
       if (!user) return;
 
-      // Get name
       const metaName = user.user_metadata?.full_name;
       if (metaName) {
         setUserName(metaName.split(' ')[0]);
-      } else {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('full_name, weekly_goal')
-          .eq('id', user.id)
-          .single();
-        if (profile?.full_name) setUserName(profile.full_name.split(' ')[0]);
-        if (profile?.weekly_goal) setWeeklyGoal(profile.weekly_goal);
       }
 
-      // Get weekly goal from profile
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('weekly_goal')
+        .select('full_name, weekly_goal, age')
         .eq('id', user.id)
         .single();
+
+      if (profileData?.full_name && !metaName) {
+        setUserName(profileData.full_name.split(' ')[0]);
+      }
       if (profileData?.weekly_goal) setWeeklyGoal(profileData.weekly_goal);
 
-      // Get all sessions
+      // Check if onboarding is needed
+      if (!profileData?.age) {
+        setNeedsOnboarding(true);
+      }
+
       const { data } = await supabase
         .from('session_logs')
         .select('*')
@@ -86,7 +86,6 @@ export default function HomeScreen() {
       setTotalSessions(countUniqueSessions(data));
       setRecentSessions(data.slice(0, 3));
 
-      // Streak
       const dates = [...new Set(data.map(s =>
         new Date(s.created_at).toDateString()
       ))];
@@ -102,21 +101,18 @@ export default function HomeScreen() {
       }
       setStreak(currentStreak);
 
-      // This week
       const startOfWeek = new Date(today);
       startOfWeek.setDate(today.getDate() - todayDayIndex);
       startOfWeek.setHours(0, 0, 0, 0);
       const thisWeekData = data.filter(s => new Date(s.created_at) >= startOfWeek);
       setWeekSessions(countUniqueSessions(thisWeekData));
 
-      // Week days done
       const daysDone = thisWeekData.map(s => {
         const d = new Date(s.created_at).getDay();
         return d === 0 ? 6 : d - 1;
       });
       setWeekDoneDays([...new Set(daysDone)].map(String));
 
-      // Category counts
       const strengthData = data.filter(s => s.category === 'strength');
       const footworkData = data.filter(s => s.category === 'footwork');
       const enduranceData = data.filter(s => s.category === 'endurance');
@@ -128,6 +124,14 @@ export default function HomeScreen() {
 
     } catch (e) {
       console.log('Error loading home data', e);
+    }
+  };
+
+  const goToOnboarding = () => {
+    if (typeof window !== 'undefined') {
+      window.location.href = '/onboarding';
+    } else {
+      router.push('/onboarding' as any);
     }
   };
 
@@ -173,6 +177,22 @@ export default function HomeScreen() {
             <Text style={styles.streakLabel}>day streak</Text>
           </View>
         </View>
+
+        {/* Onboarding Banner */}
+        {needsOnboarding && (
+          <TouchableOpacity style={styles.onboardingBanner} onPress={goToOnboarding}>
+            <View style={styles.onboardingIconWrap}>
+              <MaterialCommunityIcons name="badminton" size={26} color={Colors.accent} />
+            </View>
+            <View style={styles.onboardingTextWrap}>
+              <Text style={styles.onboardingTitle}>Complete Your Profile</Text>
+              <Text style={styles.onboardingDesc}>
+                Get personalized recommendations built just for you, your goals, and your skill level.
+              </Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={24} color="#1a1a1a" />
+          </TouchableOpacity>
+        )}
 
         {/* Weekly Calendar */}
         <View style={styles.calendarCard}>
@@ -295,6 +315,40 @@ const styles = StyleSheet.create({
   streakEmoji: { fontSize: 20 },
   streakCount: { fontSize: 20, fontWeight: 'bold', color: Colors.textPrimary },
   streakLabel: { fontSize: 10, color: Colors.textSecondary },
+  onboardingBanner: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  onboardingIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: Colors.accentMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  onboardingTextWrap: { flex: 1 },
+  onboardingTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#1a1a1a',
+    marginBottom: 3,
+  },
+  onboardingDesc: {
+    fontSize: 12,
+    color: '#555555',
+    lineHeight: 17,
+  },
   calendarCard: {
     backgroundColor: Colors.backgroundCard,
     borderRadius: 16,

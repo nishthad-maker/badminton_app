@@ -21,6 +21,7 @@ export default function Layout() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="exercise-list" options={{ headerShown: false }} />
       <Stack.Screen name="exercise" options={{ title: '' }} />
+      <Stack.Screen name="onboarding" options={{ headerShown: false }} />
     </Stack>
   );
 }

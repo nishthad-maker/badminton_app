@@ -5,36 +5,45 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Colors } from '@/constants/theme';
 
-const SKILL_LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
-const EVENTS = ['Singles', 'Doubles', 'Mixed Doubles', 'All Events'];
-const GOALS = ['Get Fitter', 'Get Stronger', 'Improve Speed', 'All Round'];
-const GENDERS = ['Male', 'Female', 'Prefer not to say'];
-const WEEKLY_GOALS = ['3', '4', '5', '6'];
+const showAlert = (title: string, message: string) => {
+  if (typeof window !== 'undefined') {
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+};
 
 export default function SignUpScreen() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [age, setAge] = useState('');
-  const [skillLevel, setSkillLevel] = useState('');
-  const [event, setEvent] = useState('');
-  const [trainingGoal, setTrainingGoal] = useState('');
-  const [gender, setGender] = useState('');
-  const [weeklyGoal, setWeeklyGoal] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSignUp = async () => {
-    if (!fullName || !email || !password || !confirmPassword || !age || !skillLevel || !event || !trainingGoal || !gender || !weeklyGoal) {
-      Alert.alert('Missing fields', 'Please fill in all fields.');
+    if (!fullName || !email || !password || !confirmPassword) {
+      showAlert('Missing fields', 'Please fill in all fields.');
       return;
     }
-    if (password !== confirmPassword) {
-      Alert.alert('Password mismatch', 'Passwords do not match.');
+
+    if (fullName.trim().length < 2) {
+      showAlert('Invalid name', 'Please enter your full name.');
       return;
     }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      showAlert('Invalid email', 'Please enter a valid email address.');
+      return;
+    }
+
     if (password.length < 6) {
-      Alert.alert('Weak password', 'Password must be at least 6 characters.');
+      showAlert('Weak password', 'Password must be at least 6 characters.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      showAlert('Password mismatch', 'Passwords do not match.');
       return;
     }
 
@@ -47,7 +56,7 @@ export default function SignUpScreen() {
 
     if (error) {
       setLoading(false);
-      Alert.alert('Sign up failed', error.message);
+      showAlert('Sign up failed', error.message);
       return;
     }
 
@@ -57,44 +66,13 @@ export default function SignUpScreen() {
         .upsert({
           id: data.user.id,
           full_name: fullName,
-          age: parseInt(age),
-          skill_level: skillLevel,
-          event: event,
-          training_goal: trainingGoal,
-          gender: gender,
-          weekly_goal: parseInt(weeklyGoal),
         });
-
       if (profileError) console.log('Profile error:', profileError);
     }
 
     setLoading(false);
     router.replace('/(tabs)' as any);
   };
-
-  const renderSelector = (
-    label: string,
-    options: string[],
-    selected: string,
-    onSelect: (v: string) => void
-  ) => (
-    <View style={styles.selectorGroup}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={styles.optionsRow}>
-        {options.map((option) => (
-          <TouchableOpacity
-            key={option}
-            style={[styles.optionBtn, selected === option && styles.optionBtnActive]}
-            onPress={() => onSelect(option)}
-          >
-            <Text style={[styles.optionBtnText, selected === option && styles.optionBtnTextActive]}>
-              {option}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
-  );
 
   return (
     <LinearGradient
@@ -114,9 +92,6 @@ export default function SignUpScreen() {
 
         <View style={styles.card}>
           <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>
-            Help us personalize your training experience 🏸
-          </Text>
 
           <Text style={styles.label}>Full Name</Text>
           <TextInput
@@ -159,22 +134,6 @@ export default function SignUpScreen() {
             secureTextEntry
           />
 
-          <Text style={styles.label}>Age</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your age"
-            placeholderTextColor={Colors.textSecondary}
-            value={age}
-            onChangeText={(t) => setAge(t.replace(/[^0-9]/g, ''))}
-            keyboardType="numeric"
-          />
-
-          {renderSelector('Gender', GENDERS, gender, setGender)}
-          {renderSelector('Skill Level', SKILL_LEVELS, skillLevel, setSkillLevel)}
-          {renderSelector('Event', EVENTS, event, setEvent)}
-          {renderSelector('Training Goal', GOALS, trainingGoal, setTrainingGoal)}
-          {renderSelector('Weekly Training Goal (days)', WEEKLY_GOALS, weeklyGoal, setWeeklyGoal)}
-
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleSignUp}
@@ -201,8 +160,7 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 1, padding: 24, alignItems: 'center', justifyContent: 'center' },
   logo: { width: 160, height: 60, marginBottom: 32 },
   card: { backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 24, width: '100%' },
-  title: { fontSize: 22, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 8 },
-  subtitle: { fontSize: 13, color: Colors.textSecondary, marginBottom: 24, lineHeight: 20 },
+  title: { fontSize: 22, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 24 },
   label: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8 },
   input: {
     backgroundColor: Colors.backgroundTop,
@@ -214,19 +172,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  selectorGroup: { marginBottom: 16 },
-  optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  optionBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Colors.backgroundTop,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  optionBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  optionBtnText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
-  optionBtnTextActive: { color: '#FFFFFF' },
   button: {
     backgroundColor: Colors.accent,
     borderRadius: 30,
