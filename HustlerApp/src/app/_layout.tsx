@@ -19,7 +19,7 @@ export default function Layout() {
       <Stack.Screen name="signup" options={{ headerShown: false }} />
       <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="workouts" options={{ headerShown: false }} />
+      <Stack.Screen name="exercise-list" options={{ headerShown: false }} />
       <Stack.Screen name="exercise" options={{ title: '' }} />
     </Stack>
   );

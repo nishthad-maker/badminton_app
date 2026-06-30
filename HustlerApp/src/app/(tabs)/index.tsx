@@ -1,6 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Colors } from '@/constants/theme';
@@ -8,18 +7,17 @@ import { supabase } from '../../lib/supabase';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-const navigate = (category: string) => {
-  if (typeof window !== 'undefined' && window.location) {
-    window.location.href = `/workouts?category=${category}`;
-  } else {
-    router.push({ pathname: '/workouts', params: { category } });
-  }
-};
-
 export default function HomeScreen() {
   const [userName, setUserName] = useState('');
   const [streak, setStreak] = useState(0);
-  const [weekSessions, setWeekSessions] = useState<string[]>([]);
+  const [totalSessions, setTotalSessions] = useState(0);
+  const [weekSessions, setWeekSessions] = useState(0);
+  const [weeklyGoal, setWeeklyGoal] = useState(3);
+  const [strengthCount, setStrengthCount] = useState(0);
+  const [footworkCount, setFootworkCount] = useState(0);
+  const [enduranceCount, setEnduranceCount] = useState(0);
+  const [recoveryCount, setRecoveryCount] = useState(0);
+  const [weekDonedays, setWeekDoneDays] = useState<string[]>([]);
   const [recentSessions, setRecentSessions] = useState<any[]>([]);
 
   const today = new Date();
@@ -38,6 +36,12 @@ export default function HomeScreen() {
   };
   const weekDates = getWeekDates();
 
+  const countUniqueSessions = (data: any[]) => {
+    return new Set(
+      data.map(s => `${new Date(s.created_at).toDateString()}_${s.category}`)
+    ).size;
+  };
+
   useEffect(() => {
     loadData();
   }, []);
@@ -48,22 +52,29 @@ export default function HomeScreen() {
       const user = session?.user;
       if (!user) return;
 
+      // Get name
       const metaName = user.user_metadata?.full_name;
       if (metaName) {
         setUserName(metaName.split(' ')[0]);
       } else {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('full_name')
+          .select('full_name, weekly_goal')
           .eq('id', user.id)
           .single();
-        if (profile?.full_name) {
-          setUserName(profile.full_name.split(' ')[0]);
-        } else {
-          setUserName('Athlete');
-        }
+        if (profile?.full_name) setUserName(profile.full_name.split(' ')[0]);
+        if (profile?.weekly_goal) setWeeklyGoal(profile.weekly_goal);
       }
 
+      // Get weekly goal from profile
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('weekly_goal')
+        .eq('id', user.id)
+        .single();
+      if (profileData?.weekly_goal) setWeeklyGoal(profileData.weekly_goal);
+
+      // Get all sessions
       const { data } = await supabase
         .from('session_logs')
         .select('*')
@@ -72,9 +83,10 @@ export default function HomeScreen() {
 
       if (!data) return;
 
+      setTotalSessions(countUniqueSessions(data));
       setRecentSessions(data.slice(0, 3));
 
-      // Calculate streak — consecutive days trained
+      // Streak
       const dates = [...new Set(data.map(s =>
         new Date(s.created_at).toDateString()
       ))];
@@ -90,17 +102,30 @@ export default function HomeScreen() {
       }
       setStreak(currentStreak);
 
-      // Get days worked out this week
+      // This week
       const startOfWeek = new Date(today);
       startOfWeek.setDate(today.getDate() - todayDayIndex);
       startOfWeek.setHours(0, 0, 0, 0);
+      const thisWeekData = data.filter(s => new Date(s.created_at) >= startOfWeek);
+      setWeekSessions(countUniqueSessions(thisWeekData));
 
-      const thisWeek = data.filter(s => new Date(s.created_at) >= startOfWeek);
-      const daysDone = thisWeek.map(s => {
+      // Week days done
+      const daysDone = thisWeekData.map(s => {
         const d = new Date(s.created_at).getDay();
         return d === 0 ? 6 : d - 1;
       });
-      setWeekSessions([...new Set(daysDone)].map(String));
+      setWeekDoneDays([...new Set(daysDone)].map(String));
+
+      // Category counts
+      const strengthData = data.filter(s => s.category === 'strength');
+      const footworkData = data.filter(s => s.category === 'footwork');
+      const enduranceData = data.filter(s => s.category === 'endurance');
+      const recoveryData = data.filter(s => s.category === 'recovery');
+      setStrengthCount(countUniqueSessions(strengthData));
+      setFootworkCount(countUniqueSessions(footworkData));
+      setEnduranceCount(countUniqueSessions(enduranceData));
+      setRecoveryCount(countUniqueSessions(recoveryData));
+
     } catch (e) {
       console.log('Error loading home data', e);
     }
@@ -125,6 +150,9 @@ export default function HomeScreen() {
       default: return 'star';
     }
   };
+
+  const maxCount = Math.max(strengthCount, footworkCount, enduranceCount, recoveryCount, 1);
+  const weekProgress = Math.min(weekSessions / weeklyGoal, 1);
 
   return (
     <LinearGradient
@@ -152,7 +180,7 @@ export default function HomeScreen() {
           <View style={styles.daysRow}>
             {DAYS.map((day, i) => {
               const isToday = i === todayDayIndex;
-              const isDone = weekSessions.includes(String(i));
+              const isDone = weekDonedays.includes(String(i));
               return (
                 <View key={day} style={styles.dayCol}>
                   <Text style={[styles.dayLabel, isToday && styles.dayLabelActive]}>{day}</Text>
@@ -172,57 +200,46 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Workout Categories */}
-        <Text style={styles.sectionTitle}>Start Training</Text>
-        <View style={styles.categoryCards}>
-          <TouchableOpacity
-            style={styles.categoryCard}
-            onPress={() => navigate('strength')}
-          >
-            <View style={[styles.iconBox, { backgroundColor: 'rgba(46,204,113,0.15)' }]}>
-              <MaterialCommunityIcons name="dumbbell" size={22} color={Colors.accent} />
-            </View>
-            <Text style={styles.categoryTitle}>Strength</Text>
-            <Text style={styles.categorySub}>13 exercises</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.categoryCard}
-            onPress={() => navigate('footwork')}
-          >
-            <View style={[styles.iconBox, { backgroundColor: 'rgba(52,152,219,0.15)' }]}>
-              <MaterialCommunityIcons name="badminton" size={22} color="#3498DB" />
-            </View>
-            <Text style={styles.categoryTitle}>Footwork</Text>
-            <Text style={styles.categorySub}>3 drills</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.categoryCard}
-            onPress={() => navigate('endurance')}
-          >
-            <View style={[styles.iconBox, { backgroundColor: 'rgba(230,126,34,0.15)' }]}>
-              <MaterialCommunityIcons name="lightning-bolt" size={22} color="#E67E22" />
-            </View>
-            <Text style={styles.categoryTitle}>Endurance</Text>
-            <Text style={styles.categorySub}>4 workouts</Text>
-          </TouchableOpacity>
+        {/* Weekly Goal */}
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>THIS WEEK'S GOAL</Text>
+          <View style={styles.goalRow}>
+            <Text style={styles.goalText}>{weekSessions} / {weeklyGoal} sessions</Text>
+            <Text style={styles.goalPercent}>{Math.round(weekProgress * 100)}%</Text>
+          </View>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${weekProgress * 100}%` }]} />
+          </View>
+          {weekSessions >= weeklyGoal ? (
+            <Text style={styles.goalAchieved}>🎉 Weekly goal achieved!</Text>
+          ) : (
+            <Text style={styles.goalRemaining}>
+              {weeklyGoal - weekSessions} more session{weeklyGoal - weekSessions !== 1 ? 's' : ''} to reach your goal
+            </Text>
+          )}
         </View>
 
-        {/* Recovery Card */}
-        <TouchableOpacity
-          style={styles.recoveryCard}
-          onPress={() => navigate('recovery')}
-        >
-          <View style={[styles.iconBox, { backgroundColor: 'rgba(155,89,182,0.15)' }]}>
-            <MaterialCommunityIcons name="heart-pulse" size={22} color="#9B59B6" />
-          </View>
-          <View style={styles.recoveryInfo}>
-            <Text style={styles.recoveryTitle}>Recovery</Text>
-            <Text style={styles.recoverySub}>Stretching, Foam Rolling, Breathing</Text>
-          </View>
-          <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
-        </TouchableOpacity>
+        {/* Sessions by Category */}
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>SESSIONS BY CATEGORY</Text>
+          {[
+            { label: 'Strength', count: strengthCount, color: '#2ECC71' },
+            { label: 'Footwork', count: footworkCount, color: '#3498DB' },
+            { label: 'Endurance', count: enduranceCount, color: '#E67E22' },
+            { label: 'Recovery', count: recoveryCount, color: '#9B59B6' },
+          ].map((item) => (
+            <View key={item.label} style={styles.barRow}>
+              <Text style={styles.barLabel}>{item.label}</Text>
+              <View style={styles.barTrack}>
+                <View style={[styles.barFill, {
+                  width: `${(item.count / maxCount) * 100}%`,
+                  backgroundColor: item.color,
+                }]} />
+              </View>
+              <Text style={styles.barCount}>{item.count}</Text>
+            </View>
+          ))}
+        </View>
 
         {/* Recent Activity */}
         <Text style={styles.sectionTitle}>Recent Activity</Text>
@@ -282,7 +299,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.backgroundCard,
     borderRadius: 16,
     padding: 16,
-    marginBottom: 24,
+    marginBottom: 16,
   },
   sectionLabel: {
     fontSize: 11,
@@ -303,65 +320,62 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
-  dayCircleToday: {
-    borderWidth: 2,
-    borderColor: Colors.accent,
-  },
-  dayCircleDone: {
-    backgroundColor: Colors.accent,
-    borderWidth: 0,
-  },
+  dayCircleToday: { borderWidth: 2, borderColor: Colors.accent },
+  dayCircleDone: { backgroundColor: Colors.accent, borderWidth: 0 },
   dayNum: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
   dayNumActive: { color: Colors.accent },
+  card: {
+    backgroundColor: Colors.backgroundCard,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  cardLabel: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: Colors.accent,
+    letterSpacing: 1,
+    marginBottom: 16,
+  },
+  goalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  goalText: { fontSize: 16, fontWeight: 'bold', color: Colors.textPrimary },
+  goalPercent: { fontSize: 16, fontWeight: 'bold', color: Colors.accent },
+  progressTrack: {
+    height: 12,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 6,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: Colors.accent,
+    borderRadius: 6,
+  },
+  goalAchieved: { fontSize: 13, color: Colors.accent, fontWeight: '600' },
+  goalRemaining: { fontSize: 13, color: Colors.textSecondary },
+  barRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  barLabel: { width: 72, fontSize: 13, color: Colors.textSecondary },
+  barTrack: {
+    flex: 1,
+    height: 8,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  barFill: { height: '100%', borderRadius: 4 },
+  barCount: { width: 24, fontSize: 13, color: Colors.textPrimary, fontWeight: '600', textAlign: 'right' },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: Colors.textPrimary,
     marginBottom: 12,
   },
-  categoryCards: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 12,
-  },
-  categoryCard: {
-    flex: 1,
-    backgroundColor: Colors.backgroundCard,
-    borderRadius: 14,
-    padding: 14,
-    alignItems: 'center',
-    gap: 8,
-  },
-  iconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  categoryTitle: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
-    textAlign: 'center',
-  },
-  categorySub: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  recoveryCard: {
-    backgroundColor: Colors.backgroundCard,
-    borderRadius: 14,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 24,
-  },
-  recoveryInfo: { flex: 1 },
-  recoveryTitle: { fontSize: 15, fontWeight: 'bold', color: Colors.textPrimary },
-  recoverySub: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
   activityCard: {
     backgroundColor: Colors.backgroundCard,
     borderRadius: 16,

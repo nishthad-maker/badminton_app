@@ -18,6 +18,12 @@ export default function ProfileScreen() {
     loadProfile();
   }, []);
 
+  const countUniqueSessions = (data: any[]) => {
+    return new Set(
+      data.map(s => `${new Date(s.created_at).toDateString()}_${s.category}`)
+    ).size;
+  };
+
   const loadProfile = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) {
@@ -26,7 +32,6 @@ export default function ProfileScreen() {
     }
     setUser(session.user);
 
-    // Member since
     const joined = new Date(session.user.created_at);
     setMemberSince(joined.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
 
@@ -45,9 +50,9 @@ export default function ProfileScreen() {
 
     if (!data) return;
 
-    setTotalSessions(data.length);
+    setTotalSessions(countUniqueSessions(data));
 
-    // Calculate streak
+    // Streak
     const dates = [...new Set(data.map(s =>
       new Date(s.created_at).toDateString()
     ))];
@@ -63,12 +68,14 @@ export default function ProfileScreen() {
     }
     setStreak(currentStreak);
 
-    // Most trained category
-    const categoryCounts: Record<string, number> = {};
+    // Top category by unique sessions
+    const uniqueByCategory: Record<string, Set<string>> = {};
     data.forEach(s => {
-      categoryCounts[s.category] = (categoryCounts[s.category] || 0) + 1;
+      if (!uniqueByCategory[s.category]) uniqueByCategory[s.category] = new Set();
+      uniqueByCategory[s.category].add(new Date(s.created_at).toDateString());
     });
-    const top = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0];
+    const top = Object.entries(uniqueByCategory)
+      .sort((a, b) => b[1].size - a[1].size)[0];
     if (top) {
       const labels: Record<string, string> = {
         strength: 'Strength 💪',
@@ -82,16 +89,10 @@ export default function ProfileScreen() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    router.replace('/' as any);
-  };
-
-  const getCategoryColor = (cat: string) => {
-    switch (cat) {
-      case 'strength': return '#2ECC71';
-      case 'footwork': return '#3498DB';
-      case 'endurance': return '#E67E22';
-      case 'recovery': return '#9B59B6';
-      default: return Colors.accent;
+    if (typeof window !== 'undefined') {
+      window.location.href = '/';
+    } else {
+      router.replace('/' as any);
     }
   };
 
@@ -102,7 +103,6 @@ export default function ProfileScreen() {
     >
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
-        {/* Avatar */}
         <View style={styles.avatarContainer}>
           <View style={styles.avatar}>
             <MaterialCommunityIcons name="account" size={48} color={Colors.accent} />
@@ -116,7 +116,6 @@ export default function ProfileScreen() {
           ) : null}
         </View>
 
-        {/* Stats */}
         <Text style={styles.sectionTitle}>Your Stats</Text>
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
@@ -131,12 +130,11 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statEmoji}>📅</Text>
-            <Text style={styles.statNumber}>{Math.ceil(totalSessions / 3) || 0}</Text>
+            <Text style={styles.statNumber}>{Math.ceil(totalSessions / 4) || 0}</Text>
             <Text style={styles.statLabel}>Weeks Active</Text>
           </View>
         </View>
 
-        {/* Top Category */}
         {topCategory ? (
           <View style={styles.topCategoryCard}>
             <Text style={styles.sectionLabel}>MOST TRAINED</Text>
@@ -145,23 +143,8 @@ export default function ProfileScreen() {
           </View>
         ) : null}
 
-        {/* Options */}
         <Text style={styles.sectionTitle}>Account</Text>
         <View style={styles.optionsCard}>
-          <TouchableOpacity
-            style={styles.option}
-            onPress={() => {
-              if (typeof window !== 'undefined') {
-                window.location.href = '/workouts?category=strength';
-              } else {
-                router.push({ pathname: '/workouts', params: { category: 'strength' } });
-              }
-            }}
-          >
-            <MaterialCommunityIcons name="dumbbell" size={20} color={Colors.accent} />
-            <Text style={styles.optionText}>Go to Workouts</Text>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
-          </TouchableOpacity>
 
           <View style={styles.divider} />
 
@@ -180,10 +163,7 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { padding: 24, paddingTop: 60, paddingBottom: 120 },
-  avatarContainer: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
+  avatarContainer: { alignItems: 'center', marginBottom: 32 },
   avatar: {
     width: 90,
     height: 90,
@@ -193,46 +173,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 16,
   },
-  name: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
-    marginBottom: 4,
-  },
-  email: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 10,
-  },
-  memberBadge: {
-    backgroundColor: Colors.accentMuted,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-  },
-  memberText: {
-    fontSize: 12,
-    color: Colors.accent,
-    fontWeight: '600',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
-    marginBottom: 12,
-  },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: Colors.accent,
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
-  },
+  name: { fontSize: 22, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 4 },
+  email: { fontSize: 14, color: Colors.textSecondary, marginBottom: 10 },
+  memberBadge: { backgroundColor: Colors.accentMuted, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 },
+  memberText: { fontSize: 12, color: Colors.accent, fontWeight: '600' },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 12 },
+  sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1, marginBottom: 8 },
+  statsGrid: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   statCard: {
     flex: 1,
     backgroundColor: Colors.backgroundCard,
@@ -242,52 +189,13 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   statEmoji: { fontSize: 22 },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
-  },
-  statLabel: {
-    fontSize: 10,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  topCategoryCard: {
-    backgroundColor: Colors.backgroundCard,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 24,
-  },
-  topCategoryText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
-    marginBottom: 4,
-  },
-  topCategoryDesc: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
-  optionsCard: {
-    backgroundColor: Colors.backgroundCard,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  option: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    gap: 12,
-  },
-  optionText: {
-    flex: 1,
-    fontSize: 15,
-    color: Colors.textPrimary,
-    fontWeight: '500',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border,
-    marginHorizontal: 16,
-  },
+  statNumber: { fontSize: 24, fontWeight: 'bold', color: Colors.textPrimary },
+  statLabel: { fontSize: 10, color: Colors.textSecondary, textAlign: 'center' },
+  topCategoryCard: { backgroundColor: Colors.backgroundCard, borderRadius: 14, padding: 16, marginBottom: 24 },
+  topCategoryText: { fontSize: 20, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 4 },
+  topCategoryDesc: { fontSize: 13, color: Colors.textSecondary },
+  optionsCard: { backgroundColor: Colors.backgroundCard, borderRadius: 12, overflow: 'hidden' },
+  option: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
+  optionText: { flex: 1, fontSize: 15, color: Colors.textPrimary, fontWeight: '500' },
+  divider: { height: 1, backgroundColor: Colors.border, marginHorizontal: 16 },
 });

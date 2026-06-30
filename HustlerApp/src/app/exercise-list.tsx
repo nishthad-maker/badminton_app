@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import workouts from '../data/workouts';
@@ -20,12 +20,22 @@ const FILTERS: Record<string, string[]> = {
   recovery: [],
 };
 
-export default function WorkoutsScreen() {
+export default function ExerciseListScreen() {
   const { category } = useLocalSearchParams();
-  const categoryKey = category as string;
-  const allExercises = (workouts as any)[categoryKey] || [];
-  const filters = FILTERS[categoryKey] || [];
+  const [categoryKey, setCategoryKey] = useState('');
+  const [allExercises, setAllExercises] = useState<any[]>([]);
   const [activeFilter, setActiveFilter] = useState('All');
+
+  useEffect(() => {
+    if (category) {
+      const key = Array.isArray(category) ? category[0] : category;
+      setCategoryKey(key);
+      setAllExercises((workouts as any)[key] || []);
+      setActiveFilter('All');
+    }
+  }, [category]);
+
+  const filters = FILTERS[categoryKey] || [];
 
   const filtered = activeFilter === 'All'
     ? allExercises
@@ -33,7 +43,7 @@ export default function WorkoutsScreen() {
 
   const goBack = () => {
     if (typeof window !== 'undefined') {
-      window.location.href = '/';
+      window.history.back();
     } else {
       router.back();
     }
@@ -44,12 +54,15 @@ export default function WorkoutsScreen() {
       colors={[Colors.backgroundTop, Colors.backgroundBottom]}
       style={styles.container}
     >
-      <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-        <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
-      </TouchableOpacity>
+      {/* Title Row with back arrow */}
+      <View style={styles.titleRow}>
+        <TouchableOpacity onPress={goBack}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
+        </TouchableOpacity>
+        <Text style={styles.title}>{CATEGORY_TITLES[categoryKey] ?? ''}</Text>
+      </View>
 
-      <Text style={styles.title}>{CATEGORY_TITLES[categoryKey]}</Text>
-
+      {/* Filter Pills */}
       {filters.length > 0 && (
         <ScrollView
           horizontal
@@ -71,6 +84,7 @@ export default function WorkoutsScreen() {
         </ScrollView>
       )}
 
+      {/* Exercise List */}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
         {filtered.map((exercise: any, index: number) => (
           <TouchableOpacity
@@ -90,14 +104,19 @@ export default function WorkoutsScreen() {
               }
             })}
           >
-            <Text style={styles.cardTitle}>{exercise.name}</Text>
-            <Text style={styles.cardDesc}>{exercise.description}</Text>
-            <View style={styles.tagRow}>
-              {exercise.muscles.map((muscle: string, i: number) => (
-                <View key={i} style={styles.tag}>
-                  <Text style={styles.tagText}>{muscle}</Text>
+            <View style={styles.cardContent}>
+              <View style={styles.cardText}>
+                <Text style={styles.cardTitle}>{exercise.name}</Text>
+                <Text style={styles.cardDesc}>{exercise.description}</Text>
+                <View style={styles.tagRow}>
+                  {exercise.muscles.map((muscle: string, i: number) => (
+                    <View key={i} style={styles.tag}>
+                      <Text style={styles.tagText}>{muscle}</Text>
+                    </View>
+                  ))}
                 </View>
-              ))}
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={22} color={Colors.textSecondary} />
             </View>
           </TouchableOpacity>
         ))}
@@ -107,9 +126,14 @@ export default function WorkoutsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, paddingTop: 16 },
-  backBtn: { marginBottom: 8, alignSelf: 'flex-start' },
-  title: { fontSize: 26, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 16 },
+  container: { flex: 1, padding: 24, paddingTop: 60 },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  title: { fontSize: 26, fontWeight: 'bold', color: Colors.textPrimary },
   filterRow: { flexGrow: 0, marginBottom: 16, minHeight: 44 },
   filterContent: { gap: 8, paddingRight: 8 },
   listContent: { paddingBottom: 24 },
@@ -118,6 +142,11 @@ const styles = StyleSheet.create({
   pillText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' },
   pillTextActive: { color: '#FFFFFF' },
   card: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, marginBottom: 14 },
+  cardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardText: { flex: 1 },
   cardTitle: { fontSize: 16, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 6 },
   cardDesc: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, gap: 6 },

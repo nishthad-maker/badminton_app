@@ -168,7 +168,7 @@ const workouts = {
     {
       name: 'Plank',
       subcategory: 'core',
-      logType: 'strength',
+      logType: 'plank',
       description: 'Core stays tight so you can stay strong and balanced on court. Do it in core training or warm-ups to build stability.',
       muscles: ['Core', 'Shoulders', 'Glutes'],
       videoUrl: null,
@@ -201,7 +201,7 @@ const workouts = {
     {
       name: 'Leg Raise',
       subcategory: 'core',
-      logType: 'strength',
+      logType: 'reps-sets',
       description: 'Lower abs get stronger for better control when you move, jump, and recover. Do it in core workouts when you want to build stomach strength.',
       muscles: ['Lower Abs', 'Core', 'Hip Flexors'],
       videoUrl: `${VIDEOS}/Strength/leg-raise.mov`,
@@ -289,7 +289,7 @@ const workouts = {
     {
       name: 'Skipping Rope',
       subcategory: 'endurance',
-      logType: 'sets-duration',
+      logType: 'skipping',
       description: 'Hold the rope, stay on your toes, and bounce lightly as the rope spins. Do this before training or on cardio days to improve stamina and keep your feet light.',
       muscles: ['Calves', 'Ankles', 'Core', 'Shoulders'],
       videoUrl: `${VIDEOS}/Endurance/skipping-rope.mov`,
