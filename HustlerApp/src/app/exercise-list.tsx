@@ -168,7 +168,7 @@ export default function ExerciseListScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, paddingTop: 16 },
+  container: { flex: 1, padding: 24, paddingTop: 35 },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',

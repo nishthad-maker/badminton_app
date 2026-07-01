@@ -1,9 +1,10 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { Audio } from 'expo-av';
 import { supabase } from '../lib/supabase';
 import { Colors } from '@/constants/theme';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -16,7 +17,17 @@ type SkippingSession = { date: string; sets: string; reps: string; time: string;
 type RecoverySession = { date: string; duration: string; feeling: number; };
 type Session = StrengthSession | FootworkSession | EnduranceSession | SetsDurationSession | SkippingSession | RecoverySession;
 
+type VoiceNote = {
+  id: string;
+  cloudinary_url: string;
+  duration_seconds: number;
+  created_at: string;
+};
+
 const FEELING_LABELS = ['😞 Bad', '😐 OK', '😄 Great'];
+
+const CLOUDINARY_CLOUD = 'pyqqwrax';
+const CLOUDINARY_PRESET = 'hustler_videos';
 
 const showAlert = (title: string, message: string) => {
   if (typeof window !== 'undefined') {
@@ -119,11 +130,31 @@ export default function ExerciseScreen() {
   const [isCountdown, setIsCountdown] = useState(false);
   const timerRef = useRef<any>(null);
 
+  // Voice notes state
+  const [notesSubTab, setNotesSubTab] = useState<'text' | 'voice'>('text');
+  const [voiceNotes, setVoiceNotes] = useState<VoiceNote[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [playbackProgress, setPlaybackProgress] = useState(0);
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recordingTimerRef = useRef<any>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const playbackIntervalRef = useRef<any>(null);
+
   const noteKey = `note_${name}`;
 
   useEffect(() => {
     loadData();
-    return () => clearInterval(timerRef.current);
+    return () => {
+      clearInterval(timerRef.current);
+      clearInterval(recordingTimerRef.current);
+      clearInterval(playbackIntervalRef.current);
+      if (soundRef.current) {
+        soundRef.current.unloadAsync();
+      }
+    };
   }, []);
 
   const startTimer = () => {
@@ -167,6 +198,239 @@ export default function ExerciseScreen() {
     return `${m}:${s}`;
   };
 
+  // ── Voice Notes Functions ──
+
+  const startRecording = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        showAlert('Permission needed', 'Please allow microphone access to record voice notes.');
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+
+      recordingRef.current = recording;
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.log('Recording error:', err);
+      showAlert('Error', 'Could not start recording. Please try again.');
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!recordingRef.current) return;
+
+    clearInterval(recordingTimerRef.current);
+    setIsRecording(false);
+
+    try {
+      await recordingRef.current.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+      });
+
+      const uri = recordingRef.current.getURI();
+      recordingRef.current = null;
+
+      if (!uri) {
+        showAlert('Error', 'Recording failed — no audio captured.');
+        return;
+      }
+
+      const finalDuration = recordingDuration;
+      setRecordingDuration(0);
+
+      // Upload to Cloudinary
+      await uploadVoiceNote(uri, finalDuration);
+    } catch (err) {
+      console.log('Stop recording error:', err);
+      showAlert('Error', 'Could not save recording.');
+    }
+  };
+
+  const cancelRecording = async () => {
+    if (!recordingRef.current) return;
+
+    clearInterval(recordingTimerRef.current);
+    setIsRecording(false);
+    setRecordingDuration(0);
+
+    try {
+      await recordingRef.current.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+      });
+      recordingRef.current = null;
+    } catch (err) {
+      console.log('Cancel recording error:', err);
+    }
+  };
+
+  const uploadVoiceNote = async (uri: string, durationSecs: number) => {
+    if (!user) return;
+    setIsUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', {
+        uri,
+        type: 'audio/m4a',
+        name: 'voice_note.m4a',
+      } as any);
+      formData.append('upload_preset', CLOUDINARY_PRESET);
+      formData.append('resource_type', 'video'); // Cloudinary uses 'video' for audio too
+      formData.append('folder', 'hustler_voice_notes');
+
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/video/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      const data = await response.json();
+
+      if (!data.secure_url) {
+        throw new Error('Upload failed');
+      }
+
+      // Save to Supabase
+      const { data: inserted, error } = await supabase
+        .from('voice_notes')
+        .insert({
+          user_id: user.id,
+          exercise_name: name as string,
+          cloudinary_url: data.secure_url,
+          duration_seconds: durationSecs,
+        })
+        .select();
+
+      if (error) throw error;
+
+      if (inserted && inserted[0]) {
+        const updated = [inserted[0] as VoiceNote, ...voiceNotes];
+
+        // Cap at 10 — delete oldest if over limit
+        if (updated.length > 10) {
+          const toDelete = updated.slice(10);
+          for (const old of toDelete) {
+            await supabase.from('voice_notes').delete().eq('id', old.id);
+          }
+          setVoiceNotes(updated.slice(0, 10));
+        } else {
+          setVoiceNotes(updated);
+        }
+      }
+
+      showAlert('Saved!', 'Voice note recorded successfully.');
+    } catch (err) {
+      console.log('Upload error:', err);
+      showAlert('Upload failed', 'Could not upload voice note. Please try again.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const playVoiceNote = async (note: VoiceNote) => {
+    try {
+      // Stop any current playback
+      if (soundRef.current) {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+        clearInterval(playbackIntervalRef.current);
+        soundRef.current = null;
+      }
+
+      // If tapping the same note that's playing, just stop
+      if (playingId === note.id) {
+        setPlayingId(null);
+        setPlaybackProgress(0);
+        return;
+      }
+
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: note.cloudinary_url },
+        { shouldPlay: true }
+      );
+
+      soundRef.current = sound;
+      setPlayingId(note.id);
+      setPlaybackProgress(0);
+
+      // Track progress
+      playbackIntervalRef.current = setInterval(async () => {
+        if (soundRef.current) {
+          const status = await soundRef.current.getStatusAsync();
+          if (status.isLoaded) {
+            if (status.didJustFinish) {
+              clearInterval(playbackIntervalRef.current);
+              setPlayingId(null);
+              setPlaybackProgress(0);
+              await soundRef.current.unloadAsync();
+              soundRef.current = null;
+            } else if (status.durationMillis) {
+              setPlaybackProgress(status.positionMillis / status.durationMillis);
+            }
+          }
+        }
+      }, 200);
+
+      // Also handle completion via onPlaybackStatusUpdate
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          clearInterval(playbackIntervalRef.current);
+          setPlayingId(null);
+          setPlaybackProgress(0);
+          sound.unloadAsync();
+          soundRef.current = null;
+        }
+      });
+    } catch (err) {
+      console.log('Playback error:', err);
+      showAlert('Error', 'Could not play voice note.');
+    }
+  };
+
+  const deleteVoiceNote = (note: VoiceNote) => {
+    showConfirm('Delete Voice Note', 'Are you sure you want to delete this recording?', async () => {
+      // Stop if currently playing
+      if (playingId === note.id && soundRef.current) {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+        clearInterval(playbackIntervalRef.current);
+        soundRef.current = null;
+        setPlayingId(null);
+        setPlaybackProgress(0);
+      }
+
+      await supabase.from('voice_notes').delete().eq('id', note.id);
+      setVoiceNotes(voiceNotes.filter(v => v.id !== note.id));
+    });
+  };
+
+  const formatVoiceDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+  };
+
+  // ── End Voice Notes Functions ──
+
   const loadData = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -192,6 +456,17 @@ export default function ExerciseScreen() {
           setSessions(data.map((row: any) => row.log_data));
           setSessionIds(data.map((row: any) => row.id));
         }
+
+        // Load voice notes
+        const { data: vnData } = await supabase
+          .from('voice_notes')
+          .select('*')
+          .eq('user_id', currentUser.id)
+          .eq('exercise_name', name as string)
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (vnData) setVoiceNotes(vnData as VoiceNote[]);
 
         if (logType === 'strength') {
           const { data: settings } = await supabase
@@ -552,6 +827,94 @@ export default function ExerciseScreen() {
     return null;
   };
 
+  const renderVoiceNotesSection = () => {
+    if (!user) {
+      return (
+        <View style={styles.voiceEmptyState}>
+          <MaterialCommunityIcons name="microphone-off" size={32} color={Colors.textSecondary} />
+          <Text style={styles.emptyText}>Sign in to record voice notes.</Text>
+        </View>
+      );
+    }
+
+    return (
+      <View>
+        {/* Recording UI */}
+        {isUploading ? (
+          <View style={styles.recordingCard}>
+            <ActivityIndicator size="large" color={Colors.accent} />
+            <Text style={styles.uploadingText}>Saving voice note...</Text>
+          </View>
+        ) : isRecording ? (
+          <View style={styles.recordingCard}>
+            <View style={styles.recordingPulse}>
+              <MaterialCommunityIcons name="microphone" size={28} color="#FFFFFF" />
+            </View>
+            <Text style={styles.recordingTime}>{formatTime(recordingDuration)}</Text>
+            <Text style={styles.recordingLabel}>Recording...</Text>
+            <View style={styles.recordingActions}>
+              <TouchableOpacity style={styles.cancelRecordBtn} onPress={cancelRecording}>
+                <MaterialCommunityIcons name="close" size={20} color="#FF6B6B" />
+                <Text style={styles.cancelRecordText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.stopRecordBtn} onPress={stopRecording}>
+                <MaterialCommunityIcons name="stop" size={20} color="#FFFFFF" />
+                <Text style={styles.stopRecordText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity style={styles.startRecordBtn} onPress={startRecording}>
+            <MaterialCommunityIcons name="microphone" size={22} color="#FFFFFF" />
+            <Text style={styles.startRecordText}>Record Voice Note</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Voice notes list */}
+        {voiceNotes.length === 0 ? (
+          <Text style={[styles.emptyText, { marginTop: 16 }]}>
+            No voice notes yet. Tap the button above to record one.
+          </Text>
+        ) : (
+          <View style={{ marginTop: 16 }}>
+            {voiceNotes.map((note) => (
+              <View key={note.id} style={styles.voiceNoteRow}>
+                <TouchableOpacity
+                  style={styles.playBtn}
+                  onPress={() => playVoiceNote(note)}
+                >
+                  <MaterialCommunityIcons
+                    name={playingId === note.id ? 'pause' : 'play'}
+                    size={20}
+                    color="#FFFFFF"
+                  />
+                </TouchableOpacity>
+
+                <View style={styles.voiceNoteInfo}>
+                  <Text style={styles.voiceNoteDate}>{formatVoiceDate(note.created_at)}</Text>
+                  {playingId === note.id ? (
+                    <View style={styles.progressBarBg}>
+                      <View style={[styles.progressBarFill, { width: `${playbackProgress * 100}%` }]} />
+                    </View>
+                  ) : (
+                    <Text style={styles.voiceNoteDuration}>{formatTime(note.duration_seconds)}</Text>
+                  )}
+                </View>
+
+                <TouchableOpacity onPress={() => deleteVoiceNote(note)}>
+                  <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />
+                </TouchableOpacity>
+              </View>
+            ))}
+            <Text style={styles.voiceNoteCount}>
+              {voiceNotes.length}/10 voice notes
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   return (
     <LinearGradient
       colors={[Colors.backgroundTop, Colors.backgroundBottom]}
@@ -756,19 +1119,54 @@ export default function ExerciseScreen() {
               {renderSessionHistory()}
             </View>
 
+            {/* GENERAL NOTES — with Text / Voice sub-tabs */}
             <View style={styles.sessionCard}>
               <Text style={styles.sectionLabel}>GENERAL NOTES</Text>
-              <View style={styles.notesContainer}>
-                <TextInput
-                  style={styles.notesInput}
-                  placeholder="Add any extra things to remember..."
-                  placeholderTextColor={Colors.textSecondary}
-                  value={generalNote}
-                  onChangeText={saveNote}
-                  multiline
-                  numberOfLines={4}
-                />
+
+              <View style={styles.subTabRow}>
+                <TouchableOpacity
+                  style={[styles.subTab, notesSubTab === 'text' && styles.subTabActive]}
+                  onPress={() => setNotesSubTab('text')}
+                >
+                  <MaterialCommunityIcons
+                    name="pencil-outline"
+                    size={14}
+                    color={notesSubTab === 'text' ? '#FFFFFF' : Colors.textSecondary}
+                  />
+                  <Text style={[styles.subTabText, notesSubTab === 'text' && styles.subTabTextActive]}>
+                    Text
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.subTab, notesSubTab === 'voice' && styles.subTabActive]}
+                  onPress={() => setNotesSubTab('voice')}
+                >
+                  <MaterialCommunityIcons
+                    name="microphone-outline"
+                    size={14}
+                    color={notesSubTab === 'voice' ? '#FFFFFF' : Colors.textSecondary}
+                  />
+                  <Text style={[styles.subTabText, notesSubTab === 'voice' && styles.subTabTextActive]}>
+                    Voice
+                  </Text>
+                </TouchableOpacity>
               </View>
+
+              {notesSubTab === 'text' ? (
+                <View style={styles.notesContainer}>
+                  <TextInput
+                    style={styles.notesInput}
+                    placeholder="Add any extra things to remember..."
+                    placeholderTextColor={Colors.textSecondary}
+                    value={generalNote}
+                    onChangeText={saveNote}
+                    multiline
+                    numberOfLines={4}
+                  />
+                </View>
+              ) : (
+                renderVoiceNotesSection()
+              )}
             </View>
           </View>
         )}
@@ -1020,5 +1418,171 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     minHeight: 80,
     textAlignVertical: 'top',
+  },
+
+  // Sub-tabs (Text / Voice)
+  subTabRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  subTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  subTabActive: {
+    backgroundColor: Colors.accent,
+    borderColor: Colors.accent,
+  },
+  subTabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  subTabTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // Voice notes
+  voiceEmptyState: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    gap: 8,
+  },
+  recordingCard: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    gap: 12,
+  },
+  recordingPulse: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#E74C3C',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#E74C3C',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  recordingTime: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
+    letterSpacing: 2,
+  },
+  recordingLabel: {
+    fontSize: 13,
+    color: '#E74C3C',
+    fontWeight: '600',
+  },
+  recordingActions: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 8,
+  },
+  cancelRecordBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,107,107,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,107,107,0.3)',
+  },
+  cancelRecordText: {
+    color: '#FF6B6B',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  stopRecordBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: Colors.accent,
+  },
+  stopRecordText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  uploadingText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    marginTop: 8,
+  },
+  startRecordBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: Colors.accent,
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  startRecordText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  voiceNoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  playBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceNoteInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  voiceNoteDate: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+  },
+  voiceNoteDuration: {
+    color: Colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  progressBarBg: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 2,
+    backgroundColor: Colors.accent,
+  },
+  voiceNoteCount: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    textAlign: 'right',
+    marginTop: 8,
   },
 });

@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Modal, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -7,6 +7,36 @@ import { Colors } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const EVENT_TYPES = [
+  { key: 'tournament', label: 'Tournament', icon: 'trophy', color: '#E74C3C' },
+  { key: 'training', label: 'Training', icon: 'dumbbell', color: '#2ECC71' },
+  { key: 'rest', label: 'Rest Day', icon: 'bed', color: '#3498DB' },
+  { key: 'custom', label: 'Custom', icon: 'star', color: '#9B59B6' },
+];
+
+const getEventColor = (type: string) => {
+  return EVENT_TYPES.find(t => t.key === type)?.color ?? '#9B59B6';
+};
+
+const showAlert = (title: string, message: string) => {
+  if (typeof window !== 'undefined') {
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+};
+
+type CalendarEvent = {
+  id: string;
+  title: string;
+  event_type: string;
+  event_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  location: string | null;
+  notes: string | null;
+};
 
 export default function HomeScreen() {
   const [userName, setUserName] = useState('');
@@ -21,22 +51,41 @@ export default function HomeScreen() {
   const [weekDonedays, setWeekDoneDays] = useState<string[]>([]);
   const [recentSessions, setRecentSessions] = useState<any[]>([]);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [user, setUser] = useState<any>(null);
+
+  // Calendar events state
+  const [weekEvents, setWeekEvents] = useState<CalendarEvent[]>([]);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickAddDate, setQuickAddDate] = useState('');
+  const [quickAddTitle, setQuickAddTitle] = useState('');
+  const [quickAddType, setQuickAddType] = useState('training');
 
   const today = new Date();
   const todayDayIndex = today.getDay() === 0 ? 6 : today.getDay() - 1;
 
   const getWeekDates = () => {
-    const dates = [];
+    const dates: { date: number; full: string }[] = [];
     const monday = new Date(today);
     monday.setDate(today.getDate() - todayDayIndex);
     for (let i = 0; i < 7; i++) {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
-      dates.push(d.getDate());
+      dates.push({
+        date: d.getDate(),
+        full: d.toISOString().split('T')[0],
+      });
     }
     return dates;
   };
   const weekDates = getWeekDates();
+
+  const getEventsForDate = (dateStr: string) => weekEvents.filter(e => e.event_date === dateStr);
+
+  const getDotsForDate = (dateStr: string) => {
+    const dayEvents = getEventsForDate(dateStr);
+    const uniqueTypes = [...new Set(dayEvents.map(e => e.event_type))];
+    return uniqueTypes.slice(0, 3);
+  };
 
   const countUniqueSessions = (data: any[]) => {
     return new Set(
@@ -51,10 +100,11 @@ export default function HomeScreen() {
   const loadData = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) return;
+      const currentUser = session?.user;
+      if (!currentUser) return;
+      setUser(currentUser);
 
-      const metaName = user.user_metadata?.full_name;
+      const metaName = currentUser.user_metadata?.full_name;
       if (metaName) {
         setUserName(metaName.split(' ')[0]);
       }
@@ -62,7 +112,7 @@ export default function HomeScreen() {
       const { data: profileData } = await supabase
         .from('profiles')
         .select('full_name, weekly_goal, age')
-        .eq('id', user.id)
+        .eq('id', currentUser.id)
         .single();
 
       if (profileData?.full_name && !metaName) {
@@ -70,7 +120,6 @@ export default function HomeScreen() {
       }
       if (profileData?.weekly_goal) setWeeklyGoal(profileData.weekly_goal);
 
-      // Check if onboarding is needed
       if (!profileData?.age) {
         setNeedsOnboarding(true);
       }
@@ -78,7 +127,7 @@ export default function HomeScreen() {
       const { data } = await supabase
         .from('session_logs')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', currentUser.id)
         .order('created_at', { ascending: false });
 
       if (!data) return;
@@ -122,6 +171,18 @@ export default function HomeScreen() {
       setEnduranceCount(countUniqueSessions(enduranceData));
       setRecoveryCount(countUniqueSessions(recoveryData));
 
+      // Load week's calendar events
+      const weekStart = weekDates[0].full;
+      const weekEnd = weekDates[6].full;
+      const { data: eventsData } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .gte('event_date', weekStart)
+        .lte('event_date', weekEnd);
+
+      if (eventsData) setWeekEvents(eventsData);
+
     } catch (e) {
       console.log('Error loading home data', e);
     }
@@ -133,6 +194,59 @@ export default function HomeScreen() {
     } else {
       router.push('/onboarding' as any);
     }
+  };
+
+  const goToCalendar = () => {
+    if (typeof window !== 'undefined') {
+      window.location.href = '/calendar';
+    } else {
+      router.push('/calendar' as any);
+    }
+  };
+
+  const openQuickAdd = (dateStr: string) => {
+    setQuickAddDate(dateStr);
+    setQuickAddTitle('');
+    setQuickAddType('training');
+    setShowQuickAdd(true);
+  };
+
+  const saveQuickEvent = async () => {
+    if (!quickAddTitle.trim()) {
+      showAlert('Missing title', 'Please enter a title for this event.');
+      return;
+    }
+    if (!user) return;
+
+    try {
+      const { error } = await supabase.from('calendar_events').insert({
+        user_id: user.id,
+        title: quickAddTitle.trim(),
+        event_type: quickAddType,
+        event_date: quickAddDate,
+      });
+      if (error) throw error;
+
+      setShowQuickAdd(false);
+      // Reload events
+      const weekStart = weekDates[0].full;
+      const weekEnd = weekDates[6].full;
+      const { data: eventsData } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('event_date', weekStart)
+        .lte('event_date', weekEnd);
+      if (eventsData) setWeekEvents(eventsData);
+    } catch (e) {
+      console.log('Quick add error:', e);
+      showAlert('Error', 'Could not save event.');
+    }
+  };
+
+  const formatQuickAddDate = () => {
+    const d = new Date(quickAddDate + 'T00:00:00');
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
   const getCategoryColor = (category: string) => {
@@ -194,15 +308,29 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Weekly Calendar */}
+        {/* Weekly Calendar — now tappable with event dots */}
         <View style={styles.calendarCard}>
-          <Text style={styles.sectionLabel}>THIS WEEK</Text>
+          <View style={styles.calendarHeader}>
+            <Text style={styles.sectionLabel}>THIS WEEK</Text>
+            <TouchableOpacity onPress={goToCalendar} style={styles.fullCalBtn}>
+              <MaterialCommunityIcons name="calendar-month" size={16} color={Colors.accent} />
+              <Text style={styles.fullCalText}>Full Calendar</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.daysRow}>
             {DAYS.map((day, i) => {
               const isToday = i === todayDayIndex;
               const isDone = weekDonedays.includes(String(i));
+              const dateInfo = weekDates[i];
+              const dots = getDotsForDate(dateInfo.full);
+
               return (
-                <View key={day} style={styles.dayCol}>
+                <TouchableOpacity
+                  key={day}
+                  style={styles.dayCol}
+                  onPress={() => openQuickAdd(dateInfo.full)}
+                  activeOpacity={0.7}
+                >
                   <Text style={[styles.dayLabel, isToday && styles.dayLabelActive]}>{day}</Text>
                   <View style={[
                     styles.dayCircle,
@@ -211,13 +339,49 @@ export default function HomeScreen() {
                   ]}>
                     {isDone
                       ? <MaterialCommunityIcons name="check" size={14} color="#fff" />
-                      : <Text style={[styles.dayNum, isToday && styles.dayNumActive]}>{weekDates[i]}</Text>
+                      : <Text style={[styles.dayNum, isToday && styles.dayNumActive]}>{dateInfo.date}</Text>
                     }
                   </View>
-                </View>
+                  {/* Event dots below the circle */}
+                  <View style={styles.eventDotsRow}>
+                    {dots.map((type, di) => (
+                      <View
+                        key={di}
+                        style={[styles.eventDot, { backgroundColor: getEventColor(type) }]}
+                      />
+                    ))}
+                  </View>
+                </TouchableOpacity>
               );
             })}
           </View>
+
+          {/* Today's events preview */}
+          {(() => {
+            const todayStr = weekDates[todayDayIndex].full;
+            const todayEvents = getEventsForDate(todayStr);
+            if (todayEvents.length === 0) return null;
+            return (
+              <View style={styles.todayEventsSection}>
+                <View style={styles.todayEventsDivider} />
+                <Text style={styles.todayEventsLabel}>TODAY</Text>
+                {todayEvents.slice(0, 2).map(event => (
+                  <View key={event.id} style={styles.todayEventRow}>
+                    <View style={[styles.todayEventDot, { backgroundColor: getEventColor(event.event_type) }]} />
+                    <Text style={styles.todayEventTitle} numberOfLines={1}>{event.title}</Text>
+                    {event.start_time ? (
+                      <Text style={styles.todayEventTime}>{event.start_time}</Text>
+                    ) : null}
+                  </View>
+                ))}
+                {todayEvents.length > 2 && (
+                  <TouchableOpacity onPress={goToCalendar}>
+                    <Text style={styles.todayEventsMore}>+{todayEvents.length - 2} more</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            );
+          })()}
         </View>
 
         {/* Weekly Goal */}
@@ -291,6 +455,69 @@ export default function HomeScreen() {
         </View>
 
       </ScrollView>
+
+      {/* Quick Add Modal */}
+      <Modal visible={showQuickAdd} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Quick Add</Text>
+              <TouchableOpacity onPress={() => setShowQuickAdd(false)}>
+                <MaterialCommunityIcons name="close" size={24} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalDate}>{quickAddDate ? formatQuickAddDate() : ''}</Text>
+
+            <Text style={styles.formLabel}>Title *</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="e.g. Leg Day, Tournament"
+              placeholderTextColor={Colors.textSecondary}
+              value={quickAddTitle}
+              onChangeText={setQuickAddTitle}
+              autoFocus
+            />
+
+            <Text style={styles.formLabel}>Type</Text>
+            <View style={styles.typeRow}>
+              {EVENT_TYPES.map(t => (
+                <TouchableOpacity
+                  key={t.key}
+                  style={[
+                    styles.typePill,
+                    quickAddType === t.key && { backgroundColor: t.color, borderColor: t.color },
+                  ]}
+                  onPress={() => setQuickAddType(t.key)}
+                >
+                  <MaterialCommunityIcons
+                    name={t.icon as any}
+                    size={14}
+                    color={quickAddType === t.key ? '#FFFFFF' : Colors.textSecondary}
+                  />
+                  <Text style={[
+                    styles.typePillText,
+                    quickAddType === t.key && styles.typePillTextActive,
+                  ]}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity style={styles.saveBtn} onPress={saveQuickEvent}>
+              <Text style={styles.saveBtnText}>Add Event</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.fullDetailsBtn} onPress={() => {
+              setShowQuickAdd(false);
+              goToCalendar();
+            }}>
+              <Text style={styles.fullDetailsBtnText}>Add with full details →</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -355,15 +582,30 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
   },
+  calendarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   sectionLabel: {
     fontSize: 11,
     fontWeight: 'bold',
     color: Colors.accent,
     letterSpacing: 1,
-    marginBottom: 12,
+  },
+  fullCalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  fullCalText: {
+    fontSize: 12,
+    color: Colors.accent,
+    fontWeight: '600',
   },
   daysRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  dayCol: { alignItems: 'center', gap: 6 },
+  dayCol: { alignItems: 'center', gap: 4 },
   dayLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: '600' },
   dayLabelActive: { color: Colors.accent },
   dayCircle: {
@@ -378,6 +620,61 @@ const styles = StyleSheet.create({
   dayCircleDone: { backgroundColor: Colors.accent, borderWidth: 0 },
   dayNum: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
   dayNumActive: { color: Colors.accent },
+  eventDotsRow: {
+    flexDirection: 'row',
+    gap: 3,
+    minHeight: 6,
+  },
+  eventDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+
+  // Today's events preview
+  todayEventsSection: {
+    marginTop: 12,
+  },
+  todayEventsDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 10,
+  },
+  todayEventsLabel: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: Colors.textSecondary,
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  todayEventRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  todayEventDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  todayEventTitle: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.textPrimary,
+    fontWeight: '500',
+  },
+  todayEventTime: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+  },
+  todayEventsMore: {
+    fontSize: 11,
+    color: Colors.accent,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+
   card: {
     backgroundColor: Colors.backgroundCard,
     borderRadius: 16,
@@ -462,4 +759,96 @@ const styles = StyleSheet.create({
   },
   categoryPillText: { fontSize: 11, fontWeight: '600' },
   emptyText: { fontSize: 13, color: Colors.textSecondary, fontStyle: 'italic' },
+
+  // Quick Add Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: Colors.backgroundTop,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
+  },
+  modalDate: {
+    fontSize: 13,
+    color: Colors.accent,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  formLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  formInput: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    color: Colors.textPrimary,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  typeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  typePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  typePillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  typePillTextActive: {
+    color: '#FFFFFF',
+  },
+  saveBtn: {
+    backgroundColor: Colors.accent,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  saveBtnText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  fullDetailsBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  fullDetailsBtnText: {
+    color: Colors.accent,
+    fontWeight: '600',
+    fontSize: 13,
+  },
 });
