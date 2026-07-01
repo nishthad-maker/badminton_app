@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -51,9 +51,7 @@ const getLocalImage = (key: string) => {
 
 const getSkillRecommendation = (logType: string, skillLevel: string) => {
   const level = skillLevel?.toLowerCase() ?? 'beginner';
-
   if (level === 'advanced') return null;
-
   if (logType === 'plank') {
     if (level === 'intermediate') return '3 sets • 45 sec each';
     return '2 sets • 20 sec each';
@@ -94,7 +92,7 @@ export default function ExerciseScreen() {
     p.play();
   });
 
-  const [activeTab, setActiveTab] = useState<'howto' | 'notes'>('howto');
+  const [activeTab, setActiveTab] = useState<'howto' | 'notes' | 'timer'>('howto');
   const [sessions, setSessions] = useState<any[]>([]);
   const [sessionIds, setSessionIds] = useState<string[]>([]);
   const [generalNote, setGeneralNote] = useState('');
@@ -115,11 +113,59 @@ export default function ExerciseScreen() {
   const [recoveryDuration, setRecoveryDuration] = useState('');
   const [feeling, setFeeling] = useState(-1);
 
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [countdownInput, setCountdownInput] = useState('');
+  const [isCountdown, setIsCountdown] = useState(false);
+  const timerRef = useRef<any>(null);
+
   const noteKey = `note_${name}`;
 
   useEffect(() => {
     loadData();
+    return () => clearInterval(timerRef.current);
   }, []);
+
+  const startTimer = () => {
+    if (timerRunning) return;
+    setTimerRunning(true);
+    if (isCountdown && countdownInput) {
+      const target = parseInt(countdownInput);
+      if (timerSeconds === 0) setTimerSeconds(target);
+      timerRef.current = setInterval(() => {
+        setTimerSeconds(prev => {
+          if (prev <= 1) {
+            clearInterval(timerRef.current);
+            setTimerRunning(false);
+            showAlert("Time's up!", 'Your countdown has finished! 🎉');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      timerRef.current = setInterval(() => {
+        setTimerSeconds(prev => prev + 1);
+      }, 1000);
+    }
+  };
+
+  const pauseTimer = () => {
+    clearInterval(timerRef.current);
+    setTimerRunning(false);
+  };
+
+  const resetTimer = () => {
+    clearInterval(timerRef.current);
+    setTimerRunning(false);
+    setTimerSeconds(isCountdown && countdownInput ? parseInt(countdownInput) : 0);
+  };
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
 
   const loadData = async () => {
     try {
@@ -177,7 +223,6 @@ export default function ExerciseScreen() {
 
   const buildWeightRecommendation = (sw: number, sessionData: any[], skillLevel: string) => {
     const level = skillLevel?.toLowerCase() ?? 'beginner';
-
     if (sessionData.length === 0) {
       if (level === 'advanced') {
         setRecommendation("Log your first session and we'll track your progress! 💪");
@@ -199,10 +244,8 @@ export default function ExerciseScreen() {
 
     if (last3.length >= 3) {
       const weights = last3.map((s: any) => parseFloat(s.weight) || 0);
-      // weights[0] is most recent, weights[2] is oldest of the 3
       const isConsistentOrIncreasing = weights[0] >= weights[1] && weights[1] >= weights[2];
       const allSameWeight = last3.every((s: any) => parseFloat(s.weight) === lastWeight);
-
       if (allSameWeight && isConsistentOrIncreasing) {
         const newWeight = lastWeight + 2.5;
         setRecommendation(`💪 Ready to progress! Try ${newWeight}kg • ${lastSets} sets • ${lastReps} reps`);
@@ -218,7 +261,6 @@ export default function ExerciseScreen() {
 
   const buildNonWeightRecommendation = (lt: string, sessionData: any[], skillLevel: string, baseRec: string) => {
     const level = skillLevel?.toLowerCase() ?? 'beginner';
-
     if (sessionData.length === 0) {
       if (level === 'advanced') {
         setRecommendation("Log your first session and we'll track your progress! 💪");
@@ -233,22 +275,15 @@ export default function ExerciseScreen() {
         setRecommendation(`🎯 Target: ${baseRec}`);
       } else {
         const last = sessionData[0] as any;
-        if (lt === 'plank') {
-          setRecommendation(`Keep going! ${last.sets} sets • ${last.time} sec each`);
-        } else if (lt === 'reps-sets') {
-          setRecommendation(`Keep going! ${last.sets} sets • ${last.reps} reps`);
-        } else if (lt === 'footwork' || lt === 'sets-duration') {
-          setRecommendation(`Keep going! ${last.sets} sets`);
-        } else if (lt === 'skipping') {
-          setRecommendation(`Keep going! ${last.sets} sets • ${last.reps} reps`);
-        } else if (lt === 'duration-distance') {
-          setRecommendation(`Keep going! ${last.duration} min`);
-        }
+        if (lt === 'plank') setRecommendation(`Keep going! ${last.sets} sets • ${last.time} sec each`);
+        else if (lt === 'reps-sets') setRecommendation(`Keep going! ${last.sets} sets • ${last.reps} reps`);
+        else if (lt === 'footwork' || lt === 'sets-duration') setRecommendation(`Keep going! ${last.sets} sets`);
+        else if (lt === 'skipping') setRecommendation(`Keep going! ${last.sets} sets • ${last.reps} reps`);
+        else if (lt === 'duration-distance') setRecommendation(`Keep going! ${last.duration} min`);
       }
       return;
     }
 
-    // Check consistency over last 3 sessions
     const last3 = sessionData.slice(0, 3);
     const getMetric = (s: any) => {
       if (lt === 'plank') return parseInt(s.time) || 0;
@@ -262,46 +297,32 @@ export default function ExerciseScreen() {
 
     if (!isConsistentOrIncreasing) {
       const last = sessionData[0] as any;
-      if (lt === 'plank') {
-        setRecommendation(`Let's rebuild consistency: ${last.sets} sets • ${last.time} sec each`);
-      } else if (lt === 'reps-sets') {
-        setRecommendation(`Let's rebuild consistency: ${last.sets} sets • ${last.reps} reps`);
-      } else if (lt === 'footwork' || lt === 'sets-duration') {
-        setRecommendation(`Let's rebuild consistency: ${last.sets} sets`);
-      } else if (lt === 'skipping') {
-        setRecommendation(`Let's rebuild consistency: ${last.sets} sets • ${last.reps} reps`);
-      } else if (lt === 'duration-distance') {
-        setRecommendation(`Let's rebuild consistency: ${last.duration} min`);
-      }
+      if (lt === 'plank') setRecommendation(`Let's rebuild consistency: ${last.sets} sets • ${last.time} sec each`);
+      else if (lt === 'reps-sets') setRecommendation(`Let's rebuild consistency: ${last.sets} sets • ${last.reps} reps`);
+      else if (lt === 'footwork' || lt === 'sets-duration') setRecommendation(`Let's rebuild consistency: ${last.sets} sets`);
+      else if (lt === 'skipping') setRecommendation(`Let's rebuild consistency: ${last.sets} sets • ${last.reps} reps`);
+      else if (lt === 'duration-distance') setRecommendation(`Let's rebuild consistency: ${last.duration} min`);
       return;
     }
 
-    // Progress!
     if (lt === 'plank') {
       const last = sessionData[0] as any;
-      const lastTime = parseInt(last.time) || 20;
-      setRecommendation(`💪 Progress! Try ${last.sets} sets • ${lastTime + 10} sec each`);
+      setRecommendation(`💪 Progress! Try ${last.sets} sets • ${parseInt(last.time) + 10} sec each`);
     } else if (lt === 'reps-sets') {
       const last = sessionData[0] as any;
-      const lastReps = parseInt(last.reps) || 8;
-      setRecommendation(`💪 Progress! Try ${last.sets} sets • ${lastReps + 2} reps`);
+      setRecommendation(`💪 Progress! Try ${last.sets} sets • ${parseInt(last.reps) + 2} reps`);
     } else if (lt === 'footwork') {
       const last = sessionData[0] as any;
-      const lastSets = parseInt(last.sets) || 2;
-      setRecommendation(`💪 Progress! Try ${lastSets + 1} sets`);
+      setRecommendation(`💪 Progress! Try ${parseInt(last.sets) + 1} sets`);
     } else if (lt === 'skipping') {
       const last = sessionData[0] as any;
-      const lastSets = parseInt(last.sets) || 3;
-      const lastReps = parseInt(last.reps) || 25;
-      setRecommendation(`💪 Progress! Try ${lastSets + 1} sets • ${lastReps + 10} reps`);
+      setRecommendation(`💪 Progress! Try ${parseInt(last.sets) + 1} sets • ${parseInt(last.reps) + 10} reps`);
     } else if (lt === 'sets-duration') {
       const last = sessionData[0] as any;
-      const lastSets = parseInt(last.sets) || 2;
-      setRecommendation(`💪 Progress! Try ${lastSets + 1} sets`);
+      setRecommendation(`💪 Progress! Try ${parseInt(last.sets) + 1} sets`);
     } else if (lt === 'duration-distance') {
       const last = sessionData[0] as any;
-      const lastDuration = parseInt(last.duration) || 15;
-      setRecommendation(`💪 Progress! Try ${lastDuration + 5} min`);
+      setRecommendation(`💪 Progress! Try ${parseInt(last.duration) + 5} min`);
     }
   };
 
@@ -319,69 +340,69 @@ export default function ExerciseScreen() {
   };
 
   const saveSession = async () => {
-  const date = new Date().toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric'
-  });
+    const date = new Date().toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric'
+    });
 
-  let newSession: any;
+    let newSession: any;
 
-  if (category === 'strength') {
-    if (logType === 'plank') {
-      newSession = { date, sets, time: reps };
-    } else if (logType === 'reps-sets') {
-      newSession = { date, sets, reps };
+    if (category === 'strength') {
+      if (logType === 'plank') {
+        newSession = { date, sets, time: reps };
+      } else if (logType === 'reps-sets') {
+        newSession = { date, sets, reps };
+      } else {
+        newSession = { date, weight, sets, reps };
+      }
+      setWeight(''); setSets(''); setReps('');
+    } else if (category === 'footwork') {
+      newSession = { date, sets: fwSets, duration: fwDuration };
+      setFwSets(''); setFwDuration('');
+    } else if (category === 'recovery') {
+      newSession = { date, duration: recoveryDuration, feeling };
+      setRecoveryDuration(''); setFeeling(-1);
+    } else if (logType === 'skipping') {
+      newSession = { date, sets: fwSets, reps, time: duration };
+      setFwSets(''); setReps(''); setDuration('');
+    } else if (logType === 'sets-duration') {
+      newSession = { date, sets: fwSets, duration: fwDuration };
+      setFwSets(''); setFwDuration('');
     } else {
-      newSession = { date, weight, sets, reps };
+      newSession = { date, duration, distance };
+      setDuration(''); setDistance('');
     }
-    setWeight(''); setSets(''); setReps('');
-  } else if (category === 'footwork') {
-    newSession = { date, sets: fwSets, duration: fwDuration };
-    setFwSets(''); setFwDuration('');
-  } else if (category === 'recovery') {
-    newSession = { date, duration: recoveryDuration, feeling };
-    setRecoveryDuration(''); setFeeling(-1);
-  } else if (logType === 'skipping') {
-    newSession = { date, sets: fwSets, reps, time: duration };
-    setFwSets(''); setReps(''); setDuration('');
-  } else if (logType === 'sets-duration') {
-    newSession = { date, sets: fwSets, duration: fwDuration };
-    setFwSets(''); setFwDuration('');
-  } else {
-    newSession = { date, duration, distance };
-    setDuration(''); setDistance('');
-  }
 
-  const hasAnyValue = Object.entries(newSession).some(([key, v]) =>
-    key !== 'date' && v !== '' && v !== undefined && v !== -1
-  );
-  if (!hasAnyValue) {
-    showAlert('Nothing to save', 'Please log at least one value before saving.');
-    return;
-  }
-
-  if (user) {
-    const { data: inserted } = await supabase.from('session_logs').insert({
-      user_id: user.id,
-      exercise_name: name as string,
-      category: category as string,
-      log_data: newSession,
-    }).select();
-
-    const updatedSessions = [newSession, ...sessions];
-    const updatedIds = inserted && inserted[0] ? [inserted[0].id, ...sessionIds] : sessionIds;
-    setSessions(updatedSessions);
-    setSessionIds(updatedIds);
-
-    if (logType === 'strength' && startingWeight) {
-      buildWeightRecommendation(startingWeight, updatedSessions, profile?.skill_level);
-    } else if (logType !== 'recovery' && logType) {
-      const rec = getSkillRecommendation(logType as string, profile?.skill_level);
-      buildNonWeightRecommendation(logType as string, updatedSessions, profile?.skill_level, rec ?? '');
+    const hasAnyValue = Object.entries(newSession).some(([key, v]) =>
+      key !== 'date' && v !== '' && v !== undefined && v !== -1
+    );
+    if (!hasAnyValue) {
+      showAlert('Nothing to save', 'Please log at least one value before saving.');
+      return;
     }
-  } else {
-    showAlert('Not signed in', 'Sign in to save your progress across devices.');
-  }
-};
+
+    if (user) {
+      const { data: inserted } = await supabase.from('session_logs').insert({
+        user_id: user.id,
+        exercise_name: name as string,
+        category: category as string,
+        log_data: newSession,
+      }).select();
+
+      const updatedSessions = [newSession, ...sessions];
+      const updatedIds = inserted && inserted[0] ? [inserted[0].id, ...sessionIds] : sessionIds;
+      setSessions(updatedSessions);
+      setSessionIds(updatedIds);
+
+      if (logType === 'strength' && startingWeight) {
+        buildWeightRecommendation(startingWeight, updatedSessions, profile?.skill_level);
+      } else if (logType !== 'recovery' && logType) {
+        const rec = getSkillRecommendation(logType as string, profile?.skill_level);
+        buildNonWeightRecommendation(logType as string, updatedSessions, profile?.skill_level, rec ?? '');
+      }
+    } else {
+      showAlert('Not signed in', 'Sign in to save your progress across devices.');
+    }
+  };
 
   const deleteSession = async (index: number) => {
     showConfirm('Delete Session', 'Are you sure you want to delete this session?', async () => {
@@ -416,8 +437,7 @@ export default function ExerciseScreen() {
       value={value}
       onChangeText={(text) => {
         if (keyboardType === 'numeric') {
-          const cleaned = text.replace(/[^0-9.]/g, '');
-          setValue(cleaned);
+          setValue(text.replace(/[^0-9.]/g, ''));
         } else {
           setValue(text);
         }
@@ -457,7 +477,6 @@ export default function ExerciseScreen() {
             <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />
           </TouchableOpacity>
         </View>
-
         {category === 'strength' && (
           <View style={styles.historyFields}>
             {logType === 'plank' ? (
@@ -479,14 +498,12 @@ export default function ExerciseScreen() {
             )}
           </View>
         )}
-
         {category === 'footwork' && (
           <View style={styles.historyFields}>
             {session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}
             {session.duration ? <Text style={styles.historyField}>⏱ {session.duration} min</Text> : null}
           </View>
         )}
-
         {category === 'endurance' && logType === 'skipping' && (
           <View style={styles.historyFields}>
             {session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}
@@ -494,21 +511,18 @@ export default function ExerciseScreen() {
             {session.time ? <Text style={styles.historyField}>⏱ {session.time} sec</Text> : null}
           </View>
         )}
-
         {category === 'endurance' && logType === 'sets-duration' && (
           <View style={styles.historyFields}>
             {session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}
             {session.duration ? <Text style={styles.historyField}>⏱ {session.duration} min</Text> : null}
           </View>
         )}
-
         {category === 'endurance' && logType === 'duration-distance' && (
           <View style={styles.historyFields}>
             {session.duration ? <Text style={styles.historyField}>⏱ {session.duration} min</Text> : null}
             {session.distance ? <Text style={styles.historyField}>📍 {session.distance}km</Text> : null}
           </View>
         )}
-
         {category === 'recovery' && (
           <View style={styles.historyFields}>
             {session.duration ? <Text style={styles.historyField}>⏱ {session.duration} min</Text> : null}
@@ -576,6 +590,12 @@ export default function ExerciseScreen() {
         >
           <Text style={[styles.tabText, activeTab === 'notes' && styles.tabTextActive]}>Notes</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'timer' && styles.tabActive]}
+          onPress={() => setActiveTab('timer')}
+        >
+          <Text style={[styles.tabText, activeTab === 'timer' && styles.tabTextActive]}>Timer</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -583,6 +603,7 @@ export default function ExerciseScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+        {/* HOW TO TAB */}
         {activeTab === 'howto' && (
           <View>
             {renderMedia()}
@@ -600,6 +621,7 @@ export default function ExerciseScreen() {
           </View>
         )}
 
+        {/* NOTES TAB */}
         {activeTab === 'notes' && (
           <View>
             {user && showWeightPrompt && logType === 'strength' && (
@@ -656,17 +678,13 @@ export default function ExerciseScreen() {
               <View style={styles.sessionCard}>
                 <Text style={styles.sectionLabel}>SESSION LOG</Text>
                 <Text style={styles.emptyText}>Sign in to save and track your progress.</Text>
-                <TouchableOpacity
-                  style={styles.addButton}
-                  onPress={() => router.push('/login' as any)}
-                >
+                <TouchableOpacity style={styles.addButton} onPress={() => router.push('/login' as any)}>
                   <Text style={styles.addButtonText}>Sign In</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <View style={styles.sessionCard}>
                 <Text style={styles.sectionLabel}>LOG SESSION</Text>
-
                 {category === 'strength' && logType !== 'plank' && logType !== 'reps-sets' && (
                   <View>
                     <View style={styles.inputRow}>
@@ -678,28 +696,24 @@ export default function ExerciseScreen() {
                     </View>
                   </View>
                 )}
-
                 {category === 'strength' && logType === 'plank' && (
                   <View style={styles.inputRow}>
                     {renderInput('Sets', sets, setSets, 'numeric')}
                     {renderInput('Time (sec)', reps, setReps, 'numeric')}
                   </View>
                 )}
-
                 {category === 'strength' && logType === 'reps-sets' && (
                   <View style={styles.inputRow}>
                     {renderInput('Sets', sets, setSets, 'numeric')}
                     {renderInput('Reps', reps, setReps, 'numeric')}
                   </View>
                 )}
-
                 {category === 'footwork' && (
                   <View style={styles.inputRow}>
                     {renderInput('Sets', fwSets, setFwSets, 'numeric')}
                     {renderInput('Duration', fwDuration, setFwDuration, 'numeric')}
                   </View>
                 )}
-
                 {category === 'endurance' && logType === 'skipping' && (
                   <View>
                     <View style={styles.inputRow}>
@@ -711,21 +725,18 @@ export default function ExerciseScreen() {
                     </View>
                   </View>
                 )}
-
                 {category === 'endurance' && logType === 'sets-duration' && (
                   <View style={styles.inputRow}>
                     {renderInput('Sets', fwSets, setFwSets, 'numeric')}
                     {renderInput('Duration', fwDuration, setFwDuration, 'numeric')}
                   </View>
                 )}
-
                 {category === 'endurance' && logType === 'duration-distance' && (
                   <View style={styles.inputRow}>
                     {renderInput('Duration', duration, setDuration, 'numeric')}
                     {renderInput('Distance', distance, setDistance, 'numeric')}
                   </View>
                 )}
-
                 {category === 'recovery' && (
                   <View>
                     <View style={styles.inputRow}>
@@ -734,7 +745,6 @@ export default function ExerciseScreen() {
                     {renderFeeling()}
                   </View>
                 )}
-
                 <TouchableOpacity style={styles.addButton} onPress={saveSession}>
                   <Text style={styles.addButtonText}>+ Save Session</Text>
                 </TouchableOpacity>
@@ -762,6 +772,56 @@ export default function ExerciseScreen() {
             </View>
           </View>
         )}
+
+        {/* TIMER TAB */}
+        {activeTab === 'timer' && (
+          <View style={styles.timerCard}>
+            <Text style={styles.timerDisplay}>{formatTime(timerSeconds)}</Text>
+            <View style={styles.timerBtnRow}>
+              <TouchableOpacity
+                style={[styles.timerBtn, timerRunning && styles.timerBtnPause]}
+                onPress={timerRunning ? pauseTimer : startTimer}
+              >
+                <MaterialCommunityIcons name={timerRunning ? 'pause' : 'play'} size={20} color="#FFFFFF" />
+                <Text style={styles.timerBtnText}>{timerRunning ? 'Pause' : 'Start'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.timerResetBtn} onPress={resetTimer}>
+                <MaterialCommunityIcons name="refresh" size={20} color={Colors.textSecondary} />
+                <Text style={styles.timerResetText}>Reset</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.timerModeRow}>
+              <TouchableOpacity
+                style={[styles.modePill, !isCountdown && styles.modePillActive]}
+                onPress={() => { setIsCountdown(false); resetTimer(); }}
+              >
+                <Text style={[styles.modePillText, !isCountdown && styles.modePillTextActive]}>Stopwatch</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modePill, isCountdown && styles.modePillActive]}
+                onPress={() => { setIsCountdown(true); resetTimer(); }}
+              >
+                <Text style={[styles.modePillText, isCountdown && styles.modePillTextActive]}>Countdown</Text>
+              </TouchableOpacity>
+            </View>
+            {isCountdown && (
+              <View style={styles.countdownInputRow}>
+                <TextInput
+                  style={styles.countdownInput}
+                  placeholder="Set seconds (e.g. 45)"
+                  placeholderTextColor={Colors.textSecondary}
+                  value={countdownInput}
+                  onChangeText={(t) => {
+                    setCountdownInput(t.replace(/[^0-9]/g, ''));
+                    if (!timerRunning) setTimerSeconds(parseInt(t) || 0);
+                  }}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.countdownLabel}>sec</Text>
+              </View>
+            )}
+          </View>
+        )}
       </ScrollView>
     </LinearGradient>
   );
@@ -775,9 +835,9 @@ const styles = StyleSheet.create({
   tag: { backgroundColor: Colors.accentMuted, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
   tagText: { color: Colors.accent, fontSize: 11, fontWeight: '600' },
   tabRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  tab: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20, backgroundColor: Colors.backgroundCard },
+  tab: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, backgroundColor: Colors.backgroundCard },
   tabActive: { backgroundColor: Colors.accent },
-  tabText: { color: Colors.textSecondary, fontWeight: '600', fontSize: 14 },
+  tabText: { color: Colors.textSecondary, fontWeight: '600', fontSize: 13 },
   tabTextActive: { color: '#FFFFFF' },
   content: { paddingBottom: 40 },
   video: { width: '100%', height: 300, borderRadius: 12, marginBottom: 16, backgroundColor: Colors.backgroundCard },
@@ -835,12 +895,72 @@ const styles = StyleSheet.create({
   recommendationLabel: { fontSize: 10, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1 },
   editLink: { fontSize: 11, color: Colors.accent, fontWeight: '600', textDecorationLine: 'underline' },
   recommendationText: { fontSize: 16, fontWeight: 'bold', color: '#FFFFFF' },
-  onboardingHint: {
-    fontSize: 11,
-    color: Colors.accent,
-    marginTop: 8,
-    fontWeight: '600',
+  onboardingHint: { fontSize: 11, color: Colors.accent, marginTop: 8, fontWeight: '600' },
+  timerCard: {
+    backgroundColor: Colors.backgroundCard,
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 320,
+    marginBottom: 16,
   },
+  timerDisplay: {
+    fontSize: 72,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
+    marginVertical: 24,
+    letterSpacing: 4,
+  },
+  timerBtnRow: { flexDirection: 'row', gap: 12, marginBottom: 24 },
+  timerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.accent,
+    borderRadius: 28,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+  },
+  timerBtnPause: { backgroundColor: '#E67E22' },
+  timerBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 16 },
+  timerResetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.backgroundTop,
+    borderRadius: 28,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  timerResetText: { color: Colors.textSecondary, fontWeight: '600', fontSize: 16 },
+  timerModeRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  modePill: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: Colors.backgroundTop,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  modePillActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  modePillText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  modePillTextActive: { color: '#FFFFFF' },
+  countdownInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  countdownInput: {
+    backgroundColor: Colors.backgroundTop,
+    borderRadius: 10,
+    padding: 12,
+    color: Colors.textPrimary,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    width: 180,
+    textAlign: 'center',
+  },
+  countdownLabel: { fontSize: 14, color: Colors.textSecondary, fontWeight: '600' },
   sessionCard: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, marginBottom: 16 },
   sectionLabel: { color: Colors.accent, fontWeight: 'bold', fontSize: 12, letterSpacing: 1, marginBottom: 14 },
   inputRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
@@ -873,12 +993,7 @@ const styles = StyleSheet.create({
   addButton: { backgroundColor: Colors.accent, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
   addButtonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
   historyRow: { borderBottomWidth: 1, borderBottomColor: Colors.border, paddingVertical: 10 },
-  historyTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
+  historyTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   historyDate: { color: Colors.textSecondary, fontSize: 12 },
   historyFields: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   historyField: {

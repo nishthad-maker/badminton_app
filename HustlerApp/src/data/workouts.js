@@ -74,7 +74,7 @@ const workouts = {
       logType: 'strength',
       description: 'Legs and core get stronger while keeping your body upright. Do it in lower-body workouts to build strength for better movement and balance.',
       muscles: ['Quads', 'Glutes', 'Core'],
-      videoUrl: null,
+      videoUrl: `${VIDEOS}/Strength/goblet-squat.mp4`,
       imageUrl: null,
       steps: [
         'Hold one weight close to your chest.',
@@ -223,7 +223,7 @@ const workouts = {
       logType: 'footwork',
       description: 'This helps your feet move fast and stay light. Do it in warm-ups or footwork practice to get quicker steps on court.',
       muscles: ['Feet', 'Calves', 'Ankles'],
-      videoUrl: null,
+      videoUrl: `${VIDEOS}/Footwork/agility-ladder-session.mov`,
       imageUrl: null,
       steps: [
         'Put the ladder on the floor.',
@@ -321,7 +321,7 @@ const workouts = {
     {
       name: 'Court Shuttle Runs',
       subcategory: 'endurance',
-      logType: 'duration-distance',
+      logType: 'sets-duration',
       description: 'Builds badminton-style stamina because you sprint, stop, and go again like in a real match.',
       muscles: ['Legs', 'Calves', 'Glutes', 'Core'],
       videoUrl: null,

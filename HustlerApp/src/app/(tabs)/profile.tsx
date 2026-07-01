@@ -52,7 +52,6 @@ export default function ProfileScreen() {
 
     setTotalSessions(countUniqueSessions(data));
 
-    // Streak
     const dates = [...new Set(data.map(s =>
       new Date(s.created_at).toDateString()
     ))];
@@ -68,7 +67,6 @@ export default function ProfileScreen() {
     }
     setStreak(currentStreak);
 
-    // Top category by unique sessions
     const uniqueByCategory: Record<string, Set<string>> = {};
     data.forEach(s => {
       if (!uniqueByCategory[s.category]) uniqueByCategory[s.category] = new Set();
@@ -96,6 +94,14 @@ export default function ProfileScreen() {
     }
   };
 
+  const goToEditProfile = () => {
+    if (typeof window !== 'undefined') {
+      window.location.href = '/edit-profile';
+    } else {
+      router.push('/edit-profile' as any);
+    }
+  };
+
   return (
     <LinearGradient
       colors={[Colors.backgroundTop, Colors.backgroundBottom]}
@@ -115,6 +121,51 @@ export default function ProfileScreen() {
             </View>
           ) : null}
         </View>
+
+        {/* Profile Info Card */}
+        {profile?.age ? (
+          <View style={styles.infoCard}>
+            <Text style={styles.sectionLabel}>YOUR PROFILE</Text>
+            <View style={styles.infoGrid}>
+              {profile.age ? (
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>Age</Text>
+                  <Text style={styles.infoValue}>{profile.age}</Text>
+                </View>
+              ) : null}
+              {profile.gender ? (
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>Gender</Text>
+                  <Text style={styles.infoValue}>{profile.gender}</Text>
+                </View>
+              ) : null}
+              {profile.skill_level ? (
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>Skill Level</Text>
+                  <Text style={styles.infoValue}>{profile.skill_level}</Text>
+                </View>
+              ) : null}
+              {profile.event ? (
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>Event</Text>
+                  <Text style={styles.infoValue}>{profile.event}</Text>
+                </View>
+              ) : null}
+              {profile.training_goal ? (
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>Goal</Text>
+                  <Text style={styles.infoValue}>{profile.training_goal}</Text>
+                </View>
+              ) : null}
+              {profile.weekly_goal ? (
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>Weekly Goal</Text>
+                  <Text style={styles.infoValue}>{profile.weekly_goal} days</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
 
         <Text style={styles.sectionTitle}>Your Stats</Text>
         <View style={styles.statsGrid}>
@@ -145,6 +196,11 @@ export default function ProfileScreen() {
 
         <Text style={styles.sectionTitle}>Account</Text>
         <View style={styles.optionsCard}>
+          <TouchableOpacity style={styles.option} onPress={goToEditProfile}>
+            <MaterialCommunityIcons name="account-edit-outline" size={20} color={Colors.accent} />
+            <Text style={styles.optionText}>Edit Profile</Text>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
+          </TouchableOpacity>
 
           <View style={styles.divider} />
 
@@ -177,6 +233,11 @@ const styles = StyleSheet.create({
   email: { fontSize: 14, color: Colors.textSecondary, marginBottom: 10 },
   memberBadge: { backgroundColor: Colors.accentMuted, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 },
   memberText: { fontSize: 12, color: Colors.accent, fontWeight: '600' },
+  infoCard: { backgroundColor: Colors.backgroundCard, borderRadius: 14, padding: 16, marginBottom: 24 },
+  infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 4 },
+  infoItem: { width: '45%' },
+  infoLabel: { fontSize: 11, color: Colors.textSecondary, marginBottom: 2 },
+  infoValue: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 12 },
   sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1, marginBottom: 8 },
   statsGrid: { flexDirection: 'row', gap: 10, marginBottom: 16 },

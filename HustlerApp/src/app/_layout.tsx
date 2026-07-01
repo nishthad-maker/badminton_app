@@ -22,6 +22,9 @@ export default function Layout() {
       <Stack.Screen name="exercise-list" options={{ headerShown: false }} />
       <Stack.Screen name="exercise" options={{ title: '' }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+      <Stack.Screen name="community-post" options={{ headerShown: false }} />
+      <Stack.Screen name="community-thread" options={{ headerShown: false }} />
+      <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
     </Stack>
   );
 }
