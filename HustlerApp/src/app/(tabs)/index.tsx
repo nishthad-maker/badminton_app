@@ -9,7 +9,7 @@ import { supabase } from '../../lib/supabase';
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const EVENT_TYPES = [
-  { key: 'tournament', label: 'Tournament', icon: 'trophy', color: '#E74C3C' },
+  { key: 'tournament', label: 'Tournament', icon: 'trophy', color: '#F1C40F' },
   { key: 'training', label: 'Training', icon: 'dumbbell', color: '#2ECC71' },
   { key: 'rest', label: 'Rest Day', icon: 'bed', color: '#3498DB' },
   { key: 'custom', label: 'Custom', icon: 'star', color: '#9B59B6' },
@@ -17,6 +17,10 @@ const EVENT_TYPES = [
 
 const getEventColor = (type: string) => {
   return EVENT_TYPES.find(t => t.key === type)?.color ?? '#9B59B6';
+};
+
+const getEventIcon = (type: string) => {
+  return EVENT_TYPES.find(t => t.key === type)?.icon ?? 'star';
 };
 
 const showAlert = (title: string, message: string) => {
@@ -269,6 +273,9 @@ export default function HomeScreen() {
     }
   };
 
+  // Get existing events for the currently selected quick-add date
+  const quickAddDateEvents = quickAddDate ? getEventsForDate(quickAddDate) : [];
+
   const maxCount = Math.max(strengthCount, footworkCount, enduranceCount, recoveryCount, 1);
   const weekProgress = Math.min(weekSessions / weeklyGoal, 1);
 
@@ -342,7 +349,7 @@ export default function HomeScreen() {
                       : <Text style={[styles.dayNum, isToday && styles.dayNumActive]}>{dateInfo.date}</Text>
                     }
                   </View>
-                  {/* Event dots below the circle */}
+                  {/* Event dots below the circle — fixed alignment */}
                   <View style={styles.eventDotsRow}>
                     {dots.map((type, di) => (
                       <View
@@ -468,6 +475,30 @@ export default function HomeScreen() {
             </View>
 
             <Text style={styles.modalDate}>{quickAddDate ? formatQuickAddDate() : ''}</Text>
+
+            {/* Existing events for this date */}
+            {quickAddDateEvents.length > 0 && (
+              <View style={styles.existingEventsSection}>
+                <Text style={styles.existingEventsLabel}>
+                  {quickAddDateEvents.length} event{quickAddDateEvents.length !== 1 ? 's' : ''} scheduled
+                </Text>
+                {quickAddDateEvents.map(event => (
+                  <View key={event.id} style={styles.existingEventRow}>
+                    <View style={[styles.existingEventBar, { backgroundColor: getEventColor(event.event_type) }]} />
+                    <MaterialCommunityIcons
+                      name={getEventIcon(event.event_type) as any}
+                      size={16}
+                      color={getEventColor(event.event_type)}
+                    />
+                    <Text style={styles.existingEventTitle} numberOfLines={1}>{event.title}</Text>
+                    {event.start_time ? (
+                      <Text style={styles.existingEventTime}>{event.start_time}</Text>
+                    ) : null}
+                  </View>
+                ))}
+                <View style={styles.existingEventsDivider} />
+              </View>
+            )}
 
             <Text style={styles.formLabel}>Title *</Text>
             <TextInput
@@ -605,8 +636,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   daysRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  dayCol: { alignItems: 'center', gap: 4 },
-  dayLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: '600' },
+  dayCol: { alignItems: 'center', flex: 1 },
+  dayLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: '600', marginBottom: 4 },
   dayLabelActive: { color: Colors.accent },
   dayCircle: {
     width: 32,
@@ -622,13 +653,16 @@ const styles = StyleSheet.create({
   dayNumActive: { color: Colors.accent },
   eventDotsRow: {
     flexDirection: 'row',
-    gap: 3,
-    minHeight: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 10,
+    marginTop: 4,
+    gap: 4,
   },
   eventDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
 
   // Today's events preview
@@ -789,6 +823,50 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 16,
   },
+
+  // Existing events in Quick Add modal
+  existingEventsSection: {
+    marginBottom: 8,
+  },
+  existingEventsLabel: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: Colors.textSecondary,
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  existingEventRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  existingEventBar: {
+    width: 3,
+    height: 20,
+    borderRadius: 2,
+  },
+  existingEventTitle: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.textPrimary,
+    fontWeight: '500',
+  },
+  existingEventTime: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+  },
+  existingEventsDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginTop: 8,
+  },
+
   formLabel: {
     fontSize: 12,
     fontWeight: '600',

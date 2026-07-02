@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useState, useEffect } from 'react';
@@ -32,19 +32,27 @@ const showAlert = (title: string, message: string) => {
 const uploadToCloudinary = async (uri: string): Promise<string | null> => {
   try {
     const formData = new FormData();
-    const filename = uri.split('/').pop() ?? 'video.mp4';
-    const type = filename.endsWith('.mov') ? 'video/quicktime' : 'video/mp4';
 
-    formData.append('file', { uri, name: filename, type } as any);
+    if (Platform.OS === 'web') {
+      // On web, fetch the blob from the URI and append it directly
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      formData.append('file', blob, 'video.mp4');
+    } else {
+      const filename = uri.split('/').pop() ?? 'video.mp4';
+      const type = filename.endsWith('.mov') ? 'video/quicktime' : 'video/mp4';
+      formData.append('file', { uri, name: filename, type } as any);
+    }
+
     formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
     formData.append('resource_type', 'video');
 
-    const response = await fetch(
+    const res = await fetch(
       `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/video/upload`,
       { method: 'POST', body: formData }
     );
 
-    const data = await response.json();
+    const data = await res.json();
     if (data.secure_url) return data.secure_url;
     console.log('Cloudinary error:', data);
     return null;
@@ -360,13 +368,17 @@ export default function CreateExerciseScreen() {
             </View>
           ) : (
             <View style={styles.videoOptions}>
-              <TouchableOpacity style={styles.videoBtn} onPress={filmVideo}>
-                <MaterialCommunityIcons name="video" size={22} color={Colors.accent} />
-                <Text style={styles.videoBtnText}>Film Now</Text>
-              </TouchableOpacity>
+              {Platform.OS !== 'web' && (
+                <TouchableOpacity style={styles.videoBtn} onPress={filmVideo}>
+                  <MaterialCommunityIcons name="video" size={22} color={Colors.accent} />
+                  <Text style={styles.videoBtnText}>Film Now</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.videoBtn} onPress={pickFromCameraRoll}>
                 <MaterialCommunityIcons name="image-multiple" size={22} color={Colors.accent} />
-                <Text style={styles.videoBtnText}>Camera Roll</Text>
+                <Text style={styles.videoBtnText}>
+                  {Platform.OS === 'web' ? 'Upload Video' : 'Camera Roll'}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
