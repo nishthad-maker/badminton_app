@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useEffect, useState, useCallback } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Colors } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
@@ -33,6 +33,13 @@ export default function CommunityScreen() {
   useEffect(() => {
     if (user) loadPosts();
   }, [activeTopic, sortMode, user]);
+
+  // Reload posts when screen comes back into focus (e.g. after liking in thread)
+  useFocusEffect(
+    useCallback(() => {
+      if (user) loadPosts();
+    }, [activeTopic, sortMode, user])
+  );
 
   const init = async () => {
     const { data: { session } } = await supabase.auth.getSession();

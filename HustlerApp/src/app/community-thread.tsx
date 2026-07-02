@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -89,7 +89,6 @@ export default function ThreadScreen() {
         .single();
       setLiked(!!likeData);
 
-      // Load what this user has already reported
       const { data: myReports } = await supabase
         .from('post_reports')
         .select('post_id, reply_id')
@@ -163,8 +162,6 @@ export default function ThreadScreen() {
     setPosting(false);
   };
 
-  // Report a post: if content has blocked words, hide immediately.
-  // Otherwise increment report_count and hide once it hits the threshold.
   const reportPost = () => {
     if (reportedPostIds.has(postId as string)) return;
 
@@ -300,6 +297,15 @@ export default function ThreadScreen() {
         <Text style={styles.postTitle}>{post.title}</Text>
         <Text style={styles.postBody}>{post.body}</Text>
 
+        {/* Post image */}
+        {post.image_url && (
+          <Image
+            source={{ uri: post.image_url }}
+            style={styles.postImage}
+            resizeMode="cover"
+          />
+        )}
+
         <View style={styles.postActions}>
           <TouchableOpacity style={styles.actionBtn} onPress={toggleLike}>
             <MaterialCommunityIcons
@@ -413,6 +419,12 @@ const styles = StyleSheet.create({
   postTime: { fontSize: 11, color: Colors.textSecondary, marginTop: 1 },
   postTitle: { fontSize: 20, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 10 },
   postBody: { fontSize: 14, color: Colors.textSecondary, lineHeight: 22, marginBottom: 16 },
+  postImage: {
+    width: '100%',
+    height: 220,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
   postActions: { flexDirection: 'row', gap: 20, marginBottom: 16 },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionText: { fontSize: 13, color: Colors.textSecondary },
