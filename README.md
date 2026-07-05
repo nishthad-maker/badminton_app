@@ -2,7 +2,7 @@
 
 ## What is Hustler?
 
-Hustler is a free mobile app that gives badminton players structured, personalized training — right where they live. Over 220 million people play badminton worldwide, but most don't have access to professional coaching. Hustler puts a personal coach in every player's pocket — no expensive gym, no private trainer, just your phone and the drive to improve.
+Hustler is a free mobile app that gives badminton players structured, personalized training, right where they live. Over 220 million people play badminton worldwide, but most don't have access to professional coaching. Hustler puts a personal coach in every player's pocket: no expensive gym, no private trainer, just your phone and the drive to improve.
 
 ## The Problem
 
