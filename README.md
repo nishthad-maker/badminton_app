@@ -63,3 +63,23 @@ Badminton players aged 8–20 — casual or competitive — who have big dreams 
 ## Why I Built It
 
 When I played badminton, I trained completely alone. I had no coach, no plan, and no idea if other players in my area were looking for the same thing. I built Hustler so no athlete has to feel that isolation — so every player can find structure, track their growth, and connect with a community of players right where they live.
+
+## Getting Started
+
+1. Clone the repo
+```bash
+git clone https://github.com/nishthad-maker/badminton_app.git
+cd badminton_app
+```
+
+2. Install dependencies
+```bash
+npm install
+```
+
+3. Start the app
+```bash
+npx expo start
+```
+
+4. Scan the QR code with Expo Go (Android) or press `w` for web
