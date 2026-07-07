@@ -11,7 +11,17 @@ export default function HomeScreen() {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        router.replace('/(tabs)' as any);
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('is_coach')
+          .eq('id', session.user.id)
+          .single();
+
+        if (profile?.is_coach) {
+          router.replace('/coach' as any);
+        } else {
+          router.replace('/(tabs)' as any);
+        }
       }
     };
     checkSession();

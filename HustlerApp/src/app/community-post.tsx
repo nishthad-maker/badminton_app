@@ -136,10 +136,12 @@ export default function NewPostScreen() {
       return;
     }
 
+    // Return to the feed on the SAME topic we just posted in, so the new post
+    // is visible instead of the feed resetting to the first tab.
     if (typeof window !== 'undefined') {
-      window.location.href = '/(tabs)/community';
+      window.location.href = `/(tabs)/community?topic=${encodeURIComponent(topic)}`;
     } else {
-      router.back();
+      router.replace({ pathname: '/(tabs)/community', params: { topic } });
     }
   };
 

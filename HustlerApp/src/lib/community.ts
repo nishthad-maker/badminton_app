@@ -44,7 +44,7 @@ export const getOrCreateUsername = async (userId: string): Promise<string> => {
   return fallback;
 };
 
-export const TOPICS = ['General Discussion', 'Local Tournaments', 'Training Tips', 'Recovery & Wellness', 'Equipment'];
+export const TOPICS = ['General Discussion', 'Training Tips', 'Recovery & Wellness', 'Equipment'];
 
 export const TOPIC_ICONS: Record<string, string> = {
   'General Discussion': 'forum',

@@ -118,16 +118,17 @@ export default function ThreadScreen() {
       showAlert('Sign in required', 'Please sign in to like posts.');
       return;
     }
+    // We only touch the post_likes table. A database trigger keeps
+    // community_posts.likes_count accurate (see the SQL migration), which
+    // avoids the row-level-security block on updating other people's posts.
     if (liked) {
-      await supabase.from('post_likes').delete().eq('post_id', postId).eq('user_id', user.id);
-      await supabase.from('community_posts').update({ likes_count: Math.max((post.likes_count ?? 1) - 1, 0) }).eq('id', postId);
       setLiked(false);
       setPost({ ...post, likes_count: Math.max((post.likes_count ?? 1) - 1, 0) });
+      await supabase.from('post_likes').delete().eq('post_id', postId).eq('user_id', user.id);
     } else {
-      await supabase.from('post_likes').insert({ post_id: postId, user_id: user.id });
-      await supabase.from('community_posts').update({ likes_count: (post.likes_count ?? 0) + 1 }).eq('id', postId);
       setLiked(true);
       setPost({ ...post, likes_count: (post.likes_count ?? 0) + 1 });
+      await supabase.from('post_likes').insert({ post_id: postId, user_id: user.id });
     }
   };
 

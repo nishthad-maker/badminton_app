@@ -13,14 +13,12 @@ const GENDERS = ['Male', 'Female', 'Prefer not to say'];
 const WEEKLY_GOALS = ['3', '4', '5', '6'];
 
 const showAlert = (title: string, message: string) => {
-  if (typeof window !== 'undefined') {
-    window.alert(`${title}\n\n${message}`);
-  } else {
-    Alert.alert(title, message);
-  }
+  if (typeof window !== 'undefined') window.alert(`${title}\n\n${message}`);
+  else Alert.alert(title, message);
 };
 
 export default function EditProfileScreen() {
+  const [fullName, setFullName] = useState('');
   const [age, setAge] = useState('');
   const [skillLevel, setSkillLevel] = useState('');
   const [event, setEvent] = useState('');
@@ -29,21 +27,17 @@ export default function EditProfileScreen() {
   const [weeklyGoal, setWeeklyGoal] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    loadProfile();
-  }, []);
+  useEffect(() => { loadProfile(); }, []);
 
   const loadProfile = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) return;
 
     const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', session.user.id)
-      .single();
+      .from('profiles').select('*').eq('id', session.user.id).single();
 
     if (profile) {
+      setFullName(profile.full_name ?? session.user.user_metadata?.full_name ?? '');
       setAge(profile.age ? String(profile.age) : '');
       setSkillLevel(profile.skill_level ?? '');
       setEvent(profile.event ?? '');
@@ -54,22 +48,27 @@ export default function EditProfileScreen() {
   };
 
   const handleSave = async () => {
+    if (!fullName.trim()) { showAlert('Missing name', 'Please enter your name.'); return; }
     if (!age || !skillLevel || !event || !trainingGoal || !gender || !weeklyGoal) {
       showAlert('Missing fields', 'Please fill in all fields.');
       return;
     }
 
-    setLoading(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) {
-      setLoading(false);
+    const parsedAge = parseInt(age);
+    if (isNaN(parsedAge) || parsedAge < 5 || parsedAge > 100) {
+      showAlert('Invalid age', 'Please enter a valid age.');
       return;
     }
+
+    setLoading(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) { setLoading(false); return; }
 
     const { error } = await supabase
       .from('profiles')
       .update({
-        age: parseInt(age),
+        full_name: fullName.trim(),
+        age: parsedAge,
         skill_level: skillLevel,
         event,
         training_goal: trainingGoal,
@@ -78,35 +77,24 @@ export default function EditProfileScreen() {
       })
       .eq('id', session.user.id);
 
+    // Also update auth metadata so name shows correctly everywhere
+    await supabase.auth.updateUser({ data: { full_name: fullName.trim() } });
+
     setLoading(false);
 
-    if (error) {
-      showAlert('Error', 'Could not save your profile. Please try again.');
-      return;
-    }
+    if (error) { showAlert('Error', 'Could not save your profile. Please try again.'); return; }
 
     showAlert('Saved!', 'Your profile has been updated.');
-    if (typeof window !== 'undefined') {
-      window.history.back();
-    } else {
-      router.back();
-    }
+    if (typeof window !== 'undefined') window.history.back();
+    else router.back();
   };
 
   const goBack = () => {
-    if (typeof window !== 'undefined') {
-      window.history.back();
-    } else {
-      router.back();
-    }
+    if (typeof window !== 'undefined') window.history.back();
+    else router.back();
   };
 
-  const renderSelector = (
-    label: string,
-    options: string[],
-    selected: string,
-    onSelect: (v: string) => void
-  ) => (
+  const renderSelector = (label: string, options: string[], selected: string, onSelect: (v: string) => void) => (
     <View style={styles.selectorGroup}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.optionsRow}>
@@ -126,15 +114,9 @@ export default function EditProfileScreen() {
   );
 
   return (
-    <LinearGradient
-      colors={[Colors.backgroundTop, Colors.backgroundBottom]}
-      style={styles.container}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
+    <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
         <View style={styles.titleRow}>
           <TouchableOpacity onPress={goBack}>
             <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
@@ -143,6 +125,19 @@ export default function EditProfileScreen() {
         </View>
 
         <View style={styles.card}>
+
+          {/* Full name */}
+          <Text style={styles.label}>Full Name</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Your full name"
+            placeholderTextColor={Colors.textSecondary}
+            value={fullName}
+            onChangeText={setFullName}
+            autoCapitalize="words"
+          />
+
+          {/* Age */}
           <Text style={styles.label}>Age</Text>
           <TextInput
             style={styles.input}
@@ -164,9 +159,7 @@ export default function EditProfileScreen() {
             onPress={handleSave}
             disabled={loading}
           >
-            <Text style={styles.buttonText}>
-              {loading ? 'Saving...' : 'Save Changes'}
-            </Text>
+            <Text style={styles.buttonText}>{loading ? 'Saving...' : 'Save Changes'}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -180,37 +173,19 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24 },
   title: { fontSize: 24, fontWeight: 'bold', color: Colors.textPrimary },
   card: { backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 24 },
-  label: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8 },
+  label: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8, fontWeight: '600' },
   input: {
-    backgroundColor: Colors.backgroundTop,
-    borderRadius: 10,
-    padding: 14,
-    color: Colors.textPrimary,
-    fontSize: 14,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.backgroundTop, borderRadius: 10, padding: 14,
+    color: Colors.textPrimary, fontSize: 14, marginBottom: 16,
+    borderWidth: 1, borderColor: Colors.border,
   },
   selectorGroup: { marginBottom: 16 },
   optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  optionBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Colors.backgroundTop,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
+  optionBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.backgroundTop, borderWidth: 1, borderColor: Colors.border },
   optionBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
   optionBtnText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
   optionBtnTextActive: { color: '#FFFFFF' },
-  button: {
-    backgroundColor: Colors.accent,
-    borderRadius: 30,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
+  button: { backgroundColor: Colors.accent, borderRadius: 30, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
 });

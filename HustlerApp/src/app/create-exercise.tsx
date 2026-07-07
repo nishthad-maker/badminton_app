@@ -12,14 +12,35 @@ const CLOUDINARY_UPLOAD_PRESET = 'hustler_videos';
 
 const CATEGORIES = ['strength', 'footwork', 'endurance', 'recovery'];
 
-const LOG_TYPES = [
-  { key: 'strength', label: 'Weight + Sets + Reps', desc: 'e.g. 20kg, 3 sets, 8 reps' },
-  { key: 'reps-sets', label: 'Sets + Reps', desc: 'e.g. 3 sets, 12 reps' },
-  { key: 'plank', label: 'Sets + Time', desc: 'e.g. 3 sets, 45 sec' },
-  { key: 'sets-duration', label: 'Sets + Duration', desc: 'e.g. 4 sets, 20 min' },
-  { key: 'duration-distance', label: 'Duration + Distance', desc: 'e.g. 30 min, 5km' },
-  { key: 'recovery', label: 'Duration + Feeling', desc: 'e.g. 20 min, Great' },
-];
+const CATEGORY_ICONS: Record<string, string> = {
+  strength: 'dumbbell',
+  footwork: 'badminton',
+  endurance: 'lightning-bolt',
+  recovery: 'heart-pulse',
+};
+
+// What you can track depends on the category. Categories with a single sensible
+// option auto-select it, so the athlete never has to understand the jargon.
+type LogTypeOption = { key: string; label: string; desc: string };
+
+const LOG_TYPES_BY_CATEGORY: Record<string, LogTypeOption[]> = {
+  strength: [
+    { key: 'strength', label: 'Weight + Sets + Reps', desc: 'e.g. 20kg · 3 sets · 8 reps' },
+    { key: 'reps-sets', label: 'Sets + Reps', desc: 'e.g. 3 sets · 12 reps' },
+    { key: 'plank', label: 'Sets + Time', desc: 'e.g. 3 sets · 45 sec' },
+  ],
+  footwork: [
+    { key: 'footwork', label: 'Sets + Duration', desc: 'e.g. 4 sets · 5 min' },
+  ],
+  endurance: [
+    { key: 'skipping', label: 'Sets + Reps + Time', desc: 'e.g. 3 sets · 50 reps · 45 sec' },
+    { key: 'sets-duration', label: 'Sets + Duration', desc: 'e.g. 4 sets · 20 min' },
+    { key: 'duration-distance', label: 'Duration + Distance', desc: 'e.g. 30 min · 5 km' },
+  ],
+  recovery: [
+    { key: 'recovery', label: 'Duration + Feeling', desc: 'e.g. 20 min · Great' },
+  ],
+};
 
 const showAlert = (title: string, message: string) => {
   if (typeof window !== 'undefined') {
@@ -75,6 +96,9 @@ export default function CreateExerciseScreen() {
   const [videoUri, setVideoUri] = useState('');
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const [savedBanner, setSavedBanner] = useState('');
+  const [savedCount, setSavedCount] = useState(0);
 
   useEffect(() => {
     if (exerciseId) loadExistingExercise();
@@ -95,6 +119,13 @@ export default function CreateExerciseScreen() {
       setSteps(data.steps?.length > 0 ? data.steps : ['']);
       setNotes(data.notes ?? '');
       setVideoUri(data.video_url ?? '');
+      // When editing, reveal the detail section if there's anything in it.
+      const hasDetail =
+        (data.description && data.description.trim() !== '') ||
+        (data.steps && data.steps.length > 0 && data.steps.some((s: string) => s.trim() !== '')) ||
+        (data.notes && data.notes.trim() !== '') ||
+        (data.video_url && data.video_url !== '');
+      if (hasDetail) setShowMore(true);
     }
   };
 
@@ -106,15 +137,26 @@ export default function CreateExerciseScreen() {
     }
   };
 
+  // Picking a category filters the tracking options. If there's only one, we
+  // pick it automatically so the athlete isn't asked a pointless question.
+  const selectCategory = (c: string) => {
+    setCategory(c);
+    const opts = LOG_TYPES_BY_CATEGORY[c] ?? [];
+    if (opts.length === 1) {
+      setLogType(opts[0].key);
+    } else {
+      setLogType('');
+    }
+  };
+
   const handleVideoSelected = async (uri: string) => {
     setVideoUri(uri);
     setUploading(true);
-    showAlert('Uploading', 'Your video is being uploaded...');
+    // No blocking pop-ups here — the inline "Uploading..." state does the talking.
     const url = await uploadToCloudinary(uri);
     setUploading(false);
     if (url) {
       setVideoUri(url);
-      showAlert('Upload complete', 'Your video has been uploaded successfully!');
     } else {
       showAlert('Upload failed', 'Could not upload video. Please try again.');
       setVideoUri('');
@@ -160,23 +202,39 @@ export default function CreateExerciseScreen() {
     setSteps(updated);
   };
 
-  const handleSave = async () => {
+  const validate = (): boolean => {
     if (!name.trim()) {
       showAlert('Missing name', 'Please give your exercise a name.');
-      return;
+      return false;
     }
     if (!category) {
       showAlert('Missing category', 'Please select a category.');
-      return;
+      return false;
     }
     if (!logType) {
-      showAlert('Missing log type', 'Please select what you want to track.');
-      return;
+      showAlert('Missing tracking', 'Please choose what this exercise tracks.');
+      return false;
     }
     if (uploading) {
       showAlert('Please wait', 'Your video is still uploading.');
-      return;
+      return false;
     }
+    return true;
+  };
+
+  // Clears the form for the next entry but keeps category + tracking, since
+  // people usually add several of the same type in a row (great for seeding).
+  const resetForNext = () => {
+    setName('');
+    setDescription('');
+    setSteps(['']);
+    setNotes('');
+    setVideoUri('');
+    setShowMore(false);
+  };
+
+  const save = async (createAnother: boolean) => {
+    if (!validate()) return;
 
     setLoading(true);
     const { data: { session } } = await supabase.auth.getSession();
@@ -203,46 +261,31 @@ export default function CreateExerciseScreen() {
         showAlert('Error', 'Could not update your exercise. Please try again.');
         return;
       }
-      showAlert('Updated!', 'Your exercise has been updated.');
-    } else {
-      const { error } = await supabase
-        .from('custom_exercises')
-        .insert({ ...payload, user_id: session.user.id });
-      setLoading(false);
-      if (error) {
-        showAlert('Error', 'Could not save your exercise. Please try again.');
-        return;
-      }
-      showAlert('Saved!', 'Your custom exercise has been created.');
+      goBack();
+      return;
     }
 
-    goBack();
+    const { error } = await supabase
+      .from('custom_exercises')
+      .insert({ ...payload, user_id: session.user.id });
+    setLoading(false);
+    if (error) {
+      showAlert('Error', 'Could not save your exercise. Please try again.');
+      return;
+    }
+
+    if (createAnother) {
+      const next = savedCount + 1;
+      setSavedCount(next);
+      setSavedBanner(`✓ "${payload.name}" saved${next > 1 ? ` — ${next} created this session` : ''}. Ready for the next one!`);
+      resetForNext();
+    } else {
+      goBack();
+    }
   };
 
-  const renderSelector = (
-    label: string,
-    options: string[],
-    selected: string,
-    onSelect: (v: string) => void,
-    capitalize?: boolean
-  ) => (
-    <View style={styles.selectorGroup}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={styles.optionsRow}>
-        {options.map((option) => (
-          <TouchableOpacity
-            key={option}
-            style={[styles.optionBtn, selected === option && styles.optionBtnActive]}
-            onPress={() => onSelect(option)}
-          >
-            <Text style={[styles.optionBtnText, selected === option && styles.optionBtnTextActive]}>
-              {capitalize ? option.charAt(0).toUpperCase() + option.slice(1) : option}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
-  );
+  const logTypesForCategory = category ? (LOG_TYPES_BY_CATEGORY[category] ?? []) : [];
+  const isSingleLogType = logTypesForCategory.length === 1;
 
   return (
     <LinearGradient
@@ -261,9 +304,16 @@ export default function CreateExerciseScreen() {
           <Text style={styles.title}>{isEditing ? 'Edit Exercise' : 'Create Exercise'}</Text>
         </View>
 
-        {/* Basic Info */}
+        {savedBanner !== '' && (
+          <View style={styles.banner}>
+            <MaterialCommunityIcons name="check-circle" size={18} color={Colors.accent} />
+            <Text style={styles.bannerText}>{savedBanner}</Text>
+          </View>
+        )}
+
+        {/* ── THE ESSENTIALS ── */}
         <View style={styles.card}>
-          <Text style={styles.cardSectionLabel}>BASIC INFO</Text>
+          <Text style={styles.cardSectionLabel}>THE ESSENTIALS</Text>
 
           <Text style={styles.label}>Exercise Name</Text>
           <TextInput
@@ -271,143 +321,198 @@ export default function CreateExerciseScreen() {
             placeholder="e.g. Jump Lunge"
             placeholderTextColor={Colors.textSecondary}
             value={name}
-            onChangeText={setName}
+            onChangeText={(t) => { setName(t); if (savedBanner) setSavedBanner(''); }}
             autoCapitalize="words"
           />
 
-          <Text style={styles.label}>Description</Text>
-          <TextInput
-            style={[styles.input, styles.multilineInput]}
-            placeholder="What does this exercise do? Why is it useful for badminton?"
-            placeholderTextColor={Colors.textSecondary}
-            value={description}
-            onChangeText={setDescription}
-            multiline
-            numberOfLines={3}
-            textAlignVertical="top"
-          />
-
-          {renderSelector('Category', CATEGORIES, category, setCategory, true)}
-        </View>
-
-        {/* Tracking */}
-        <View style={styles.card}>
-          <Text style={styles.cardSectionLabel}>WHAT DO YOU WANT TO TRACK?</Text>
-          <View style={styles.logTypeList}>
-            {LOG_TYPES.map((lt) => (
+          <Text style={styles.label}>Category</Text>
+          <View style={styles.optionsRow}>
+            {CATEGORIES.map((option) => (
               <TouchableOpacity
-                key={lt.key}
-                style={[styles.logTypeOption, logType === lt.key && styles.logTypeOptionActive]}
-                onPress={() => setLogType(lt.key)}
+                key={option}
+                style={[styles.categoryBtn, category === option && styles.categoryBtnActive]}
+                onPress={() => selectCategory(option)}
               >
-                <View style={styles.logTypeLeft}>
+                <MaterialCommunityIcons
+                  name={CATEGORY_ICONS[option] as any}
+                  size={16}
+                  color={category === option ? '#FFFFFF' : Colors.textSecondary}
+                />
+                <Text style={[styles.categoryBtnText, category === option && styles.categoryBtnTextActive]}>
+                  {option.charAt(0).toUpperCase() + option.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={[styles.label, { marginTop: 8 }]}>What does it track?</Text>
+          {!category ? (
+            <Text style={styles.trackHint}>Pick a category first and we'll show the right options.</Text>
+          ) : isSingleLogType ? (
+            <View style={styles.trackInfo}>
+              <MaterialCommunityIcons name="check-circle-outline" size={18} color={Colors.accent} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.trackInfoLabel}>{logTypesForCategory[0].label}</Text>
+                <Text style={styles.trackInfoDesc}>{logTypesForCategory[0].desc}</Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.logTypeList}>
+              {logTypesForCategory.map((lt) => (
+                <TouchableOpacity
+                  key={lt.key}
+                  style={[styles.logTypeOption, logType === lt.key && styles.logTypeOptionActive]}
+                  onPress={() => setLogType(lt.key)}
+                >
                   <MaterialCommunityIcons
                     name={logType === lt.key ? 'radiobox-marked' : 'radiobox-blank'}
                     size={18}
                     color={logType === lt.key ? Colors.accent : Colors.textSecondary}
                   />
-                  <View>
+                  <View style={{ flex: 1 }}>
                     <Text style={[styles.logTypeLabel, logType === lt.key && styles.logTypeLabelActive]}>
                       {lt.label}
                     </Text>
                     <Text style={styles.logTypeDesc}>{lt.desc}</Text>
                   </View>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Instructions */}
-        <View style={styles.card}>
-          <Text style={styles.cardSectionLabel}>INSTRUCTIONS</Text>
-          <Text style={styles.cardHint}>Add step-by-step instructions for how to do this exercise.</Text>
-          {steps.map((step, i) => (
-            <View key={i} style={styles.stepRow}>
-              <View style={styles.stepNum}>
-                <Text style={styles.stepNumText}>{i + 1}</Text>
-              </View>
-              <TextInput
-                style={styles.stepInput}
-                placeholder={`Step ${i + 1}`}
-                placeholderTextColor={Colors.textSecondary}
-                value={step}
-                onChangeText={(v) => updateStep(i, v)}
-                multiline
-              />
-              {steps.length > 1 && (
-                <TouchableOpacity onPress={() => removeStep(i)}>
-                  <MaterialCommunityIcons name="close-circle" size={20} color="#FF6B6B" />
                 </TouchableOpacity>
-              )}
-            </View>
-          ))}
-          <TouchableOpacity style={styles.addStepBtn} onPress={addStep}>
-            <MaterialCommunityIcons name="plus" size={16} color={Colors.accent} />
-            <Text style={styles.addStepText}>Add Step</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Video */}
-        <View style={styles.card}>
-          <Text style={styles.cardSectionLabel}>VIDEO (OPTIONAL)</Text>
-          <Text style={styles.cardHint}>Add a demonstration video. Only use videos you own.</Text>
-
-          {uploading ? (
-            <View style={styles.uploadingState}>
-              <MaterialCommunityIcons name="cloud-upload-outline" size={24} color={Colors.accent} />
-              <Text style={styles.uploadingText}>Uploading to Cloudinary...</Text>
-            </View>
-          ) : videoUri && videoUri.startsWith('https://') ? (
-            <View style={styles.videoSelected}>
-              <MaterialCommunityIcons name="video-check" size={24} color={Colors.accent} />
-              <Text style={styles.videoSelectedText}>Video uploaded ✓</Text>
-              <TouchableOpacity onPress={() => setVideoUri('')}>
-                <MaterialCommunityIcons name="close-circle" size={20} color="#FF6B6B" />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.videoOptions}>
-              {Platform.OS !== 'web' && (
-                <TouchableOpacity style={styles.videoBtn} onPress={filmVideo}>
-                  <MaterialCommunityIcons name="video" size={22} color={Colors.accent} />
-                  <Text style={styles.videoBtnText}>Film Now</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity style={styles.videoBtn} onPress={pickFromCameraRoll}>
-                <MaterialCommunityIcons name="image-multiple" size={22} color={Colors.accent} />
-                <Text style={styles.videoBtnText}>
-                  {Platform.OS === 'web' ? 'Upload Video' : 'Camera Roll'}
-                </Text>
-              </TouchableOpacity>
+              ))}
             </View>
           )}
         </View>
 
-        {/* Notes */}
-        <View style={styles.card}>
-          <Text style={styles.cardSectionLabel}>PERSONAL NOTES</Text>
-          <TextInput
-            style={[styles.input, styles.multilineInput]}
-            placeholder="Any personal reminders, modifications, or things to watch out for..."
-            placeholderTextColor={Colors.textSecondary}
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
+        {/* ── OPTIONAL DETAIL (collapsed by default) ── */}
+        <TouchableOpacity style={styles.moreToggle} onPress={() => setShowMore(!showMore)}>
+          <MaterialCommunityIcons
+            name={showMore ? 'chevron-down' : 'chevron-right'}
+            size={22}
+            color={Colors.accent}
           />
-        </View>
+          <Text style={styles.moreToggleText}>Add more detail</Text>
+          <Text style={styles.moreToggleHint}>optional</Text>
+        </TouchableOpacity>
 
+        {showMore && (
+          <View>
+            {/* Description */}
+            <View style={styles.card}>
+              <Text style={styles.cardSectionLabel}>DESCRIPTION</Text>
+              <TextInput
+                style={[styles.input, styles.multilineInput, { marginBottom: 0 }]}
+                placeholder="What does this exercise do? Why is it useful for badminton?"
+                placeholderTextColor={Colors.textSecondary}
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+            </View>
+
+            {/* Instructions */}
+            <View style={styles.card}>
+              <Text style={styles.cardSectionLabel}>INSTRUCTIONS</Text>
+              <Text style={styles.cardHint}>Step-by-step instructions for how to do this exercise.</Text>
+              {steps.map((step, i) => (
+                <View key={i} style={styles.stepRow}>
+                  <View style={styles.stepNum}>
+                    <Text style={styles.stepNumText}>{i + 1}</Text>
+                  </View>
+                  <TextInput
+                    style={styles.stepInput}
+                    placeholder={`Step ${i + 1}`}
+                    placeholderTextColor={Colors.textSecondary}
+                    value={step}
+                    onChangeText={(v) => updateStep(i, v)}
+                    multiline
+                  />
+                  {steps.length > 1 && (
+                    <TouchableOpacity onPress={() => removeStep(i)}>
+                      <MaterialCommunityIcons name="close-circle" size={20} color="#FF6B6B" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+              <TouchableOpacity style={styles.addStepBtn} onPress={addStep}>
+                <MaterialCommunityIcons name="plus" size={16} color={Colors.accent} />
+                <Text style={styles.addStepText}>Add Step</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Video */}
+            <View style={styles.card}>
+              <Text style={styles.cardSectionLabel}>VIDEO</Text>
+              <Text style={styles.cardHint}>Add a demonstration video. Only use videos you own.</Text>
+
+              {uploading ? (
+                <View style={styles.uploadingState}>
+                  <MaterialCommunityIcons name="cloud-upload-outline" size={24} color={Colors.accent} />
+                  <Text style={styles.uploadingText}>Uploading...</Text>
+                </View>
+              ) : videoUri && videoUri.startsWith('https://') ? (
+                <View style={styles.videoSelected}>
+                  <MaterialCommunityIcons name="video-check" size={24} color={Colors.accent} />
+                  <Text style={styles.videoSelectedText}>Video uploaded ✓</Text>
+                  <TouchableOpacity onPress={() => setVideoUri('')}>
+                    <MaterialCommunityIcons name="close-circle" size={20} color="#FF6B6B" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.videoOptions}>
+                  {Platform.OS !== 'web' && (
+                    <TouchableOpacity style={styles.videoBtn} onPress={filmVideo}>
+                      <MaterialCommunityIcons name="video" size={22} color={Colors.accent} />
+                      <Text style={styles.videoBtnText}>Film Now</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={styles.videoBtn} onPress={pickFromCameraRoll}>
+                    <MaterialCommunityIcons name="image-multiple" size={22} color={Colors.accent} />
+                    <Text style={styles.videoBtnText}>
+                      {Platform.OS === 'web' ? 'Upload Video' : 'Camera Roll'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+
+            {/* Notes */}
+            <View style={styles.card}>
+              <Text style={styles.cardSectionLabel}>PERSONAL NOTES</Text>
+              <TextInput
+                style={[styles.input, styles.multilineInput, { marginBottom: 0 }]}
+                placeholder="Any personal reminders, modifications, or things to watch out for..."
+                placeholderTextColor={Colors.textSecondary}
+                value={notes}
+                onChangeText={setNotes}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+            </View>
+          </View>
+        )}
+
+        {/* ── ACTIONS ── */}
         <TouchableOpacity
           style={[styles.saveBtn, (loading || uploading) && styles.saveBtnDisabled]}
-          onPress={handleSave}
+          onPress={() => save(false)}
           disabled={loading || uploading}
         >
           <Text style={styles.saveBtnText}>
             {loading ? 'Saving...' : uploading ? 'Uploading video...' : isEditing ? 'Save Changes' : 'Save Exercise'}
           </Text>
         </TouchableOpacity>
+
+        {!isEditing && (
+          <TouchableOpacity
+            style={[styles.saveAltBtn, (loading || uploading) && styles.saveBtnDisabled]}
+            onPress={() => save(true)}
+            disabled={loading || uploading}
+          >
+            <MaterialCommunityIcons name="plus-circle-outline" size={18} color={Colors.accent} />
+            <Text style={styles.saveAltBtnText}>Save & Add Another</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </LinearGradient>
   );
@@ -416,8 +521,20 @@ export default function CreateExerciseScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { padding: 24, paddingTop: 60, paddingBottom: 60 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   title: { fontSize: 24, fontWeight: 'bold', color: Colors.textPrimary },
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.accentMuted,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.accent,
+  },
+  bannerText: { flex: 1, fontSize: 13, color: Colors.textPrimary, fontWeight: '600', lineHeight: 18 },
   card: { backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 16, marginBottom: 16 },
   cardSectionLabel: { fontSize: 11, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1, marginBottom: 12 },
   cardHint: { fontSize: 12, color: Colors.textSecondary, marginBottom: 12, lineHeight: 17 },
@@ -433,23 +550,37 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   multilineInput: { minHeight: 80, textAlignVertical: 'top' },
-  selectorGroup: { marginBottom: 8 },
-  optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  optionBtn: {
+  optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
+  categoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderRadius: 20,
     backgroundColor: Colors.backgroundTop,
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  optionBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  optionBtnText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
-  optionBtnTextActive: { color: '#FFFFFF' },
+  categoryBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  categoryBtnText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  categoryBtnTextActive: { color: '#FFFFFF' },
+  trackHint: { fontSize: 12, color: Colors.textSecondary, fontStyle: 'italic', lineHeight: 17 },
+  trackInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.accentMuted,
+    borderRadius: 10,
+    padding: 12,
+  },
+  trackInfoLabel: { fontSize: 13, fontWeight: '600', color: Colors.textPrimary },
+  trackInfoDesc: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
   logTypeList: { gap: 10 },
   logTypeOption: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     padding: 12,
     borderRadius: 10,
     backgroundColor: Colors.backgroundTop,
@@ -457,10 +588,18 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   logTypeOptionActive: { borderColor: Colors.accent, backgroundColor: Colors.accentMuted },
-  logTypeLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   logTypeLabel: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
   logTypeLabelActive: { color: Colors.textPrimary },
   logTypeDesc: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  moreToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  moreToggleText: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
+  moreToggleHint: { fontSize: 12, color: Colors.textSecondary, fontStyle: 'italic' },
   stepRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10 },
   stepNum: {
     width: 26,
@@ -491,7 +630,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   addStepText: { fontSize: 13, color: Colors.accent, fontWeight: '600' },
-  videoOptions: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  videoOptions: { flexDirection: 'row', gap: 12 },
   videoBtn: {
     flex: 1,
     flexDirection: 'column',
@@ -513,7 +652,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accentMuted,
     borderRadius: 10,
     padding: 12,
-    marginBottom: 12,
   },
   videoSelectedText: { flex: 1, fontSize: 13, color: Colors.accent, fontWeight: '600' },
   uploadingState: {
@@ -523,7 +661,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accentMuted,
     borderRadius: 10,
     padding: 12,
-    marginBottom: 12,
   },
   uploadingText: { fontSize: 13, color: Colors.accent, fontWeight: '600' },
   saveBtn: {
@@ -535,4 +672,16 @@ const styles = StyleSheet.create({
   },
   saveBtnDisabled: { opacity: 0.6 },
   saveBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
+  saveAltBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 30,
+    paddingVertical: 14,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: Colors.accent,
+  },
+  saveAltBtnText: { color: Colors.accent, fontWeight: 'bold', fontSize: 15 },
 });

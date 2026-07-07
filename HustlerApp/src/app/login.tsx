@@ -24,17 +24,20 @@ export default function LoginScreen() {
       return;
     }
 
-    // Check if user has completed onboarding
+    // Route based on role + onboarding status
     if (data.user) {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('age')
+        .select('age, is_coach')
         .eq('id', data.user.id)
         .single();
 
       setLoading(false);
 
-      if (!profile?.age) {
+      if (profile?.is_coach) {
+        // Coaches skip player onboarding and go to their roster home.
+        router.replace('/coach' as any);
+      } else if (!profile?.age) {
         router.replace('/onboarding' as any);
       } else {
         router.replace('/(tabs)' as any);

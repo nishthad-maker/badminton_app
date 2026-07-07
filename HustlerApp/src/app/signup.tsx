@@ -2,6 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Image, Scro
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useState } from 'react';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { supabase } from '../lib/supabase';
 import { Colors } from '@/constants/theme';
 
@@ -13,8 +14,13 @@ const showAlert = (title: string, message: string) => {
   }
 };
 
+type Role = 'player' | 'coach';
+
 export default function SignUpScreen() {
   const [fullName, setFullName] = useState('');
+  const [role, setRole] = useState<Role>('player');
+  const [club, setClub] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -29,6 +35,18 @@ export default function SignUpScreen() {
     if (fullName.trim().length < 2) {
       showAlert('Invalid name', 'Please enter your full name.');
       return;
+    }
+
+    // Coach-specific requirements
+    if (role === 'coach') {
+      if (!club.trim()) {
+        showAlert('Missing club', 'Please enter the club you coach at.');
+        return;
+      }
+      if (!/^[a-z0-9_]{3,20}$/.test(username)) {
+        showAlert('Invalid username', 'Your coach username should be 3–20 characters: lowercase letters, numbers, or underscores.');
+        return;
+      }
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -48,6 +66,21 @@ export default function SignUpScreen() {
     }
 
     setLoading(true);
+
+    // For coaches, make sure the username isn't already taken before we create anything.
+    if (role === 'coach') {
+      const { data: taken } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('coach_username', username)
+        .maybeSingle();
+      if (taken) {
+        setLoading(false);
+        showAlert('Username taken', `"${username}" is already in use. Please pick another.`);
+        return;
+      }
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -61,17 +94,40 @@ export default function SignUpScreen() {
     }
 
     if (data.user) {
+      const profilePayload: any = {
+        id: data.user.id,
+        full_name: fullName,
+        is_coach: role === 'coach',
+        club: club.trim() || null,
+      };
+      if (role === 'coach') {
+        profilePayload.coach_username = username;
+      }
+
       const { error: profileError } = await supabase
         .from('profiles')
-        .upsert({
-          id: data.user.id,
-          full_name: fullName,
-        });
-      if (profileError) console.log('Profile error:', profileError);
+        .upsert(profilePayload);
+
+      if (profileError) {
+        setLoading(false);
+        // Most likely a race on the unique username; tell them plainly.
+        if (String(profileError.message).toLowerCase().includes('coach_username')) {
+          showAlert('Username taken', `"${username}" was just taken. Please pick another.`);
+        } else {
+          showAlert('Error', 'Could not finish creating your profile. Please try again.');
+        }
+        return;
+      }
     }
 
     setLoading(false);
-    router.replace('/(tabs)' as any);
+
+    // Coaches go to their roster home; players go to the normal tabs.
+    if (role === 'coach') {
+      router.replace('/coach' as any);
+    } else {
+      router.replace('/(tabs)' as any);
+    }
   };
 
   return (
@@ -102,6 +158,65 @@ export default function SignUpScreen() {
             onChangeText={setFullName}
             autoCapitalize="words"
           />
+
+          {/* Role picker */}
+          <Text style={styles.label}>I am a...</Text>
+          <View style={styles.roleRow}>
+            <TouchableOpacity
+              style={[styles.roleBtn, role === 'player' && styles.roleBtnActive]}
+              onPress={() => setRole('player')}
+            >
+              <MaterialCommunityIcons
+                name="badminton"
+                size={22}
+                color={role === 'player' ? '#FFFFFF' : Colors.textSecondary}
+              />
+              <Text style={[styles.roleBtnText, role === 'player' && styles.roleBtnTextActive]}>Player</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.roleBtn, role === 'coach' && styles.roleBtnActive]}
+              onPress={() => setRole('coach')}
+            >
+              <MaterialCommunityIcons
+                name="whistle"
+                size={22}
+                color={role === 'coach' ? '#FFFFFF' : Colors.textSecondary}
+              />
+              <Text style={[styles.roleBtnText, role === 'coach' && styles.roleBtnTextActive]}>Coach</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Club — required for coaches, optional for players */}
+          <Text style={styles.label}>
+            Club {role === 'player' ? <Text style={styles.optional}>(optional)</Text> : null}
+          </Text>
+          <TextInput
+            style={styles.input}
+            placeholder={role === 'coach' ? 'Which club do you coach at?' : 'Your club (if you have one)'}
+            placeholderTextColor={Colors.textSecondary}
+            value={club}
+            onChangeText={setClub}
+            autoCapitalize="words"
+          />
+
+          {/* Coach username */}
+          {role === 'coach' && (
+            <>
+              <Text style={styles.label}>Coach Username</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. coach_priya"
+                placeholderTextColor={Colors.textSecondary}
+                value={username}
+                onChangeText={(t) => setUsername(t.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Text style={styles.usernameHint}>
+                Players add you with this. Share it with them in person. Lowercase letters, numbers, and underscores only.
+              </Text>
+            </>
+          )}
 
           <Text style={styles.label}>Email</Text>
           <TextInput
@@ -162,6 +277,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 24, width: '100%' },
   title: { fontSize: 22, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 24 },
   label: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8 },
+  optional: { fontSize: 12, color: Colors.textSecondary, fontStyle: 'italic' },
   input: {
     backgroundColor: Colors.backgroundTop,
     borderRadius: 10,
@@ -172,6 +288,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
+  roleRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  roleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: Colors.backgroundTop,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  roleBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  roleBtnText: { fontSize: 14, color: Colors.textSecondary, fontWeight: '600' },
+  roleBtnTextActive: { color: '#FFFFFF' },
+  usernameHint: { fontSize: 11, color: Colors.textSecondary, lineHeight: 16, marginTop: -8, marginBottom: 16 },
   button: {
     backgroundColor: Colors.accent,
     borderRadius: 30,

@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState, useCallback } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Colors } from '@/constants/theme';
@@ -18,7 +18,12 @@ const showAlert = (title: string, message: string) => {
 type SortMode = 'newest' | 'liked';
 
 export default function CommunityScreen() {
-  const [activeTopic, setActiveTopic] = useState(TOPICS[0]);
+  // If we arrive with a topic (e.g. right after creating a post), open on it
+  // instead of always defaulting to the first tab.
+  const { topic: paramTopic } = useLocalSearchParams<{ topic?: string }>();
+  const [activeTopic, setActiveTopic] = useState(
+    paramTopic && TOPICS.includes(paramTopic) ? paramTopic : TOPICS[0]
+  );
   const [sortMode, setSortMode] = useState<SortMode>('newest');
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +34,13 @@ export default function CommunityScreen() {
   useEffect(() => {
     init();
   }, []);
+
+  // Keep the active tab in sync if we navigate here with a topic param.
+  useEffect(() => {
+    if (paramTopic && TOPICS.includes(paramTopic)) {
+      setActiveTopic(paramTopic);
+    }
+  }, [paramTopic]);
 
   useEffect(() => {
     if (user) loadPosts();

@@ -25,6 +25,8 @@ export default function Layout() {
       <Stack.Screen name="community-post" options={{ headerShown: false }} />
       <Stack.Screen name="community-thread" options={{ headerShown: false }} />
       <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
+      <Stack.Screen name="custom-workouts" options={{ headerShown: false }} />
+      <Stack.Screen name="create-exercise" options={{ headerShown: false }} />
     </Stack>
   );
 }
