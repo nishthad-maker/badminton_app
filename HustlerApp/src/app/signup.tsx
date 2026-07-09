@@ -124,7 +124,7 @@ export default function SignUpScreen() {
 
     // Coaches go to their roster home; players go to the normal tabs.
     if (role === 'coach') {
-      router.replace('/coach' as any);
+      router.replace('/(coach-tabs)/players' as any);
     } else {
       router.replace('/(tabs)' as any);
     }

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "HustlerApp",
+    "name": "Hustler",
     "slug": "HustlerApp",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,9 +8,12 @@
     "scheme": "hustlerapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.hustler.app",
+      "supportsTablet": false
     },
     "android": {
+      "package": "com.hustler.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -35,11 +38,26 @@
           }
         }
       ],
-      "expo-video"
+      "expo-video",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#1a6b3c",
+          "sounds": []
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b412790e-da09-4e52-8add-51f3749e5b9f"
+      }
+    },
+    "owner": "nis01s-team"
   }
 }

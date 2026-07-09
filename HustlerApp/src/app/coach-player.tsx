@@ -5,6 +5,10 @@ import { useState, useEffect, useRef } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Colors } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
+import { notifyCoachMessage } from '../lib/notifications';
+import { pickChatMedia, sendChatMediaMessage } from '../lib/chatMedia';
+import { showAlert } from '../lib/ui';
+import { MessageBubble } from '@/components/MessageBubble';
 
 const CATEGORY_LABELS: Record<string, string> = {
   strength: 'Strength', footwork: 'Footwork', endurance: 'Endurance', recovery: 'Recovery',
@@ -16,6 +20,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   strength: '#2ECC71', footwork: '#3498DB', endurance: '#E67E22', recovery: '#9B59B6',
 };
 const FEELINGS = ['😞 Bad', '😐 OK', '😄 Great'];
+const LANDINGS = ['✅ Landed clean', '⚠️ A little shaky', '❌ Missed / stepped down'];
 
 const logChips = (ld: any): string[] => {
   if (!ld) return [];
@@ -23,10 +28,12 @@ const logChips = (ld: any): string[] => {
   if (ld.weight) c.push(`⚖️ ${ld.weight}kg`);
   if (ld.sets) c.push(`🔁 ${ld.sets} sets`);
   if (ld.reps) c.push(`💪 ${ld.reps} reps`);
+  if (ld.height) c.push(`📏 ${ld.height}in`);
   if (ld.time) c.push(`⏱ ${ld.time} sec`);
   if (ld.duration) c.push(`⏱ ${ld.duration} min`);
   if (ld.distance) c.push(`📍 ${ld.distance}km`);
   if (typeof ld.feeling === 'number' && ld.feeling >= 0) c.push(FEELINGS[ld.feeling] ?? '');
+  if (typeof ld.landing === 'number' && ld.landing >= 0) c.push(LANDINGS[ld.landing] ?? '');
   return c.filter(Boolean);
 };
 
@@ -34,6 +41,15 @@ const fmtTime = (d: string) => new Date(d).toLocaleTimeString('en-US', { hour: '
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+type TabKey = 'overview' | 'sessions' | 'workouts' | 'notes';
+
+const TABS: { key: TabKey; label: string; icon: string }[] = [
+  { key: 'overview', label: 'Overview', icon: 'view-dashboard-outline' },
+  { key: 'sessions', label: 'Sessions', icon: 'clipboard-list-outline' },
+  { key: 'workouts', label: 'Workouts', icon: 'dumbbell' },
+  { key: 'notes', label: 'Notes', icon: 'note-text-outline' },
+];
 
 export default function CoachPlayerScreen() {
   const { playerId, name } = useLocalSearchParams();
@@ -43,11 +59,14 @@ export default function CoachPlayerScreen() {
   const [loading, setLoading] = useState(true);
   const [myId, setMyId] = useState<string | null>(null);
   const myIdRef = useRef<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [newActivity, setNewActivity] = useState(0);
 
   const [progressTrends, setProgressTrends] = useState<Record<string, { values: number[]; unit: string; trend: 'up' | 'down' | 'flat' }>>({});
-const [msgInputs, setMsgInputs] = useState<Record<string, string>>({});
-const [sending, setSending] = useState<Record<string, boolean>>({});
-const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
+  const [msgInputs, setMsgInputs] = useState<Record<string, string>>({});
+  const [sending, setSending] = useState<Record<string, boolean>>({});
+  const [sendingMedia, setSendingMedia] = useState<Record<string, boolean>>({});
+  const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
 
   // Progress snapshot
   const [weekSessions, setWeekSessions] = useState(0);
@@ -59,7 +78,6 @@ const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
   // Private notes
   const [privateNote, setPrivateNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
-  const [noteExpanded, setNoteExpanded] = useState(false);
   const noteTimeout = useRef<any>(null);
 
   useEffect(() => {
@@ -67,11 +85,32 @@ const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
     const channel = supabase
       .channel('assignment_messages_coach')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'assignment_messages' }, (payload) => {
-        if (payload.new.sender_id !== myIdRef.current) loadMessagesOnly();
+        if (payload.new.sender_id !== myIdRef.current) {
+          loadMessagesOnly();
+          refreshUnseenActivity();
+        }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [playerId]);
+
+  // Mark this player's activity as seen once the coach opens the Workouts tab
+  useEffect(() => {
+    if (activeTab !== 'workouts' || newActivity === 0) return;
+    const coachId = myIdRef.current;
+    if (!coachId || !playerId) return;
+    supabase.from('notifications').update({ seen: true })
+      .eq('user_id', coachId).eq('from_user_id', playerId as string).eq('seen', false);
+    setNewActivity(0);
+  }, [activeTab, newActivity]);
+
+  const refreshUnseenActivity = async () => {
+    const coachId = myIdRef.current;
+    if (!coachId || !playerId) return;
+    const { data } = await supabase
+      .from('notifications').select('id').eq('user_id', coachId).eq('from_user_id', playerId as string).eq('seen', false);
+    setNewActivity((data ?? []).length);
+  };
 
   const goBack = () => {
     if (typeof window !== 'undefined') window.history.back();
@@ -130,6 +169,7 @@ const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
       const key = s.exercise_name;
       let val = 0; let unit = '';
       if (ld.weight) { val = parseFloat(ld.weight) || 0; unit = 'kg'; }
+      else if (ld.height) { val = parseFloat(ld.height) || 0; unit = 'in'; }
       else if (ld.reps) { val = parseInt(ld.reps) || 0; unit = 'reps'; }
       else if (ld.time) { val = parseInt(ld.time) || 0; unit = 'sec'; }
       else if (ld.duration) { val = parseInt(ld.duration) || 0; unit = 'min'; }
@@ -179,6 +219,8 @@ const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
       const { data: noteData } = await supabase
         .from('coach_player_notes').select('note').eq('coach_id', coachId).eq('player_id', playerId as string).single();
       if (noteData) setPrivateNote(noteData.note ?? '');
+
+      refreshUnseenActivity();
     }
 
     setLoading(false);
@@ -206,11 +248,38 @@ const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
     setSending(prev => ({ ...prev, [assignment.id]: true }));
     await supabase.from('assignment_messages').insert({ assignment_id: assignment.id, sender_id: coachId, message: msg });
     await supabase.from('notifications').insert({ user_id: playerId as string, type: 'coach_feedback', assignment_id: assignment.id, from_user_id: coachId });
+
+    // Push notification to player
+    const { data: coachProfile } = await supabase.from('profiles').select('full_name').eq('id', coachId).single();
+    await notifyCoachMessage(playerId as string, coachProfile?.full_name ?? 'Your coach', msg);
     setMsgInputs(prev => ({ ...prev, [assignment.id]: '' }));
     setSending(prev => ({ ...prev, [assignment.id]: false }));
     setAssignments(prev => prev.map(a =>
       a.id === assignment.id
         ? { ...a, messages: [...a.messages, { id: Date.now().toString(), assignment_id: a.id, sender_id: coachId, message: msg, created_at: new Date().toISOString() }] }
+        : a
+    ));
+  };
+
+  const pickAndSendMedia = async (assignment: any) => {
+    const coachId = myIdRef.current;
+    if (!coachId) return;
+    const picked = await pickChatMedia();
+    if (picked.status === 'permission-denied') { showAlert('Permission needed', 'Please allow library access.'); return; }
+    if (picked.status === 'cancelled') return;
+
+    setSendingMedia(prev => ({ ...prev, [assignment.id]: true }));
+    const result = await sendChatMediaMessage({ assignmentId: assignment.id, senderId: coachId, uri: picked.uri, kind: picked.kind });
+    if (!result) { setSendingMedia(prev => ({ ...prev, [assignment.id]: false })); showAlert('Upload failed', 'Please try again.'); return; }
+    const { url, mediaType } = result;
+    await supabase.from('notifications').insert({ user_id: playerId as string, type: 'coach_feedback', assignment_id: assignment.id, from_user_id: coachId });
+
+    const { data: coachProfile } = await supabase.from('profiles').select('full_name').eq('id', coachId).single();
+    await notifyCoachMessage(playerId as string, coachProfile?.full_name ?? 'Your coach', mediaType === 'photo' ? '📷 Sent a photo' : '🎥 Sent a video');
+    setSendingMedia(prev => ({ ...prev, [assignment.id]: false }));
+    setAssignments(prev => prev.map(a =>
+      a.id === assignment.id
+        ? { ...a, messages: [...a.messages, { id: Date.now().toString(), assignment_id: a.id, sender_id: coachId, message: '', media_url: url, media_type: mediaType, created_at: new Date().toISOString() }] }
         : a
     ));
   };
@@ -239,28 +308,29 @@ const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
 
   return (
     <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
-      <View style={styles.titleRow}>
-        <TouchableOpacity onPress={goBack}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{playerName}</Text>
-      </View>
+      <View style={styles.content}>
+        <View style={styles.titleRow}>
+          <TouchableOpacity onPress={goBack}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
+          </TouchableOpacity>
+          <Text style={styles.title}>{playerName}</Text>
+        </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        {!loading && (
+          <TouchableOpacity
+            style={styles.assignBtn}
+            onPress={() => router.push({ pathname: '/assign-workout', params: { playerId: playerId as string, name: playerName } })}
+          >
+            <MaterialCommunityIcons name="clipboard-plus-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.assignBtnText}>Assign Workout</Text>
+          </TouchableOpacity>
+        )}
+
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         {loading ? (
           <ActivityIndicator color={Colors.accent} style={{ marginTop: 40 }} />
-        ) : (
+        ) : activeTab === 'overview' ? (
           <>
-            <TouchableOpacity
-              style={styles.assignBtn}
-              onPress={() => router.push({ pathname: '/assign-workout', params: { playerId: playerId as string, name: playerName } })}
-            >
-              <MaterialCommunityIcons name="clipboard-plus-outline" size={18} color="#FFFFFF" />
-              <Text style={styles.assignBtnText}>Assign Workout</Text>
-            </TouchableOpacity>
-
-            {/* ── PROGRESS SNAPSHOT ── */}
-            <Text style={styles.sectionLabel}>PROGRESS SNAPSHOT</Text>
             <View style={styles.snapshotCard}>
 
               {/* Top stats row */}
@@ -350,125 +420,16 @@ const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
               )}
             </View>
 
-            {/* ── ASSIGNED WORKOUTS ── */}
-            {assignments.length > 0 && (
-              <View style={{ marginBottom: 8 }}>
-                <Text style={styles.sectionLabel}>WORKOUTS YOU ASSIGNED</Text>
-                {assignments.map((a: any) => (
-                  <View key={a.id} style={styles.assignCard}>
-                    <View style={styles.assignTopRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.assignTitle}>{a.title}</Text>
-                        <Text style={styles.assignSub}>{a.doneAt ? `Done · ${fmtDate(a.doneAt)}` : `Sent ${fmtDate(a.created_at)}`}</Text>
-                      </View>
-                      <View style={[styles.doneChip, a.doneAt ? styles.doneChipYes : styles.doneChipNo]}>
-                        <MaterialCommunityIcons name={a.doneAt ? 'check-circle' : 'clock-outline'} size={14} color={a.doneAt ? Colors.accent : Colors.textSecondary} />
-                        <Text style={[styles.doneChipText, a.doneAt ? styles.doneChipTextYes : styles.doneChipTextNo]}>{a.doneAt ? 'Done' : 'Not yet'}</Text>
-                      </View>
-                    </View>
-                    {a.doneAt && logChips(a.doneData).length > 0 && (
-                      <View style={styles.chipRow}>
-                        {logChips(a.doneData).map((chip: string, ci: number) => (
-                          <View key={ci} style={styles.chip}><Text style={styles.chipText}>{chip}</Text></View>
-                        ))}
-                      </View>
-                    )}
-                    {a.proof && (
-                      <View style={styles.proofSection}>
-                        <Text style={styles.proofLabel}>📎 Proof uploaded</Text>
-                        {a.proof.media_type === 'photo' ? (
-                          <TouchableOpacity onPress={() => Linking.openURL(a.proof.media_url)}>
-                            <Image source={{ uri: a.proof.media_url }} style={styles.proofThumb} resizeMode="cover" />
-                            <Text style={styles.proofTap}>Tap to view full size</Text>
-                          </TouchableOpacity>
-                        ) : (
-                          <TouchableOpacity style={styles.videoProof} onPress={() => Linking.openURL(a.proof.media_url)}>
-                            <MaterialCommunityIcons name="play-circle-outline" size={32} color={Colors.accent} />
-                            <Text style={styles.videoProofText}>Tap to watch video</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    )}
-                    <TouchableOpacity style={styles.chatToggle} onPress={() => toggleChat(a.id)}>
-                      <MaterialCommunityIcons name="message-outline" size={15} color={Colors.accent} />
-                      <Text style={styles.chatToggleText}>{a.messages.length > 0 ? `Messages (${a.messages.length})` : 'Leave feedback'}</Text>
-                      <MaterialCommunityIcons name={expandedChats[a.id] ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.textSecondary} />
-                    </TouchableOpacity>
-                    {expandedChats[a.id] && (
-                      <>
-                        {a.messages.length > 0 && (
-                          <View style={styles.chatThread}>
-                            {a.messages.map((m: any) => {
-                              const isCoach = m.sender_id === myIdRef.current;
-                              return (
-                                <View key={m.id} style={[styles.bubble, isCoach ? styles.bubbleCoach : styles.bubblePlayer]}>
-                                  {!isCoach && <Text style={styles.bubbleSender}>{playerName}</Text>}
-                                  <Text style={[styles.bubbleText, isCoach ? styles.bubbleTextCoach : styles.bubbleTextPlayer]}>{m.message}</Text>
-                                  <Text style={[styles.bubbleTime, isCoach ? styles.bubbleTimeCoach : styles.bubbleTimePlayer]}>{fmtTime(m.created_at)}</Text>
-                                </View>
-                              );
-                            })}
-                          </View>
-                        )}
-                        <View style={styles.inputRow}>
-                          <TextInput style={styles.input} placeholder="Leave feedback or reply..." placeholderTextColor={Colors.textSecondary} value={msgInputs[a.id] ?? ''} onChangeText={(t) => setMsgInputs(prev => ({ ...prev, [a.id]: t }))} multiline />
-                          <TouchableOpacity style={[styles.sendBtn, (!msgInputs[a.id]?.trim() || sending[a.id]) && styles.sendBtnDisabled]} onPress={() => sendMessage(a)} disabled={!msgInputs[a.id]?.trim() || sending[a.id]}>
-                            {sending[a.id] ? <ActivityIndicator size="small" color="#fff" /> : <MaterialCommunityIcons name="send" size={16} color="#fff" />}
-                          </TouchableOpacity>
-                        </View>
-                      </>
-                    )}
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {/* ── PRIVATE NOTES ── */}
-            <Text style={styles.sectionLabel}>PRIVATE NOTES</Text>
-            <TouchableOpacity style={styles.notesCard} onPress={() => setNoteExpanded(!noteExpanded)} activeOpacity={0.8}>
-              <View style={styles.notesHeader}>
-                <View style={styles.notesHeaderLeft}>
-                  <MaterialCommunityIcons name="lock-outline" size={16} color={Colors.textSecondary} />
-                  <Text style={styles.notesHeaderText}>Only you can see these</Text>
-                </View>
-                <View style={styles.notesHeaderRight}>
-                  {savingNote && <Text style={styles.savingText}>Saving...</Text>}
-                  <MaterialCommunityIcons name={noteExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={Colors.textSecondary} />
-                </View>
-              </View>
-              {!noteExpanded && privateNote ? (
-                <Text style={styles.notePreview} numberOfLines={2}>{privateNote}</Text>
-              ) : null}
-              {!noteExpanded && !privateNote ? (
-                <Text style={styles.notePlaceholder}>Tap to add private notes about {playerName}...</Text>
-              ) : null}
-            </TouchableOpacity>
-            {noteExpanded && (
-              <View style={styles.notesExpanded}>
-                <TextInput
-                  style={styles.notesInput}
-                  placeholder={`Notes about ${playerName}... (e.g. competing July 20, needs footwork focus, strong backhand)`}
-                  placeholderTextColor={Colors.textSecondary}
-                  value={privateNote}
-                  onChangeText={saveNote}
-                  multiline
-                  numberOfLines={6}
-                  textAlignVertical="top"
-                  autoFocus
-                />
-                {savingNote && <Text style={styles.savingTextInline}>Saving...</Text>}
-              </View>
-            )}
-
-            {/* ── RECENT SESSIONS ── */}
-            <Text style={[styles.sectionLabel, { marginTop: 20 }]}>RECENT SESSIONS</Text>
+          </>
+        ) : activeTab === 'sessions' ? (
+          <>
             {sessions.length === 0 ? (
               <View style={styles.emptyState}>
                 <MaterialCommunityIcons name="clipboard-text-outline" size={40} color={Colors.textSecondary} />
                 <Text style={styles.emptyDesc}>No sessions logged yet.</Text>
               </View>
             ) : (
-              sessions.slice(0, 10).map((s: any, i: number) => (
+              sessions.map((s: any, i: number) => (
                 <View key={i} style={styles.sessionCard}>
                   <View style={styles.sessionIcon}>
                     <MaterialCommunityIcons name={(CATEGORY_ICONS[s.category] ?? 'run') as any} size={18} color={Colors.accent} />
@@ -488,20 +449,166 @@ const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
               ))
             )}
           </>
+        ) : activeTab === 'workouts' ? (
+          <>
+            {assignments.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialCommunityIcons name="clipboard-plus-outline" size={40} color={Colors.textSecondary} />
+                <Text style={styles.emptyDesc}>No workouts assigned yet.</Text>
+              </View>
+            ) : (
+              assignments.map((a: any) => (
+                <View key={a.id} style={styles.assignCard}>
+                  <View style={styles.assignTopRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.assignTitle}>{a.title}</Text>
+                      <Text style={styles.assignSub}>{a.doneAt ? `Done · ${fmtDate(a.doneAt)}` : `Sent ${fmtDate(a.created_at)}`}</Text>
+                    </View>
+                    <View style={[styles.doneChip, a.doneAt ? styles.doneChipYes : styles.doneChipNo]}>
+                      <MaterialCommunityIcons name={a.doneAt ? 'check-circle' : 'clock-outline'} size={14} color={a.doneAt ? Colors.accent : Colors.textSecondary} />
+                      <Text style={[styles.doneChipText, a.doneAt ? styles.doneChipTextYes : styles.doneChipTextNo]}>{a.doneAt ? 'Done' : 'Not yet'}</Text>
+                    </View>
+                  </View>
+                  {a.doneAt && logChips(a.doneData).length > 0 && (
+                    <View style={styles.chipRow}>
+                      {logChips(a.doneData).map((chip: string, ci: number) => (
+                        <View key={ci} style={styles.chip}><Text style={styles.chipText}>{chip}</Text></View>
+                      ))}
+                    </View>
+                  )}
+                  {a.proof && (
+                    <View style={styles.proofSection}>
+                      <Text style={styles.proofLabel}>📎 Proof uploaded</Text>
+                      {a.proof.media_type === 'photo' ? (
+                        <TouchableOpacity onPress={() => Linking.openURL(a.proof.media_url)}>
+                          <Image source={{ uri: a.proof.media_url }} style={styles.proofThumb} resizeMode="cover" />
+                          <Text style={styles.proofTap}>Tap to view full size</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity style={styles.videoProof} onPress={() => Linking.openURL(a.proof.media_url)}>
+                          <MaterialCommunityIcons name="play-circle-outline" size={32} color={Colors.accent} />
+                          <Text style={styles.videoProofText}>Tap to watch video</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
+                  <TouchableOpacity style={styles.chatToggle} onPress={() => toggleChat(a.id)}>
+                    <MaterialCommunityIcons name="message-outline" size={15} color={Colors.accent} />
+                    <Text style={styles.chatToggleText}>{a.messages.length > 0 ? `Messages (${a.messages.length})` : 'Leave feedback'}</Text>
+                    <MaterialCommunityIcons name={expandedChats[a.id] ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.textSecondary} />
+                  </TouchableOpacity>
+                  {expandedChats[a.id] && (
+                    <>
+                      {a.messages.length > 0 && (
+                        <View style={styles.chatThread}>
+                          {a.messages.map((m: any) => (
+                            <MessageBubble
+                              key={m.id}
+                              isMine={m.sender_id === myIdRef.current}
+                              senderLabel={playerName}
+                              message={m.message}
+                              mediaUrl={m.media_url}
+                              mediaType={m.media_type}
+                              timeLabel={fmtTime(m.created_at)}
+                            />
+                          ))}
+                        </View>
+                      )}
+                      <View style={styles.inputRow}>
+                        <TouchableOpacity style={styles.mediaBtn} onPress={() => pickAndSendMedia(a)} disabled={sendingMedia[a.id]}>
+                          {sendingMedia[a.id] ? <ActivityIndicator size="small" color={Colors.accent} /> : <MaterialCommunityIcons name="image-multiple-outline" size={20} color={Colors.accent} />}
+                        </TouchableOpacity>
+                        <TextInput style={styles.input} placeholder="Leave feedback or reply..." placeholderTextColor={Colors.textSecondary} value={msgInputs[a.id] ?? ''} onChangeText={(t) => setMsgInputs(prev => ({ ...prev, [a.id]: t }))} multiline />
+                        <TouchableOpacity style={[styles.sendBtn, (!msgInputs[a.id]?.trim() || sending[a.id]) && styles.sendBtnDisabled]} onPress={() => sendMessage(a)} disabled={!msgInputs[a.id]?.trim() || sending[a.id]}>
+                          {sending[a.id] ? <ActivityIndicator size="small" color="#fff" /> : <MaterialCommunityIcons name="send" size={16} color="#fff" />}
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+                </View>
+              ))
+            )}
+          </>
+        ) : (
+          <View style={styles.notesCard}>
+            <View style={styles.notesHeader}>
+              <View style={styles.notesHeaderLeft}>
+                <MaterialCommunityIcons name="lock-outline" size={16} color={Colors.textSecondary} />
+                <Text style={styles.notesHeaderText}>Only you can see these</Text>
+              </View>
+              {savingNote && <Text style={styles.savingText}>Saving...</Text>}
+            </View>
+            <TextInput
+              style={styles.notesInput}
+              placeholder={`Notes about ${playerName}... (e.g. competing July 20, needs footwork focus, strong backhand)`}
+              placeholderTextColor={Colors.textSecondary}
+              value={privateNote}
+              onChangeText={saveNote}
+              multiline
+              numberOfLines={10}
+              textAlignVertical="top"
+            />
+          </View>
         )}
-      </ScrollView>
+        </ScrollView>
+      </View>
+
+      {!loading && (
+        <View style={styles.bottomTabBar}>
+          {TABS.map(tab => {
+            const badge = tab.key === 'workouts' ? newActivity : 0;
+            const active = activeTab === tab.key;
+            const color = active ? Colors.accent : Colors.textSecondary;
+            return (
+              <TouchableOpacity key={tab.key} style={styles.bottomTabBtn} onPress={() => setActiveTab(tab.key)}>
+                <View>
+                  <MaterialCommunityIcons name={tab.icon as any} size={24} color={color} />
+                  {badge > 0 && (
+                    <View style={styles.bottomTabBadge}>
+                      <Text style={styles.bottomTabBadgeText}>{badge > 9 ? '9+' : badge}</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={[styles.bottomTabLabel, { color }]}>{tab.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
     </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, paddingTop: 60 },
+  container: { flex: 1 },
+  content: { flex: 1, padding: 24, paddingTop: 60 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   title: { fontSize: 24, fontWeight: 'bold', color: Colors.textPrimary },
   scroll: { paddingBottom: 60 },
-  assignBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.accent, borderRadius: 12, paddingVertical: 14, marginBottom: 24 },
+  assignBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.accent, borderRadius: 12, paddingVertical: 14, marginBottom: 16 },
   assignBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
   sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1, marginBottom: 12 },
+
+  // Bottom tab bar
+  bottomTabBar: {
+    flexDirection: 'row',
+    backgroundColor: Colors.backgroundTop,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopWidth: 1,
+    height: 80,
+    paddingBottom: 16,
+    paddingTop: 8,
+  },
+  bottomTabBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  bottomTabLabel: { fontSize: 11, fontWeight: '600' },
+  bottomTabBadge: {
+    position: 'absolute', top: -4, right: -8,
+    minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: '#FF3B30', alignItems: 'center',
+    justifyContent: 'center', paddingHorizontal: 3,
+    borderWidth: 1.5, borderColor: Colors.backgroundTop as string,
+  },
+  bottomTabBadgeText: { color: '#fff', fontSize: 9, fontWeight: 'bold' },
 
   // Progress snapshot
   snapshotCard: { backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 16, marginBottom: 24, gap: 16 },
@@ -565,33 +672,19 @@ const styles = StyleSheet.create({
   chatToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 2, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' },
   chatToggleText: { flex: 1, fontSize: 13, color: Colors.accent, fontWeight: '600' },
   chatThread: { gap: 6 },
-  bubble: { maxWidth: '80%', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
-  bubbleCoach: { backgroundColor: Colors.accent, alignSelf: 'flex-end', borderBottomRightRadius: 4 },
-  bubblePlayer: { backgroundColor: 'rgba(255,255,255,0.08)', alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
-  bubbleSender: { fontSize: 10, color: Colors.accent, fontWeight: '700', marginBottom: 2 },
-  bubbleText: { fontSize: 13, lineHeight: 18 },
-  bubbleTextCoach: { color: '#FFFFFF' },
-  bubbleTextPlayer: { color: Colors.textPrimary },
-  bubbleTime: { fontSize: 10 },
-  bubbleTimeCoach: { color: 'rgba(255,255,255,0.6)', textAlign: 'right' },
-  bubbleTimePlayer: { color: Colors.textSecondary },
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginTop: 4 },
+  mediaBtn: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: Colors.border },
   input: { flex: 1, backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 10, padding: 10, color: Colors.textPrimary, fontSize: 13, borderWidth: 1, borderColor: Colors.border, maxHeight: 80 },
   sendBtn: { backgroundColor: Colors.accent, borderRadius: 10, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled: { opacity: 0.4 },
 
   // Private notes
   notesCard: { backgroundColor: Colors.backgroundCard, borderRadius: 14, padding: 14, marginBottom: 4 },
-  notesHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  notesHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   notesHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   notesHeaderText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
-  notesHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   savingText: { fontSize: 11, color: Colors.textSecondary, fontStyle: 'italic' },
-  savingTextInline: { fontSize: 11, color: Colors.textSecondary, fontStyle: 'italic', textAlign: 'right', marginTop: 4 },
-  notePreview: { fontSize: 13, color: Colors.textPrimary, lineHeight: 20 },
-  notePlaceholder: { fontSize: 13, color: Colors.textSecondary, fontStyle: 'italic' },
-  notesExpanded: { backgroundColor: Colors.backgroundCard, borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: Colors.accent },
-  notesInput: { color: Colors.textPrimary, fontSize: 13, lineHeight: 20, minHeight: 120 },
+  notesInput: { color: Colors.textPrimary, fontSize: 13, lineHeight: 20, minHeight: 220 },
 
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chip: { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },

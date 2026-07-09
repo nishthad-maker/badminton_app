@@ -19,32 +19,33 @@ function BadgeIcon({ name, color, size, count }: { name: any; color: string | Co
   );
 }
 
-export default function TabLayout() {
-  const [unreadCount, setUnreadCount] = useState(0);
+export default function CoachTabLayout() {
+  const [alertCount, setAlertCount] = useState(0);
 
   useEffect(() => {
-    loadUnread();
+    loadAlerts();
     registerForPushNotifications();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      loadUnread();
+      loadAlerts();
       registerForPushNotifications();
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const loadUnread = async () => {
+  const loadAlerts = async () => {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) { setUnreadCount(0); return; }
+    if (!session?.user) { setAlertCount(0); return; }
+    const me = session.user.id;
 
-    const { data: unreadAsgs } = await supabase
-      .from('assignments').select('id').eq('player_id', session.user.id).eq('seen', false);
+    const { data: pendingRequests } = await supabase
+      .from('coach_connections').select('id').eq('coach_id', me).eq('status', 'pending');
 
     const { data: unreadNotifs } = await supabase
-      .from('notifications').select('id').eq('user_id', session.user.id).eq('type', 'coach_feedback').eq('seen', false);
+      .from('notifications').select('id').eq('user_id', me).eq('seen', false);
 
-    setUnreadCount((unreadAsgs ?? []).length + (unreadNotifs ?? []).length);
+    setAlertCount((pendingRequests ?? []).length + (unreadNotifs ?? []).length);
   };
 
   return (
@@ -65,20 +66,20 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="players"
         options={{
-          title: 'Home',
+          title: 'Players',
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="home" size={size} color={color} />
+            <BadgeIcon name="account-group" color={color} size={size} count={alertCount} />
           ),
         }}
       />
       <Tabs.Screen
-        name="workouts"
+        name="schedule"
         options={{
-          title: 'Train',
+          title: 'Schedule',
           tabBarIcon: ({ color, size }) => (
-            <BadgeIcon name="lightning-bolt" color={color} size={size} count={unreadCount} />
+            <MaterialCommunityIcons name="calendar-month-outline" size={size} color={color} />
           ),
         }}
       />
@@ -87,7 +88,7 @@ export default function TabLayout() {
         options={{
           title: 'Community',
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="account-group" size={size} color={color} />
+            <MaterialCommunityIcons name="forum-outline" size={size} color={color} />
           ),
         }}
       />

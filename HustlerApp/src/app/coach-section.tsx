@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Image, Linking, ActivityIndicator, Alert, Platform
+  TextInput, Image, Linking, ActivityIndicator
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, router } from 'expo-router';
@@ -9,9 +9,11 @@ import * as ImagePicker from 'expo-image-picker';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Colors } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
-
-const CLOUDINARY_CLOUD = 'pyqqwrax';
-const CLOUDINARY_PRESET = 'hustler_videos';
+import { notifyPlayerMessage, notifyProofUploaded } from '../lib/notifications';
+import { uploadToCloudinary } from '../lib/cloudinary';
+import { pickChatMedia, sendChatMediaMessage } from '../lib/chatMedia';
+import { showAlert } from '../lib/ui';
+import { MessageBubble } from '@/components/MessageBubble';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -21,11 +23,6 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 const CATEGORY_ICONS: Record<string, string> = {
   strength: 'dumbbell', footwork: 'badminton', endurance: 'lightning-bolt', recovery: 'heart-pulse',
-};
-
-const showAlert = (title: string, message: string) => {
-  if (typeof window !== 'undefined') window.alert(`${title}\n\n${message}`);
-  else Alert.alert(title, message);
 };
 
 const fmtDate = (d: string) =>
@@ -39,11 +36,13 @@ export default function CoachSectionScreen() {
 
   // ── Assigned workouts state ──
   const [grouped, setGrouped] = useState<Record<string, { coachName: string; assignments: any[] }>>({});
+  const [hasCoachConnection, setHasCoachConnection] = useState(true);
   const [loadingWorkouts, setLoadingWorkouts] = useState(true);
   const [myId, setMyId] = useState<string | null>(null);
   const myIdRef = useRef<string | null>(null);
   const [msgInputs, setMsgInputs] = useState<Record<string, string>>({});
   const [sending, setSending] = useState<Record<string, boolean>>({});
+  const [sendingMedia, setSendingMedia] = useState<Record<string, boolean>>({});
   const [uploadingProof, setUploadingProof] = useState<Record<string, boolean>>({});
   const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
 
@@ -75,6 +74,9 @@ export default function CoachSectionScreen() {
     if (!userId) { setLoadingWorkouts(false); return; }
     setMyId(userId);
     myIdRef.current = userId;
+
+    const { data: conns } = await supabase.from('coach_connections').select('id').eq('player_id', userId).limit(1);
+    setHasCoachConnection((conns ?? []).length > 0);
 
     await supabase.from('assignments').update({ seen: true }).eq('player_id', userId).eq('seen', false);
     await supabase.from('notifications').update({ seen: true }).eq('user_id', userId).eq('type', 'coach_feedback').eq('seen', false);
@@ -160,24 +162,6 @@ export default function CoachSectionScreen() {
   };
 
   // ── Proof upload ──
-  const uploadToCloudinary = async (uri: string, kind: 'image' | 'video'): Promise<string | null> => {
-    try {
-      const formData = new FormData();
-      if (Platform.OS === 'web') {
-        const resp = await fetch(uri); const blob = await resp.blob();
-        formData.append('file', blob, kind === 'video' ? 'clip.mp4' : 'photo.jpg');
-      } else {
-        formData.append('file', { uri, type: kind === 'video' ? 'video/mp4' : 'image/jpeg', name: kind === 'video' ? 'clip.mp4' : 'photo.jpg' } as any);
-      }
-      formData.append('upload_preset', CLOUDINARY_PRESET);
-      formData.append('folder', 'hustler_proof');
-      const endpoint = kind === 'video' ? 'video' : 'image';
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/${endpoint}/upload`, { method: 'POST', body: formData });
-      const data = await res.json();
-      return data.secure_url ?? null;
-    } catch (e) { return null; }
-  };
-
   const uploadProof = async (assignment: any) => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { showAlert('Permission needed', 'Please allow library access.'); return; }
@@ -186,10 +170,15 @@ export default function CoachSectionScreen() {
     const asset = result.assets[0];
     const kind = asset.type === 'video' ? 'video' : 'image';
     setUploadingProof(prev => ({ ...prev, [assignment.id]: true }));
-    const url = await uploadToCloudinary(asset.uri, kind);
+    const url = await uploadToCloudinary(asset.uri, kind, 'hustler_proof');
     if (!url || !myIdRef.current) { setUploadingProof(prev => ({ ...prev, [assignment.id]: false })); showAlert('Upload failed', 'Please try again.'); return; }
     await supabase.from('assignment_proof').insert({ assignment_id: assignment.id, player_id: myIdRef.current, media_url: url, media_type: kind === 'image' ? 'photo' : 'video' });
     setUploadingProof(prev => ({ ...prev, [assignment.id]: false }));
+
+    // Notify coach that proof was uploaded
+    const { data: playerProfile } = await supabase.from('profiles').select('full_name').eq('id', myIdRef.current).single();
+    await notifyProofUploaded(assignment.coach_id, playerProfile?.full_name ?? 'Your player', assignment.title);
+
     await loadWorkouts();
   };
 
@@ -211,6 +200,10 @@ export default function CoachSectionScreen() {
     setSending(prev => ({ ...prev, [assignment.id]: true }));
     await supabase.from('assignment_messages').insert({ assignment_id: assignment.id, sender_id: userId, message: msg });
     await supabase.from('notifications').insert({ user_id: assignment.coach_id, type: 'player_message', assignment_id: assignment.id, from_user_id: userId });
+
+    // Push notification to coach
+    const { data: playerProfile } = await supabase.from('profiles').select('full_name').eq('id', userId).single();
+    await notifyPlayerMessage(assignment.coach_id, playerProfile?.full_name ?? 'Your player', msg);
     setMsgInputs(prev => ({ ...prev, [assignment.id]: '' }));
     setSending(prev => ({ ...prev, [assignment.id]: false }));
     setGrouped(prev => {
@@ -229,7 +222,52 @@ export default function CoachSectionScreen() {
     });
   };
 
+  // ── Send photo/video message ──
+  const pickAndSendMedia = async (assignment: any) => {
+    const userId = myIdRef.current;
+    if (!userId) return;
+    const picked = await pickChatMedia();
+    if (picked.status === 'permission-denied') { showAlert('Permission needed', 'Please allow library access.'); return; }
+    if (picked.status === 'cancelled') return;
+
+    setSendingMedia(prev => ({ ...prev, [assignment.id]: true }));
+    const result = await sendChatMediaMessage({ assignmentId: assignment.id, senderId: userId, uri: picked.uri, kind: picked.kind });
+    if (!result) { setSendingMedia(prev => ({ ...prev, [assignment.id]: false })); showAlert('Upload failed', 'Please try again.'); return; }
+    const { url, mediaType } = result;
+    await supabase.from('notifications').insert({ user_id: assignment.coach_id, type: 'player_message', assignment_id: assignment.id, from_user_id: userId });
+
+    const { data: playerProfile } = await supabase.from('profiles').select('full_name').eq('id', userId).single();
+    await notifyPlayerMessage(assignment.coach_id, playerProfile?.full_name ?? 'Your player', mediaType === 'photo' ? '📷 Sent a photo' : '🎥 Sent a video');
+    setSendingMedia(prev => ({ ...prev, [assignment.id]: false }));
+    setGrouped(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(coachId => {
+        updated[coachId] = {
+          ...updated[coachId],
+          assignments: updated[coachId].assignments.map(a =>
+            a.id === assignment.id
+              ? { ...a, messages: [...a.messages, { id: Date.now().toString(), assignment_id: a.id, sender_id: userId, message: '', media_url: url, media_type: mediaType, created_at: new Date().toISOString() }] }
+              : a
+          ),
+        };
+      });
+      return updated;
+    });
+  };
+
   const toggleChat = (id: string) => setExpandedChats(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const renderNoCoachState = () => (
+    <View style={styles.emptyState}>
+      <MaterialCommunityIcons name="whistle-outline" size={48} color={Colors.textSecondary} />
+      <Text style={styles.emptyTitle}>No coach yet</Text>
+      <Text style={styles.emptyDesc}>Connect with a coach to get assigned workouts, weekly plans, and feedback.</Text>
+      <TouchableOpacity style={styles.addCoachBtn} onPress={() => router.push('/my-coaches' as any)}>
+        <MaterialCommunityIcons name="account-plus-outline" size={18} color="#FFFFFF" />
+        <Text style={styles.addCoachBtnText}>Add a Coach</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   // ── Open exercise from weekly plan ──
   const openExercise = (ex: any) => {
@@ -281,7 +319,9 @@ export default function CoachSectionScreen() {
         {activeTab === 'workouts' && (
           loadingWorkouts ? (
             <ActivityIndicator color={Colors.accent} style={{ marginTop: 40 }} />
-          ) : coachIds.length === 0 ? (
+          ) : !hasCoachConnection ? (
+            renderNoCoachState()
+          ) :coachIds.length === 0 ? (
             <View style={styles.emptyState}>
               <MaterialCommunityIcons name="clipboard-text-outline" size={48} color={Colors.textSecondary} />
               <Text style={styles.emptyTitle}>No workouts yet</Text>
@@ -367,19 +407,27 @@ export default function CoachSectionScreen() {
                         <>
                           {a.messages.length > 0 && (
                             <View style={styles.chatThread}>
-                              {a.messages.map((m: any) => {
-                                const isMe = m.sender_id === myIdRef.current;
-                                return (
-                                  <View key={m.id} style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleCoach]}>
-                                    {!isMe && <Text style={styles.bubbleSender}>{coachName}</Text>}
-                                    <Text style={[styles.bubbleText, isMe ? styles.bubbleTextMe : styles.bubbleTextCoach]}>{m.message}</Text>
-                                    <Text style={[styles.bubbleTime, isMe ? styles.bubbleTimeMe : styles.bubbleTimeCoach]}>{fmtTime(m.created_at)}</Text>
-                                  </View>
-                                );
-                              })}
+                              {a.messages.map((m: any) => (
+                                <MessageBubble
+                                  key={m.id}
+                                  isMine={m.sender_id === myIdRef.current}
+                                  senderLabel={coachName}
+                                  message={m.message}
+                                  mediaUrl={m.media_url}
+                                  mediaType={m.media_type}
+                                  timeLabel={fmtTime(m.created_at)}
+                                />
+                              ))}
                             </View>
                           )}
                           <View style={styles.inputRow}>
+                            <TouchableOpacity
+                              style={styles.mediaBtn}
+                              onPress={() => pickAndSendMedia(a)}
+                              disabled={sendingMedia[a.id]}
+                            >
+                              {sendingMedia[a.id] ? <ActivityIndicator size="small" color={Colors.accent} /> : <MaterialCommunityIcons name="image-multiple-outline" size={20} color={Colors.accent} />}
+                            </TouchableOpacity>
                             <TextInput
                               style={styles.textInput}
                               placeholder="Type a message..."
@@ -410,7 +458,9 @@ export default function CoachSectionScreen() {
         {activeTab === 'plans' && (
           loadingPlans ? (
             <ActivityIndicator color={Colors.accent} style={{ marginTop: 40 }} />
-          ) : plans.length === 0 ? (
+          ) : !hasCoachConnection ? (
+            renderNoCoachState()
+          ) :plans.length === 0 ? (
             <View style={styles.emptyState}>
               <MaterialCommunityIcons name="calendar-blank-outline" size={48} color={Colors.textSecondary} />
               <Text style={styles.emptyTitle}>No weekly plans yet</Text>
@@ -518,6 +568,8 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingTop: 60, gap: 12 },
   emptyTitle: { fontSize: 16, fontWeight: 'bold', color: Colors.textPrimary },
   emptyDesc: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  addCoachBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.accent, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 20, marginTop: 8 },
+  addCoachBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
 
   // Coach section
   coachSection: { marginBottom: 28 },
@@ -557,17 +609,8 @@ const styles = StyleSheet.create({
   chatToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' },
   chatToggleText: { flex: 1, fontSize: 13, color: Colors.accent, fontWeight: '600' },
   chatThread: { gap: 6 },
-  bubble: { maxWidth: '80%', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
-  bubbleMe: { backgroundColor: Colors.accent, alignSelf: 'flex-end', borderBottomRightRadius: 4 },
-  bubbleCoach: { backgroundColor: 'rgba(255,255,255,0.08)', alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
-  bubbleSender: { fontSize: 10, color: Colors.accent, fontWeight: '700', marginBottom: 2 },
-  bubbleText: { fontSize: 13, lineHeight: 18 },
-  bubbleTextMe: { color: '#fff' },
-  bubbleTextCoach: { color: Colors.textPrimary },
-  bubbleTime: { fontSize: 10 },
-  bubbleTimeMe: { color: 'rgba(255,255,255,0.6)', textAlign: 'right' },
-  bubbleTimeCoach: { color: Colors.textSecondary },
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginTop: 4 },
+  mediaBtn: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: Colors.border },
   textInput: { flex: 1, backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 10, padding: 10, color: Colors.textPrimary, fontSize: 13, borderWidth: 1, borderColor: Colors.border, maxHeight: 80 },
   sendBtn: { backgroundColor: Colors.accent, borderRadius: 10, width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled: { opacity: 0.4 },

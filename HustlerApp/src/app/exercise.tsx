@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, ActivityIndicator, Platform } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,6 +7,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { Audio } from 'expo-av';
 import { supabase } from '../lib/supabase';
 import { Colors } from '@/constants/theme';
+import { LOG_TYPE_FIELDS } from '@/constants/logTypes';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 type VoiceNote = {
@@ -17,8 +18,22 @@ type VoiceNote = {
 };
 
 const FEELING_LABELS = ['😞 Bad', '😐 OK', '😄 Great'];
+const LANDING_LABELS = ['✅ Landed clean', '⚠️ A little shaky', '❌ Missed / stepped down'];
 const CLOUDINARY_CLOUD = 'pyqqwrax';
 const CLOUDINARY_PRESET = 'hustler_videos';
+
+// Plyometric height progresses far more conservatively than weight/reps —
+// jumping higher before landings are consistently clean is how ankles/knees get hurt.
+const PLYO_HEIGHT_INCREMENT_IN = 2;
+const PLYO_MAX_HEIGHT_IN = 30;
+const PLYO_CLEAN_STREAK_FOR_HEIGHT_BUMP = 3;
+const PLYO_MIN_DAYS_BETWEEN_HEIGHT_BUMPS = 7;
+
+const daysSince = (isoDate?: string): number | null => {
+  if (!isoDate) return null;
+  const ms = Date.now() - new Date(isoDate).getTime();
+  return Number.isNaN(ms) ? null : ms / (1000 * 60 * 60 * 24);
+};
 
 const showAlert = (title: string, message: string) => {
   if (typeof window !== 'undefined') window.alert(`${title}\n\n${message}`);
@@ -53,6 +68,7 @@ const getSkillRecommendation = (logType: string, skillLevel: string) => {
   if (level === 'advanced') return null;
   if (logType === 'plank') return level === 'intermediate' ? '3 sets • 45 sec each' : '2 sets • 20 sec each';
   if (logType === 'reps-sets') return level === 'intermediate' ? '3 sets • 12 reps' : '2 sets • 8 reps';
+  if (logType === 'plyometric') return level === 'intermediate' ? '3 sets • 8 reps @ 12in' : '2 sets • 6 reps @ 8in';
   if (logType === 'footwork') return level === 'intermediate' ? '3 sets' : '2 sets';
   if (logType === 'skipping') return level === 'intermediate' ? '5 sets • 50 reps • 45 sec' : '3 sets • 25 reps • 20 sec';
   if (logType === 'sets-duration') return level === 'intermediate' ? '3 sets • 20 min' : '2 sets • 15 min';
@@ -75,6 +91,7 @@ export default function ExerciseScreen() {
   const [activeTab, setActiveTab] = useState<'howto' | 'notes' | 'timer'>('howto');
   const [sessions, setSessions] = useState<any[]>([]);
   const [sessionIds, setSessionIds] = useState<string[]>([]);
+  const [sessionCreatedAt, setSessionCreatedAt] = useState<string[]>([]);
   const [generalNote, setGeneralNote] = useState('');
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
@@ -86,12 +103,14 @@ export default function ExerciseScreen() {
   const [weight, setWeight] = useState('');
   const [sets, setSets] = useState('');
   const [reps, setReps] = useState('');
+  const [height, setHeight] = useState('');
   const [fwSets, setFwSets] = useState('');
   const [fwDuration, setFwDuration] = useState('');
   const [duration, setDuration] = useState('');
   const [distance, setDistance] = useState('');
   const [recoveryDuration, setRecoveryDuration] = useState('');
   const [feeling, setFeeling] = useState(-1);
+  const [landingQuality, setLandingQuality] = useState(-1);
 
   // Timer state
   const [timerRunning, setTimerRunning] = useState(false);
@@ -258,7 +277,13 @@ export default function ExerciseScreen() {
     setIsUploading(true);
     try {
       const formData = new FormData();
-      formData.append('file', { uri, type: 'audio/m4a', name: 'voice_note.m4a' } as any);
+      if (Platform.OS === 'web') {
+        const resp = await fetch(uri);
+        const blob = await resp.blob();
+        formData.append('file', blob, 'voice_note.m4a');
+      } else {
+        formData.append('file', { uri, type: 'audio/m4a', name: 'voice_note.m4a' } as any);
+      }
       formData.append('upload_preset', CLOUDINARY_PRESET);
       formData.append('resource_type', 'video');
       formData.append('folder', 'hustler_voice_notes');
@@ -271,18 +296,22 @@ export default function ExerciseScreen() {
         .select();
       if (error) throw error;
       if (inserted && inserted[0]) {
-        const updated = [inserted[0] as VoiceNote, ...voiceNotes];
-        if (updated.length > 10) {
-          const toDelete = updated.slice(10);
-          for (const old of toDelete) await supabase.from('voice_notes').delete().eq('id', old.id);
-          setVoiceNotes(updated.slice(0, 10));
-        } else {
-          setVoiceNotes(updated);
+        const { data: allNotes } = await supabase
+          .from('voice_notes')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('exercise_name', name as string)
+          .order('created_at', { ascending: false });
+        const toDelete = (allNotes ?? []).slice(5);
+        if (toDelete.length > 0) {
+          await supabase.from('voice_notes').delete().in('id', toDelete.map((n: any) => n.id));
         }
+        setVoiceNotes([inserted[0] as VoiceNote, ...voiceNotes].slice(0, 5));
       }
       showAlert('Saved!', 'Voice note recorded successfully.');
-    } catch (err) {
-      showAlert('Upload failed', 'Could not upload voice note. Please try again.');
+    } catch (err: any) {
+      console.error('Voice note upload failed:', err);
+      showAlert('Upload failed', err?.message ? String(err.message) : 'Could not upload voice note. Please try again.');
     } finally {
       setIsUploading(false);
     }
@@ -360,21 +389,25 @@ export default function ExerciseScreen() {
         const { data: profileData } = await supabase.from('profiles').select('skill_level, age').eq('id', currentUser.id).single();
         if (profileData) setProfile(profileData);
         const { data } = await supabase.from('session_logs').select('*').eq('user_id', currentUser.id).eq('exercise_name', name as string).order('created_at', { ascending: false });
-        if (data) { setSessions(data.map((row: any) => row.log_data)); setSessionIds(data.map((row: any) => row.id)); }
-        const { data: vnData } = await supabase.from('voice_notes').select('*').eq('user_id', currentUser.id).eq('exercise_name', name as string).order('created_at', { ascending: false }).limit(10);
+        const sessionLogData = (data ?? []).map((row: any) => row.log_data);
+        const sessionCreated = (data ?? []).map((row: any) => row.created_at);
+        if (data) { setSessions(sessionLogData); setSessionIds(data.map((row: any) => row.id)); setSessionCreatedAt(sessionCreated); }
+        const { data: vnData } = await supabase.from('voice_notes').select('*').eq('user_id', currentUser.id).eq('exercise_name', name as string).order('created_at', { ascending: false }).limit(5);
         if (vnData) setVoiceNotes(vnData as VoiceNote[]);
         if (logType === 'strength') {
           const { data: settings } = await supabase.from('exercise_settings').select('starting_weight').eq('user_id', currentUser.id).eq('exercise_name', name as string).single();
           if (settings?.starting_weight) {
             setStartingWeight(settings.starting_weight);
             setStartingWeightInput(String(settings.starting_weight));
-            buildWeightRecommendation(settings.starting_weight, data ?? [], profileData?.skill_level);
+            buildWeightRecommendation(settings.starting_weight, sessionLogData, profileData?.skill_level);
           } else {
             setShowWeightPrompt(true);
           }
+        } else if (logType === 'plyometric') {
+          buildPlyoRecommendation(sessionLogData, sessionCreated, profileData?.skill_level);
         } else if (logType !== 'recovery') {
           const rec = getSkillRecommendation(logType as string, profileData?.skill_level);
-          buildNonWeightRecommendation(logType as string, data ?? [], profileData?.skill_level, rec ?? '');
+          buildNonWeightRecommendation(logType as string, sessionLogData, profileData?.skill_level, rec ?? '');
         }
       }
       const note = await AsyncStorage.getItem(noteKey);
@@ -441,11 +474,86 @@ export default function ExerciseScreen() {
       return;
     }
     if (lt === 'plank') setRecommendation(`💪 Progress! Try ${last.sets} sets • ${parseInt(last.time) + 10} sec each`);
-    else if (lt === 'reps-sets') setRecommendation(`💪 Progress! Try ${last.sets} sets • ${parseInt(last.reps) + 2} reps`);
+    else if (lt === 'reps-sets') setRecommendation(`💪 Progress! Try ${(parseInt(last.sets) || 0) + 1} sets • ${(parseInt(last.reps) || 0) + 2} reps`);
     else if (lt === 'footwork') setRecommendation(`💪 Progress! Try ${parseInt(last.sets) + 1} sets`);
     else if (lt === 'skipping') setRecommendation(`💪 Progress! Try ${parseInt(last.sets) + 1} sets • ${parseInt(last.reps) + 10} reps`);
     else if (lt === 'sets-duration') setRecommendation(`💪 Progress! Try ${parseInt(last.sets) + 1} sets`);
     else if (lt === 'duration-distance') setRecommendation(`💪 Progress! Try ${parseInt(last.duration) + 5} min`);
+  };
+
+  // Plyometric height only progresses when landings have been clean and consistent —
+  // reps/sets progress on their own cadence, independently of height, and never both at once.
+  const buildPlyoRecommendation = (sessionData: any[], createdAtData: string[], skillLevel: string) => {
+    const level = skillLevel?.toLowerCase() ?? 'beginner';
+    const heightUnit = LOG_TYPE_FIELDS.plyometric.units?.height ?? 'in';
+    if (sessionData.length === 0) {
+      if (level === 'advanced') { setRecommendation("Log your first session and we'll track your progress! 💪"); return; }
+      setRecommendation(`🎯 Target: ${getSkillRecommendation('plyometric', skillLevel) ?? '2 sets • 6 reps'}`);
+      return;
+    }
+
+    const last = sessionData[0] as any;
+    const lastHeight = parseFloat(last.height) || 0;
+    const lastLanding = typeof last.landing === 'number' ? last.landing : -1;
+    const lastSets = parseInt(last.sets) || 0;
+    const lastReps = parseInt(last.reps) || 0;
+
+    // A shaky or missed landing blocks any height increase, regardless of reps completed.
+    if (lastLanding === 2) {
+      const stepDown = Math.max(lastHeight - PLYO_HEIGHT_INCREMENT_IN, 0);
+      setRecommendation(`⬇️ Step back down to ${stepDown}${heightUnit} and rebuild consistency before going higher`);
+      return;
+    }
+    if (lastLanding === 1) {
+      setRecommendation(`Hold at ${lastHeight}${heightUnit} • ${lastSets} sets • ${lastReps} reps until landings feel fully clean`);
+      return;
+    }
+
+    // Clean (or unreported) landing — see how long they've held this exact height cleanly.
+    // sessionData is newest-first, so sessionData[i - 1] is chronologically MORE RECENT
+    // than sessionData[i] — the streak breaks if the more recent session regressed
+    // (fewer reps/sets) compared to the older one it followed.
+    let cleanStreak = 0;
+    for (let i = 0; i < sessionData.length; i++) {
+      const s = sessionData[i] as any;
+      if ((parseFloat(s.height) || 0) !== lastHeight || s.landing !== 0) break;
+      if (i > 0) {
+        const moreRecent = sessionData[i - 1] as any;
+        if ((parseInt(moreRecent.reps) || 0) < (parseInt(s.reps) || 0) || (parseInt(moreRecent.sets) || 0) < (parseInt(s.sets) || 0)) break;
+      }
+      cleanStreak++;
+    }
+
+    const bumpedRecently = sessionData.some((s: any, i: number) => {
+      const prev = sessionData[i + 1] as any;
+      if (!prev || (parseFloat(s.height) || 0) <= (parseFloat(prev.height) || 0)) return false;
+      const days = daysSince(createdAtData[i]);
+      return days !== null && days < PLYO_MIN_DAYS_BETWEEN_HEIGHT_BUMPS;
+    });
+
+    if (lastHeight >= PLYO_MAX_HEIGHT_IN) {
+      setRecommendation(`You've hit the recommended max height (${PLYO_MAX_HEIGHT_IN}${heightUnit}) — build reps/sets instead of jumping higher`);
+      return;
+    }
+
+    if (cleanStreak >= PLYO_CLEAN_STREAK_FOR_HEIGHT_BUMP && !bumpedRecently) {
+      const nextHeight = Math.min(lastHeight + PLYO_HEIGHT_INCREMENT_IN, PLYO_MAX_HEIGHT_IN);
+      setRecommendation(`💪 Clean landings ${cleanStreak} sessions in a row at ${lastHeight}${heightUnit} — try ${nextHeight}${heightUnit} next time`);
+      return;
+    }
+
+    // Not due for a height bump — progress reps/sets instead, kept independent of height.
+    const last3 = sessionData.slice(0, 3);
+    if (last3.length >= 3) {
+      const reps3 = last3.map((s: any) => parseInt(s.reps) || 0);
+      const repsConsistent = reps3[0] >= reps3[1] && reps3[1] >= reps3[2];
+      if (repsConsistent) { setRecommendation(`💪 Progress! Try ${lastSets} sets • ${lastReps + 2} reps at ${lastHeight}${heightUnit}`); return; }
+      setRecommendation(`Let's rebuild consistency: ${lastSets} sets • ${lastReps} reps at ${lastHeight}${heightUnit}`);
+      return;
+    }
+    setRecommendation(bumpedRecently
+      ? `Hold at ${lastHeight}${heightUnit} — already bumped height this week`
+      : `Keep going! ${lastSets} sets • ${lastReps} reps at ${lastHeight}${heightUnit}`);
   };
 
   const saveStartingWeight = async () => {
@@ -460,9 +568,14 @@ export default function ExerciseScreen() {
   const saveSession = async () => {
     const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     let newSession: any;
-    if (category === 'strength') {
+    if (logType === 'plyometric') {
+      newSession = { date, sets, reps, height, landing: landingQuality };
+      setSets(''); setReps(''); setHeight(''); setLandingQuality(-1);
+    } else if (logType === 'reps-sets') {
+      newSession = { date, sets, reps };
+      setSets(''); setReps('');
+    } else if (category === 'strength') {
       if (logType === 'plank') newSession = { date, sets, time: reps };
-      else if (logType === 'reps-sets') newSession = { date, sets, reps };
       else newSession = { date, weight, sets, reps };
       setWeight(''); setSets(''); setReps('');
     } else if (category === 'footwork') {
@@ -484,12 +597,16 @@ export default function ExerciseScreen() {
     const hasAnyValue = Object.entries(newSession).some(([key, v]) => key !== 'date' && v !== '' && v !== undefined && v !== -1);
     if (!hasAnyValue) { showAlert('Nothing to save', 'Please log at least one value before saving.'); return; }
     if (user) {
-      const { data: inserted } = await supabase.from('session_logs').insert({ user_id: user.id, exercise_name: name as string, category: category as string, log_data: newSession }).select();
+      const { data: inserted, error } = await supabase.from('session_logs').insert({ user_id: user.id, exercise_name: name as string, category: category as string, log_data: newSession }).select();
+      if (error || !inserted || !inserted[0]) { showAlert('Save failed', 'Could not save this session. Please try again.'); return; }
       const updatedSessions = [newSession, ...sessions];
-      const updatedIds = inserted && inserted[0] ? [inserted[0].id, ...sessionIds] : sessionIds;
+      const updatedIds = [inserted[0].id, ...sessionIds];
+      const updatedCreatedAt = [inserted[0].created_at, ...sessionCreatedAt];
       setSessions(updatedSessions);
       setSessionIds(updatedIds);
+      setSessionCreatedAt(updatedCreatedAt);
       if (logType === 'strength' && startingWeight) buildWeightRecommendation(startingWeight, updatedSessions, profile?.skill_level);
+      else if (logType === 'plyometric') buildPlyoRecommendation(updatedSessions, updatedCreatedAt, profile?.skill_level);
       else if (logType !== 'recovery' && logType) { const rec = getSkillRecommendation(logType as string, profile?.skill_level); buildNonWeightRecommendation(logType as string, updatedSessions, profile?.skill_level, rec ?? ''); }
     } else {
       showAlert('Not signed in', 'Sign in to save your progress across devices.');
@@ -502,9 +619,12 @@ export default function ExerciseScreen() {
       if (idToDelete) await supabase.from('session_logs').delete().eq('id', idToDelete);
       const updatedSessions = sessions.filter((_, i) => i !== index);
       const updatedIds = sessionIds.filter((_, i) => i !== index);
+      const updatedCreatedAt = sessionCreatedAt.filter((_, i) => i !== index);
       setSessions(updatedSessions);
       setSessionIds(updatedIds);
+      setSessionCreatedAt(updatedCreatedAt);
       if (logType === 'strength' && startingWeight) buildWeightRecommendation(startingWeight, updatedSessions, profile?.skill_level);
+      else if (logType === 'plyometric') buildPlyoRecommendation(updatedSessions, updatedCreatedAt, profile?.skill_level);
       else if (logType !== 'recovery' && logType) { const rec = getSkillRecommendation(logType as string, profile?.skill_level); buildNonWeightRecommendation(logType as string, updatedSessions, profile?.skill_level, rec ?? ''); }
     });
   };
@@ -535,6 +655,19 @@ export default function ExerciseScreen() {
     </View>
   );
 
+  const renderLandingQuality = () => (
+    <View>
+      <Text style={styles.fieldLabel}>Landing Quality</Text>
+      <View style={styles.feelingRow}>
+        {LANDING_LABELS.map((label, i) => (
+          <TouchableOpacity key={i} style={[styles.feelingBtn, landingQuality === i && styles.feelingBtnActive]} onPress={() => setLandingQuality(i)}>
+            <Text style={[styles.feelingText, landingQuality === i && styles.feelingTextActive]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
   const renderSessionHistory = () => {
     if (sessions.length === 0) return <Text style={styles.emptyText}>No sessions logged yet.</Text>;
     return sessions.map((session: any, i) => (
@@ -549,13 +682,16 @@ export default function ExerciseScreen() {
           {category === 'strength' && logType === 'plank' && (
             <>{session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}{session.time ? <Text style={styles.historyField}>⏱ {session.time} sec</Text> : null}</>
           )}
-          {category === 'strength' && logType === 'reps-sets' && (
+          {logType === 'reps-sets' && (
             <>{session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}{session.reps ? <Text style={styles.historyField}>💪 {session.reps} reps</Text> : null}</>
           )}
-          {category === 'strength' && logType !== 'plank' && logType !== 'reps-sets' && (
+          {logType === 'plyometric' && (
+            <>{session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}{session.reps ? <Text style={styles.historyField}>💪 {session.reps} reps</Text> : null}{session.height ? <Text style={styles.historyField}>📏 {session.height}{LOG_TYPE_FIELDS.plyometric.units?.height ?? 'in'}</Text> : null}{typeof session.landing === 'number' && session.landing >= 0 ? <Text style={styles.historyField}>{LANDING_LABELS[session.landing]}</Text> : null}</>
+          )}
+          {category === 'strength' && logType !== 'plank' && logType !== 'reps-sets' && logType !== 'plyometric' && (
             <>{session.weight ? <Text style={styles.historyField}>⚖️ {session.weight}kg</Text> : null}{session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}{session.reps ? <Text style={styles.historyField}>💪 {session.reps} reps</Text> : null}</>
           )}
-          {category === 'footwork' && (
+          {category === 'footwork' && logType !== 'plyometric' && logType !== 'reps-sets' && (
             <>{session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}{session.duration ? <Text style={styles.historyField}>⏱ {session.duration} min</Text> : null}</>
           )}
           {category === 'endurance' && logType === 'skipping' && (
@@ -646,7 +782,7 @@ export default function ExerciseScreen() {
                 </TouchableOpacity>
               </View>
             ))}
-            <Text style={styles.voiceNoteCount}>{voiceNotes.length}/10 voice notes</Text>
+            <Text style={styles.voiceNoteCount}>{voiceNotes.length}/5 voice notes</Text>
           </View>
         )}
       </View>
@@ -744,16 +880,23 @@ export default function ExerciseScreen() {
             ) : (
               <View style={styles.sessionCard}>
                 <Text style={styles.sectionLabel}>LOG SESSION</Text>
-                {category === 'strength' && logType !== 'plank' && logType !== 'reps-sets' && (
+                {category === 'strength' && logType !== 'plank' && logType !== 'reps-sets' && logType !== 'plyometric' && (
                   <View><View style={styles.inputRow}>{renderInput('Weight (kg)', weight, setWeight, 'numeric')}{renderInput('Sets', sets, setSets, 'numeric')}</View><View style={styles.inputRow}>{renderInput('Reps', reps, setReps, 'numeric')}</View></View>
                 )}
                 {category === 'strength' && logType === 'plank' && (
                   <View style={styles.inputRow}>{renderInput('Sets', sets, setSets, 'numeric')}{renderInput('Time (sec)', reps, setReps, 'numeric')}</View>
                 )}
-                {category === 'strength' && logType === 'reps-sets' && (
+                {logType === 'reps-sets' && (
                   <View style={styles.inputRow}>{renderInput('Sets', sets, setSets, 'numeric')}{renderInput('Reps', reps, setReps, 'numeric')}</View>
                 )}
-                {category === 'footwork' && (
+                {logType === 'plyometric' && (
+                  <View>
+                    <View style={styles.inputRow}>{renderInput('Sets', sets, setSets, 'numeric')}{renderInput('Reps', reps, setReps, 'numeric')}</View>
+                    <View style={styles.inputRow}>{renderInput(`Height (${LOG_TYPE_FIELDS.plyometric.units?.height ?? 'in'})`, height, setHeight, 'numeric')}</View>
+                    {renderLandingQuality()}
+                  </View>
+                )}
+                {category === 'footwork' && logType !== 'plyometric' && logType !== 'reps-sets' && (
                   <View style={styles.inputRow}>{renderInput('Sets', fwSets, setFwSets, 'numeric')}{renderInput('Duration', fwDuration, setFwDuration, 'numeric')}</View>
                 )}
                 {category === 'endurance' && logType === 'skipping' && (
@@ -865,7 +1008,7 @@ const styles = StyleSheet.create({
   tabTextActive: { color: '#FFFFFF' },
   content: { paddingBottom: 40 },
   video: { width: '100%', height: 300, borderRadius: 12, marginBottom: 16, backgroundColor: Colors.backgroundCard },
-  image: { width: '100%', height: 320, borderRadius: 12, marginBottom: 16 },
+  image: { width: '100%', height: 340, borderRadius: 12, marginBottom: 16 },
   description: { fontSize: 14, color: Colors.textSecondary, lineHeight: 22, marginBottom: 20 },
   stepsCard: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, gap: 14 },
   stepRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },

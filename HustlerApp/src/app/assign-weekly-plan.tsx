@@ -5,6 +5,7 @@ import { useState } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Colors } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
+import { notifyWeeklyPlan } from '../lib/notifications';
 import workouts from '../data/workouts';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -85,6 +86,11 @@ export default function AssignWeeklyPlanScreen() {
 
     setSaving(false);
     if (error) { showAlert('Error', error.message); return; }
+
+    // Notify player
+    const { data: coachProfile } = await supabase.from('profiles').select('full_name').eq('id', session.user.id).single();
+    await notifyWeeklyPlan(playerId as string, coachProfile?.full_name ?? 'Your coach');
+
     showAlert('Plan sent!', `Weekly training plan sent to ${name || 'your player'}.`);
     goBack();
   };

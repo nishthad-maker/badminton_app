@@ -16,7 +16,7 @@ const CATEGORY_TITLES: Record<string, string> = {
 
 const FILTERS: Record<string, string[]> = {
   strength: ['All', 'Lower', 'Upper', 'Core'],
-  footwork: [],
+  footwork: ['All', 'Agility', 'Plyometrics', 'Drills'],
   endurance: [],
   recovery: [],
 };

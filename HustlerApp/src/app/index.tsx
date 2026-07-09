@@ -18,7 +18,7 @@ export default function HomeScreen() {
           .single();
 
         if (profile?.is_coach) {
-          router.replace('/coach' as any);
+          router.replace('/(coach-tabs)/players' as any);
         } else {
           router.replace('/(tabs)' as any);
         }

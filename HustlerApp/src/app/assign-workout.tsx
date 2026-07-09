@@ -6,6 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Colors } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
+import { notifyWorkoutAssigned } from '../lib/notifications';
 import workouts from '../data/workouts';
 
 const CLOUDINARY_CLOUD = 'pyqqwrax';
@@ -187,6 +188,13 @@ export default function AssignWorkoutScreen() {
     const { error } = await supabase.from('assignments').insert(inserts);
     setLoading(false);
     if (error) { showAlert('Error', error.message); return; }
+
+    // Notify each selected player
+    const { data: coachProfile } = await supabase
+      .from('profiles').select('full_name').eq('id', session.user.id).single();
+    for (const pid of selectedPlayerIds) {
+      await notifyWorkoutAssigned(pid, coachProfile?.full_name ?? 'Your coach', title.trim());
+    }
 
     const recipientNames = isMultiMode
       ? connectedPlayers.filter(p => selectedPlayerIds.includes(p.id)).map(p => p.name).join(', ')

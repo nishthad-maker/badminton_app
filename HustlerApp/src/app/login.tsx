@@ -36,7 +36,7 @@ export default function LoginScreen() {
 
       if (profile?.is_coach) {
         // Coaches skip player onboarding and go to their roster home.
-        router.replace('/coach' as any);
+        router.replace('/(coach-tabs)/players' as any);
       } else if (!profile?.age) {
         router.replace('/onboarding' as any);
       } else {

@@ -136,12 +136,15 @@ export default function NewPostScreen() {
       return;
     }
 
+    const { data: profile } = await supabase.from('profiles').select('is_coach').eq('id', session.user.id).single();
+    const communityPath = profile?.is_coach ? '/(coach-tabs)/community' : '/(tabs)/community';
+
     // Return to the feed on the SAME topic we just posted in, so the new post
     // is visible instead of the feed resetting to the first tab.
     if (typeof window !== 'undefined') {
-      window.location.href = `/(tabs)/community?topic=${encodeURIComponent(topic)}`;
+      window.location.href = `${communityPath}?topic=${encodeURIComponent(topic)}`;
     } else {
-      router.replace({ pathname: '/(tabs)/community', params: { topic } });
+      router.replace({ pathname: communityPath as any, params: { topic } });
     }
   };
 

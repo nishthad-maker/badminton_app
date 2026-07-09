@@ -1,10 +1,11 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Colors } from '@/constants/theme';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../lib/supabase';
+import { notifyConnectionAccepted } from '../../lib/notifications';
 
 const showConfirm = (title: string, message: string, onConfirm: () => void) => {
   if (typeof window !== 'undefined') {
@@ -44,7 +45,7 @@ type PlayerRow = {
   latestAssignment: { title: string; done: boolean } | null;
 };
 
-export default function CoachHomeScreen() {
+export default function CoachPlayersScreen() {
   const [coachUsername, setCoachUsername] = useState('');
   const [pending, setPending] = useState<PendingRow[]>([]);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
@@ -100,17 +101,14 @@ export default function CoachHomeScreen() {
       });
     }
 
-    // Latest assignment per player + whether it's done
+    // Latest assignment per player + done status
     const latestAsgMap: Record<string, { title: string; done: boolean }> = {};
     if (accIds.length) {
       const { data: asgs } = await supabase
         .from('assignments').select('*').eq('coach_id', me).in('player_id', accIds)
         .order('created_at', { ascending: false });
-
-      // Get all session logs to check done status
       const { data: allLogs } = await supabase
         .from('session_logs').select('user_id, exercise_name, created_at').in('user_id', accIds);
-
       (asgs ?? []).forEach((a: any) => {
         if (!latestAsgMap[a.player_id]) {
           const done = (allLogs ?? []).some((s: any) =>
@@ -132,7 +130,8 @@ export default function CoachHomeScreen() {
     }
 
     setPending(pend.map((c: any) => ({
-      id: c.id, player_id: c.player_id, name: nameMap[c.player_id] ?? 'Player', created_at: c.created_at,
+      id: c.id, player_id: c.player_id,
+      name: nameMap[c.player_id] ?? 'Player', created_at: c.created_at,
     })));
 
     setPlayers(acc.map((c: any) => ({
@@ -149,13 +148,21 @@ export default function CoachHomeScreen() {
     setRefreshing(false);
   };
 
-  useEffect(() => { load(); }, []);
   useFocusEffect(useCallback(() => { load(); }, []));
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
   const acceptRequest = async (id: string) => {
-    await supabase.from('coach_connections').update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', id);
+    await supabase.from('coach_connections')
+      .update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', id);
+
+    // Notify the player their request was accepted
+    const req = pending.find(p => p.id === id);
+    if (req) {
+      const { data: coachProfile } = await supabase
+        .from('profiles').select('full_name').eq('id', myId ?? '').single();
+      await notifyConnectionAccepted(req.player_id, coachProfile?.full_name ?? 'Your coach');
+    }
     load();
   };
 
@@ -166,30 +173,27 @@ export default function CoachHomeScreen() {
     });
   };
 
-  const logout = () => {
-    showConfirm('Sign out', 'Are you sure you want to sign out?', async () => {
-      await supabase.auth.signOut();
-      router.replace('/login' as any);
-    });
+  const disconnectPlayer = (p: PlayerRow) => {
+    showConfirm(
+      `Remove ${p.name}?`,
+      'They will no longer be connected to you. They can request to connect again anytime.',
+      async () => {
+        await supabase.from('coach_connections').delete().eq('id', p.id);
+        load();
+      }
+    );
   };
 
-  const openPlayer = async (p: PlayerRow) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      await supabase.from('notifications').update({ seen: true })
-        .eq('user_id', session.user.id).eq('from_user_id', p.player_id).eq('seen', false);
-    }
+  const openPlayer = (p: PlayerRow) => {
     router.push({ pathname: '/coach-player', params: { playerId: p.player_id, name: p.name } });
   };
 
-  // Navigate to assign workout with multiple players support
   const assignToMultiple = () => {
     router.push({ pathname: '/assign-workout', params: { multiMode: 'true', coachId: myId ?? '' } });
   };
 
   const initial = (name: string) => (name?.trim()?.charAt(0)?.toUpperCase() ?? '?');
 
-  // Summary stats
   const activeThisWeek = players.filter(p => p.weekSessions > 0).length;
   const inactiveThisWeek = players.filter(p => p.weekSessions === 0 && p.lastActive).length;
   const totalUnread = players.reduce((sum, p) => sum + p.unread, 0);
@@ -205,9 +209,6 @@ export default function CoachHomeScreen() {
               <Text style={styles.assignAllText}>Assign</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={logout}>
-            <MaterialCommunityIcons name="logout" size={22} color={Colors.textSecondary} />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -231,7 +232,7 @@ export default function CoachHomeScreen() {
           <Text style={styles.muted}>Loading...</Text>
         ) : (
           <>
-            {/* ── ROSTER OVERVIEW ── */}
+            {/* Roster overview */}
             {players.length > 0 && (
               <View style={styles.rosterOverview}>
                 <View style={styles.rosterStat}>
@@ -245,7 +246,9 @@ export default function CoachHomeScreen() {
                 </View>
                 <View style={styles.rosterDivider} />
                 <View style={styles.rosterStat}>
-                  <Text style={[styles.rosterStatNum, { color: inactiveThisWeek > 0 ? '#E67E22' : Colors.textSecondary }]}>{inactiveThisWeek}</Text>
+                  <Text style={[styles.rosterStatNum, { color: inactiveThisWeek > 0 ? '#E67E22' : Colors.textSecondary }]}>
+                    {inactiveThisWeek}
+                  </Text>
                   <Text style={styles.rosterStatLabel}>Need a nudge</Text>
                 </View>
                 {totalUnread > 0 && (
@@ -290,7 +293,6 @@ export default function CoachHomeScreen() {
                   const isInactive = p.weekSessions === 0 && p.lastActive;
                   return (
                     <TouchableOpacity key={p.id} style={styles.playerCard} onPress={() => openPlayer(p)}>
-
                       {/* Avatar + unread badge */}
                       <View>
                         <View style={[styles.avatar, isInactive && styles.avatarInactive]}>
@@ -309,10 +311,7 @@ export default function CoachHomeScreen() {
                         <Text style={[styles.muted, p.unread > 0 && styles.mutedActive]}>
                           {p.unread > 0 ? `${p.unread} new message${p.unread !== 1 ? 's' : ''}` : timeAgo(p.lastActive)}
                         </Text>
-
-                        {/* Status chips row */}
                         <View style={styles.statusRow}>
-                          {/* Sessions this week */}
                           <View style={[styles.statusChip, p.weekSessions > 0 ? styles.chipGreen : styles.chipGrey]}>
                             <MaterialCommunityIcons
                               name={p.weekSessions > 0 ? 'lightning-bolt' : 'sleep'}
@@ -323,8 +322,6 @@ export default function CoachHomeScreen() {
                               {p.weekSessions > 0 ? `${p.weekSessions} this week` : 'No sessions this week'}
                             </Text>
                           </View>
-
-                          {/* Latest assignment status */}
                           {p.latestAssignment && (
                             <View style={[styles.statusChip, p.latestAssignment.done ? styles.chipGreen : styles.chipOrange]}>
                               <MaterialCommunityIcons
@@ -332,7 +329,7 @@ export default function CoachHomeScreen() {
                                 size={11}
                                 color={p.latestAssignment.done ? '#2ECC71' : '#E67E22'}
                               />
-                              <Text style={[styles.statusChipText, { color: p.latestAssignment.done ? '#2ECC71' : '#E67E22' }]} numberOfLines={1}>
+                              <Text style={[styles.statusChipText, { color: p.latestAssignment.done ? '#2ECC71' : '#E67E22' }]}>
                                 {p.latestAssignment.done ? 'Done' : 'Pending'}
                               </Text>
                             </View>
@@ -340,6 +337,14 @@ export default function CoachHomeScreen() {
                         </View>
                       </View>
 
+                      {/* Disconnect + chevron */}
+                      <TouchableOpacity
+                        style={styles.disconnectBtn}
+                        onPress={() => disconnectPlayer(p)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <MaterialCommunityIcons name="account-remove-outline" size={18} color="#FF6B6B" />
+                      </TouchableOpacity>
                       <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
                     </TouchableOpacity>
                   );
@@ -349,7 +354,7 @@ export default function CoachHomeScreen() {
               <View style={styles.emptyState}>
                 <MaterialCommunityIcons name="account-group-outline" size={48} color={Colors.textSecondary} />
                 <Text style={styles.emptyTitle}>No players yet</Text>
-                <Text style={styles.emptyDesc}>Share your username with players at your club. Once they add you and you accept, they'll show up here.</Text>
+                <Text style={styles.emptyDesc}>Share your username with players at your club.</Text>
                 {coachUsername !== '' && (
                   <View style={styles.emptyUsernameChip}>
                     <Text style={styles.emptyUsernameText}>{coachUsername}</Text>
@@ -375,15 +380,12 @@ const styles = StyleSheet.create({
   usernameLabel: { fontSize: 11, color: Colors.textSecondary },
   usernameValue: { fontSize: 15, fontWeight: 'bold', color: Colors.accent, marginTop: 1 },
   usernameHint: { fontSize: 10, color: Colors.textSecondary, maxWidth: 90, textAlign: 'right' },
-  scroll: { paddingBottom: 40 },
-
-  // Roster overview
+  scroll: { paddingBottom: 100 },
   rosterOverview: { flexDirection: 'row', backgroundColor: Colors.backgroundCard, borderRadius: 14, padding: 16, marginBottom: 20, alignItems: 'center' },
   rosterStat: { flex: 1, alignItems: 'center', gap: 4 },
   rosterStatNum: { fontSize: 22, fontWeight: 'bold', color: Colors.textPrimary },
   rosterStatLabel: { fontSize: 10, color: Colors.textSecondary, textAlign: 'center' },
   rosterDivider: { width: 1, height: 36, backgroundColor: Colors.border },
-
   section: { marginBottom: 20 },
   sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1, marginBottom: 12 },
   requestCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: Colors.accent },
@@ -396,15 +398,13 @@ const styles = StyleSheet.create({
   playerName: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
   muted: { fontSize: 12, color: Colors.textSecondary, fontStyle: 'italic', marginTop: 1 },
   mutedActive: { color: Colors.accent, fontStyle: 'normal', fontWeight: '600' },
-
-  // Status chips
   statusRow: { flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' },
   statusChip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
   chipGreen: { backgroundColor: 'rgba(46,204,113,0.12)' },
   chipGrey: { backgroundColor: 'rgba(255,255,255,0.06)' },
   chipOrange: { backgroundColor: 'rgba(230,126,34,0.12)' },
   statusChipText: { fontSize: 11, fontWeight: '600' },
-
+  disconnectBtn: { padding: 6 },
   acceptBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center' },
   declineBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,107,107,0.12)', borderWidth: 1, borderColor: 'rgba(255,107,107,0.3)', alignItems: 'center', justifyContent: 'center' },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: 10 },
