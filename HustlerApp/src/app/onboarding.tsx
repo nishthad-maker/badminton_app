@@ -1,27 +1,23 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView } from 'react-native';
+import { Text } from '@/components/Text';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Colors } from '@/constants/theme';
+import { Theme, Fonts } from '@/constants/theme';
 
 const SKILL_LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
 const EVENTS = ['Singles', 'Doubles', 'Mixed Doubles', 'All Events'];
-const GOALS = ['Get Fitter', 'Get Stronger', 'Improve Speed', 'All Round'];
 const GENDERS = ['Male', 'Female', 'Prefer not to say'];
-const WEEKLY_GOALS = ['3', '4', '5', '6'];
 
 export default function OnboardingScreen() {
   const [age, setAge] = useState('');
   const [skillLevel, setSkillLevel] = useState('');
   const [event, setEvent] = useState('');
-  const [trainingGoal, setTrainingGoal] = useState('');
   const [gender, setGender] = useState('');
-  const [weeklyGoal, setWeeklyGoal] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleComplete = async () => {
-    if (!age || !skillLevel || !event || !trainingGoal || !gender || !weeklyGoal) {
+    if (!age || !skillLevel || !event || !gender) {
       Alert.alert('Missing fields', 'Please fill in all fields to continue.');
       return;
     }
@@ -40,9 +36,7 @@ export default function OnboardingScreen() {
         age: parseInt(age),
         skill_level: skillLevel,
         event: event,
-        training_goal: trainingGoal,
         gender: gender,
-        weekly_goal: parseInt(weeklyGoal),
       })
       .eq('id', session.user.id);
 
@@ -81,17 +75,15 @@ export default function OnboardingScreen() {
   );
 
   return (
-    <LinearGradient
-      colors={[Colors.backgroundTop, Colors.backgroundBottom]}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.card}>
-          <Text style={styles.title}>Let's Get to Know You 🏸</Text>
+          <Text style={styles.eyebrow}>WELCOME</Text>
+          <Text style={styles.title}>Let's get to know you</Text>
           <Text style={styles.subtitle}>
             This helps us personalize your training plan and recommendations.
           </Text>
@@ -100,7 +92,7 @@ export default function OnboardingScreen() {
           <TextInput
             style={styles.input}
             placeholder="Enter your age"
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={Theme.textSecondary}
             value={age}
             onChangeText={(t) => setAge(t.replace(/[^0-9]/g, ''))}
             keyboardType="numeric"
@@ -109,8 +101,6 @@ export default function OnboardingScreen() {
           {renderSelector('Gender', GENDERS, gender, setGender)}
           {renderSelector('Skill Level', SKILL_LEVELS, skillLevel, setSkillLevel)}
           {renderSelector('Event', EVENTS, event, setEvent)}
-          {renderSelector('Training Goal', GOALS, trainingGoal, setTrainingGoal)}
-          {renderSelector('Weekly Training Goal (days)', WEEKLY_GOALS, weeklyGoal, setWeeklyGoal)}
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
@@ -123,26 +113,27 @@ export default function OnboardingScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: Theme.background },
   scroll: { flexGrow: 1, padding: 24, alignItems: 'center', justifyContent: 'center', paddingTop: 60, paddingBottom: 60 },
-  card: { backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 24, width: '100%' },
-  title: { fontSize: 22, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 8 },
-  subtitle: { fontSize: 13, color: Colors.textSecondary, marginBottom: 24, lineHeight: 20 },
-  label: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8 },
+  card: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 24, width: '100%' },
+  eyebrow: { fontSize: 11, fontWeight: '500', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 4 },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 22, color: Theme.textPrimary, marginBottom: 8 },
+  subtitle: { fontSize: 15, color: Theme.textSecondary, marginBottom: 24, lineHeight: 20 },
+  label: { fontSize: 13, color: Theme.textSecondary, marginBottom: 8 },
   input: {
-    backgroundColor: Colors.backgroundTop,
+    backgroundColor: Theme.background,
     borderRadius: 10,
     padding: 14,
-    color: Colors.textPrimary,
-    fontSize: 14,
+    color: Theme.textPrimary,
+    fontSize: 15,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
   selectorGroup: { marginBottom: 16 },
   optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -150,20 +141,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: Colors.backgroundTop,
+    backgroundColor: Theme.background,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
-  optionBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  optionBtnText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  optionBtnActive: { backgroundColor: Theme.eyebrowGreen, borderColor: Theme.eyebrowGreen },
+  optionBtnText: { fontSize: 13, color: Theme.textSecondary, fontWeight: '600' },
   optionBtnTextActive: { color: '#FFFFFF' },
   button: {
-    backgroundColor: Colors.accent,
+    backgroundColor: Theme.limeAccent,
     borderRadius: 30,
     paddingVertical: 14,
     alignItems: 'center',
     marginTop: 8,
   },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
+  buttonText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 15 },
 });

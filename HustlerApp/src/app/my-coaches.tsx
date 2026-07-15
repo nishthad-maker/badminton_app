@@ -1,10 +1,10 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, RefreshControl } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, RefreshControl } from 'react-native';
+import { Text } from '@/components/Text';
 import { router } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Colors } from '@/constants/theme';
+import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
 
 const showAlert = (title: string, message: string) => {
@@ -164,10 +164,10 @@ export default function MyCoachesScreen() {
   const initial = (name: string) => (name?.trim()?.charAt(0)?.toUpperCase() ?? '?');
 
   return (
-    <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.titleRow}>
         <TouchableOpacity onPress={goBack}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
+          <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.title}>My Coaches</Text>
       </View>
@@ -177,7 +177,7 @@ export default function MyCoachesScreen() {
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} colors={[Colors.accent]} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Theme.eyebrowGreen} colors={[Theme.eyebrowGreen]} />
         }
       >
         {/* Add a coach */}
@@ -188,7 +188,7 @@ export default function MyCoachesScreen() {
             <TextInput
               style={styles.input}
               placeholder="e.g. coach_priya"
-              placeholderTextColor={Colors.textSecondary}
+              placeholderTextColor={Theme.textSecondary}
               value={username}
               onChangeText={(t) => setUsername(t.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
               autoCapitalize="none"
@@ -209,7 +209,7 @@ export default function MyCoachesScreen() {
           <Text style={styles.muted}>Loading...</Text>
         ) : connections.length === 0 ? (
           <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="whistle-outline" size={44} color={Colors.textSecondary} />
+            <MaterialCommunityIcons name="whistle-outline" size={44} color={Theme.textSecondary} />
             <Text style={styles.emptyDesc}>No coaches yet. Add one above using their username.</Text>
           </View>
         ) : (
@@ -236,46 +236,46 @@ export default function MyCoachesScreen() {
           ))
         )}
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, paddingTop: 60 },
+  container: { flex: 1, backgroundColor: Theme.background, padding: 24, paddingTop: 60 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
-  title: { fontSize: 26, fontWeight: 'bold', color: Colors.textPrimary },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 26, color: Theme.textPrimary },
   scroll: { paddingBottom: 40 },
-  addCard: { backgroundColor: Colors.backgroundCard, borderRadius: 14, padding: 16, marginBottom: 20 },
-  sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1, marginBottom: 8 },
-  hint: { fontSize: 12, color: Colors.textSecondary, marginBottom: 12, lineHeight: 17 },
+  addCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 16, marginBottom: 20 },
+  sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 8 },
+  hint: { fontSize: 13, color: Theme.textSecondary, marginBottom: 12, lineHeight: 18 },
   addRow: { flexDirection: 'row', gap: 10 },
   input: {
     flex: 1,
-    backgroundColor: Colors.backgroundTop,
+    backgroundColor: Theme.background,
     borderRadius: 10,
     padding: 14,
-    color: Colors.textPrimary,
-    fontSize: 14,
+    color: Theme.textPrimary,
+    fontSize: 15,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
   addBtn: {
-    backgroundColor: Colors.accent,
+    backgroundColor: Theme.limeAccent,
     borderRadius: 10,
     paddingHorizontal: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
   addBtnDisabled: { opacity: 0.6 },
-  addBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
-  muted: { fontSize: 13, color: Colors.textSecondary, fontStyle: 'italic', textAlign: 'center', marginTop: 20 },
+  addBtnText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 14 },
+  muted: { fontSize: 15, color: Theme.textSecondary, fontStyle: 'italic', textAlign: 'center', marginTop: 20 },
   emptyState: { alignItems: 'center', paddingTop: 40, gap: 10 },
-  emptyDesc: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20, paddingHorizontal: 30 },
+  emptyDesc: { fontSize: 15, color: Theme.textSecondary, textAlign: 'center', lineHeight: 20, paddingHorizontal: 30 },
   coachCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: Colors.backgroundCard,
+    backgroundColor: Theme.cardWhite,
     borderRadius: 12,
     padding: 14,
     marginBottom: 10,
@@ -284,17 +284,17 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.accentMuted,
+    backgroundColor: Theme.cardTinted,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { fontSize: 17, fontWeight: 'bold', color: Colors.accent },
-  coachName: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
-  coachMeta: { fontSize: 12, color: Colors.textSecondary, marginTop: 1 },
+  avatarText: { fontSize: 17, fontWeight: 'bold', color: Theme.eyebrowGreen },
+  coachName: { fontSize: 16, fontWeight: '600', color: Theme.textPrimary },
+  coachMeta: { fontSize: 13, color: Theme.textSecondary, marginTop: 1 },
   statusChip: { alignSelf: 'flex-start', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, marginTop: 6 },
-  statusConnected: { backgroundColor: Colors.accentMuted },
-  statusPending: { backgroundColor: 'rgba(255,255,255,0.08)' },
-  statusText: { fontSize: 10, fontWeight: '600' },
-  statusTextConnected: { color: Colors.accent },
-  statusTextPending: { color: Colors.textSecondary },
+  statusConnected: { backgroundColor: Theme.cardTinted },
+  statusPending: { backgroundColor: Theme.background },
+  statusText: { fontSize: 12, fontWeight: '600' },
+  statusTextConnected: { color: Theme.eyebrowGreen },
+  statusTextPending: { color: Theme.textSecondary },
 });

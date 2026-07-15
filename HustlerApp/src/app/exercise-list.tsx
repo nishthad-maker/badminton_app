@@ -1,11 +1,11 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { Text } from '@/components/Text';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useState, useEffect } from 'react';
-import { LinearGradient } from 'expo-linear-gradient';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import workouts from '../data/workouts';
 import { supabase } from '../lib/supabase';
-import { Colors } from '@/constants/theme';
+import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 
 const CATEGORY_TITLES: Record<string, string> = {
   strength: 'Strength Training',
@@ -64,10 +64,11 @@ export default function ExerciseListScreen() {
       }
     }
 
-    setAllExercises([...builtIn, ...custom]);
+    setAllExercises([...custom, ...builtIn]);
   };
 
   const filters = FILTERS[categoryKey] || [];
+  const catTheme = CategoryTheme[categoryKey as keyof typeof CategoryTheme] ?? { bg: Theme.cardTinted, fg: Theme.eyebrowGreen };
 
   const filtered = activeFilter === 'All'
     ? allExercises
@@ -82,15 +83,15 @@ export default function ExerciseListScreen() {
   };
 
   return (
-    <LinearGradient
-      colors={[Colors.backgroundTop, Colors.backgroundBottom]}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <View style={styles.titleRow}>
         <TouchableOpacity onPress={goBack}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
+          <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.title}>{CATEGORY_TITLES[categoryKey] ?? ''}</Text>
+        <View>
+          <Text style={styles.eyebrow}>TRAINING</Text>
+          <Text style={styles.title}>{CATEGORY_TITLES[categoryKey] ?? ''}</Text>
+        </View>
       </View>
 
       {filters.length > 0 && (
@@ -103,7 +104,7 @@ export default function ExerciseListScreen() {
           {filters.map((filter) => (
             <TouchableOpacity
               key={filter}
-              style={[styles.pill, activeFilter === filter && styles.pillActive]}
+              style={[styles.pill, activeFilter === filter && { backgroundColor: catTheme.fg }]}
               onPress={() => setActiveFilter(filter)}
             >
               <Text style={[styles.pillText, activeFilter === filter && styles.pillTextActive]}>
@@ -136,68 +137,64 @@ export default function ExerciseListScreen() {
                 }
               })}
             >
-              <View style={styles.cardContent}>
-                <View style={styles.cardText}>
-                  <View style={styles.cardTitleRow}>
-                    <Text style={styles.cardTitle}>{exercise.name}</Text>
-                    {exercise.isCustom && (
-                      <View style={styles.customBadge}>
-                        <Text style={styles.customBadgeText}>Custom</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.cardDesc}>{exercise.description}</Text>
-                  {exercise.muscles && exercise.muscles.length > 0 && (
-                    <View style={styles.tagRow}>
-                      {exercise.muscles.map((muscle: string, i: number) => (
-                        <View key={i} style={styles.tag}>
-                          <Text style={styles.tagText}>{muscle}</Text>
-                        </View>
-                      ))}
+              <View style={styles.cardTitleRow}>
+                <View style={styles.cardTitleLeft}>
+                  <Text style={styles.cardTitle}>{exercise.name}</Text>
+                  {exercise.isCustom && (
+                    <View style={[styles.customBadge, { backgroundColor: catTheme.bg }]}>
+                      <Text style={[styles.customBadgeText, { color: catTheme.fg }]}>Custom</Text>
                     </View>
                   )}
                 </View>
-                <MaterialCommunityIcons name="chevron-right" size={22} color={Colors.textSecondary} />
+                <MaterialCommunityIcons name="chevron-right" size={24} color={Theme.textMuted} />
               </View>
+              <Text style={styles.cardDesc}>{exercise.description}</Text>
+              {exercise.muscles && exercise.muscles.length > 0 && (
+                <View style={styles.tagRow}>
+                  {exercise.muscles.map((muscle: string, i: number) => (
+                    <View key={i} style={[styles.tag, { backgroundColor: catTheme.bg }]}>
+                      <Text style={[styles.tagText, { color: catTheme.fg }]}>{muscle}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
             </TouchableOpacity>
           ))
         )}
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, paddingTop: 35 },
+  container: { flex: 1, backgroundColor: Theme.background, padding: 24, paddingTop: 50 },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     marginBottom: 16,
   },
-  title: { fontSize: 26, fontWeight: 'bold', color: Colors.textPrimary },
+  eyebrow: { fontSize: 11, fontWeight: '500', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 2 },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 24, color: Theme.textPrimary },
   filterRow: { flexGrow: 0, marginBottom: 16, minHeight: 44 },
   filterContent: { gap: 8, paddingRight: 8 },
   listContent: { paddingBottom: 24 },
-  pill: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.backgroundCard },
-  pillActive: { backgroundColor: Colors.accent },
-  pillText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  pill: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, backgroundColor: Theme.cardWhite, alignItems: 'center', justifyContent: 'center' },
+  pillText: { color: Theme.textSecondary, fontSize: 14, fontWeight: '600' },
   pillTextActive: { color: '#FFFFFF' },
-  card: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, marginBottom: 14 },
-  cardContent: { flexDirection: 'row', alignItems: 'center' },
-  cardText: { flex: 1 },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  cardTitle: { fontSize: 16, fontWeight: 'bold', color: Colors.textPrimary },
+  card: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 18, marginBottom: 14, borderWidth: 1.5, borderColor: Theme.divider },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 },
+  cardTitleLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, flexWrap: 'wrap' },
+  cardTitle: { fontSize: 18, fontWeight: '700', color: Theme.textPrimary },
   customBadge: {
-    backgroundColor: Colors.accentMuted,
     borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
   },
-  customBadgeText: { fontSize: 10, color: Colors.accent, fontWeight: '600' },
-  cardDesc: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
+  customBadgeText: { fontSize: 13, fontWeight: '600' },
+  cardDesc: { fontSize: 16, color: Theme.textSecondary, lineHeight: 22 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, gap: 6 },
-  tag: { backgroundColor: Colors.accentMuted, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
-  tagText: { color: Colors.accent, fontSize: 11, fontWeight: '600' },
-  emptyText: { fontSize: 13, color: Colors.textSecondary, fontStyle: 'italic', textAlign: 'center', marginTop: 40 },
+  tag: { borderRadius: 20, paddingHorizontal: 11, paddingVertical: 5 },
+  tagText: { fontSize: 14, fontWeight: '600' },
+  emptyText: { fontSize: 15, color: Theme.textSecondary, fontStyle: 'italic', textAlign: 'center', marginTop: 40 },
 });

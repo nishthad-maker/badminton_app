@@ -1,12 +1,12 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, ActivityIndicator, Platform } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Pressable, TextInput, Alert, Image, ActivityIndicator, Platform } from 'react-native';
+import { Text } from '@/components/Text';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
-import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Audio } from 'expo-av';
 import { supabase } from '../lib/supabase';
-import { Colors } from '@/constants/theme';
+import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { LOG_TYPE_FIELDS } from '@/constants/logTypes';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
@@ -17,8 +17,8 @@ type VoiceNote = {
   created_at: string;
 };
 
-const FEELING_LABELS = ['😞 Bad', '😐 OK', '😄 Great'];
-const LANDING_LABELS = ['✅ Landed clean', '⚠️ A little shaky', '❌ Missed / stepped down'];
+const FEELING_LABELS = ['Bad', 'OK', 'Great'];
+const LANDING_LABELS = ['Clean', 'Shaky', 'Missed'];
 const CLOUDINARY_CLOUD = 'pyqqwrax';
 const CLOUDINARY_PRESET = 'hustler_videos';
 
@@ -81,6 +81,7 @@ export default function ExerciseScreen() {
   const stepList: string[] = JSON.parse(steps as string || '[]');
   const muscleList: string[] = JSON.parse(muscles as string || '[]');
   const hasVideo = !!(videoUrl && videoUrl !== '');
+  const catTheme = CategoryTheme[category as keyof typeof CategoryTheme] ?? { bg: Theme.cardTinted, fg: Theme.eyebrowGreen };
 
   const player = useVideoPlayer(hasVideo ? (videoUrl as string) : null, (p) => {
     p.loop = true;
@@ -89,6 +90,9 @@ export default function ExerciseScreen() {
   });
 
   const [activeTab, setActiveTab] = useState<'howto' | 'notes' | 'timer'>('howto');
+  const [hoveredTab, setHoveredTab] = useState<string | null>(null);
+  const [hoveredFeeling, setHoveredFeeling] = useState<number | null>(null);
+  const [hoveredLanding, setHoveredLanding] = useState<number | null>(null);
   const [sessions, setSessions] = useState<any[]>([]);
   const [sessionIds, setSessionIds] = useState<string[]>([]);
   const [sessionCreatedAt, setSessionCreatedAt] = useState<string[]>([]);
@@ -99,6 +103,7 @@ export default function ExerciseScreen() {
   const [startingWeightInput, setStartingWeightInput] = useState('');
   const [showWeightPrompt, setShowWeightPrompt] = useState(false);
   const [recommendation, setRecommendation] = useState('');
+  const [recommendationIcon, setRecommendationIcon] = useState<'target' | 'trending-up' | 'trending-down' | 'restore'>('target');
 
   const [weight, setWeight] = useState('');
   const [sets, setSets] = useState('');
@@ -115,7 +120,8 @@ export default function ExerciseScreen() {
   // Timer state
   const [timerRunning, setTimerRunning] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(0);
-  const [countdownInput, setCountdownInput] = useState('');
+  const [countdownMin, setCountdownMin] = useState('');
+  const [countdownSec, setCountdownSec] = useState('');
   const [isCountdown, setIsCountdown] = useState(false);
   const [timerSoundPlaying, setTimerSoundPlaying] = useState(false);
   const timerRef = useRef<any>(null);
@@ -178,11 +184,14 @@ export default function ExerciseScreen() {
 
   // ── Timer ──
 
+  const getCountdownTotal = () => (parseInt(countdownMin) || 0) * 60 + (parseInt(countdownSec) || 0);
+
   const startTimer = () => {
     if (timerRunning) return;
+    if (isCountdown && getCountdownTotal() === 0) return;
     setTimerRunning(true);
-    if (isCountdown && countdownInput) {
-      const target = parseInt(countdownInput);
+    if (isCountdown) {
+      const target = getCountdownTotal();
       if (timerSeconds === 0) setTimerSeconds(target);
       timerRef.current = setInterval(() => {
         setTimerSeconds(prev => {
@@ -207,11 +216,12 @@ export default function ExerciseScreen() {
     setTimerRunning(false);
   };
 
-  const resetTimer = () => {
+  const resetTimer = (countdownOverride?: boolean) => {
     clearInterval(timerRef.current);
     setTimerRunning(false);
     stopTimerSound();
-    setTimerSeconds(isCountdown && countdownInput ? parseInt(countdownInput) : 0);
+    const cd = countdownOverride !== undefined ? countdownOverride : isCountdown;
+    setTimerSeconds(cd ? getCountdownTotal() : 0);
   };
 
   const formatTime = (secs: number) => {
@@ -415,11 +425,16 @@ export default function ExerciseScreen() {
     } catch (e) {}
   };
 
+  const setRec = (text: string, icon: 'target' | 'trending-up' | 'trending-down' | 'restore' = 'target') => {
+    setRecommendation(text);
+    setRecommendationIcon(icon);
+  };
+
   const buildWeightRecommendation = (sw: number, sessionData: any[], skillLevel: string) => {
     const level = skillLevel?.toLowerCase() ?? 'beginner';
     if (sessionData.length === 0) {
-      if (level === 'advanced') { setRecommendation("Log your first session and we'll track your progress! 💪"); return; }
-      setRecommendation(level === 'intermediate' ? `Start with ${sw}kg • 3 sets • 10 reps` : `Start with ${sw}kg • 3 sets • 8 reps`);
+      if (level === 'advanced') { setRec("Log your first session and we'll track your progress!", 'trending-up'); return; }
+      setRec(level === 'intermediate' ? `Start with ${sw}kg • 3 sets • 10 reps` : `Start with ${sw}kg • 3 sets • 8 reps`);
       return;
     }
     const last3 = sessionData.slice(0, 3);
@@ -431,26 +446,26 @@ export default function ExerciseScreen() {
       const weights = last3.map((s: any) => parseFloat(s.weight) || 0);
       const isConsistent = weights[0] >= weights[1] && weights[1] >= weights[2];
       const allSame = last3.every((s: any) => parseFloat(s.weight) === lastWeight);
-      if (allSame && isConsistent) { setRecommendation(`💪 Ready to progress! Try ${lastWeight + 2.5}kg • ${lastSets} sets • ${lastReps} reps`); return; }
-      if (!isConsistent) { setRecommendation(`Let's rebuild consistency: ${lastWeight}kg • ${lastSets} sets • ${lastReps} reps`); return; }
+      if (allSame && isConsistent) { setRec(`Ready to progress! Try ${lastWeight + 2.5}kg • ${lastSets} sets • ${lastReps} reps`, 'trending-up'); return; }
+      if (!isConsistent) { setRec(`Let's rebuild consistency: ${lastWeight}kg • ${lastSets} sets • ${lastReps} reps`, 'restore'); return; }
     }
-    setRecommendation(`Keep going! ${lastWeight}kg • ${lastSets} sets • ${lastReps} reps`);
+    setRec(`Keep going! ${lastWeight}kg • ${lastSets} sets • ${lastReps} reps`);
   };
 
   const buildNonWeightRecommendation = (lt: string, sessionData: any[], skillLevel: string, baseRec: string) => {
     const level = skillLevel?.toLowerCase() ?? 'beginner';
     if (sessionData.length === 0) {
-      if (level === 'advanced') { setRecommendation("Log your first session and we'll track your progress! 💪"); return; }
-      setRecommendation(`🎯 Target: ${baseRec}`); return;
+      if (level === 'advanced') { setRec("Log your first session and we'll track your progress!", 'trending-up'); return; }
+      setRec(`Target: ${baseRec}`); return;
     }
     if (sessionData.length < 3) {
-      if (baseRec) { setRecommendation(`🎯 Target: ${baseRec}`); } else {
+      if (baseRec) { setRec(`Target: ${baseRec}`); } else {
         const last = sessionData[0] as any;
-        if (lt === 'plank') setRecommendation(`Keep going! ${last.sets} sets • ${last.time} sec each`);
-        else if (lt === 'reps-sets') setRecommendation(`Keep going! ${last.sets} sets • ${last.reps} reps`);
-        else if (lt === 'footwork' || lt === 'sets-duration') setRecommendation(`Keep going! ${last.sets} sets`);
-        else if (lt === 'skipping') setRecommendation(`Keep going! ${last.sets} sets • ${last.reps} reps`);
-        else if (lt === 'duration-distance') setRecommendation(`Keep going! ${last.duration} min`);
+        if (lt === 'plank') setRec(`Keep going! ${last.sets} sets • ${last.time} sec each`);
+        else if (lt === 'reps-sets') setRec(`Keep going! ${last.sets} sets • ${last.reps} reps`);
+        else if (lt === 'footwork' || lt === 'sets-duration') setRec(`Keep going! ${last.sets} sets`);
+        else if (lt === 'skipping') setRec(`Keep going! ${last.sets} sets • ${last.reps} reps`);
+        else if (lt === 'duration-distance') setRec(`Keep going! ${last.duration} min`);
       }
       return;
     }
@@ -466,19 +481,19 @@ export default function ExerciseScreen() {
     const isConsistent = metrics[0] >= metrics[1] && metrics[1] >= metrics[2];
     const last = sessionData[0] as any;
     if (!isConsistent) {
-      if (lt === 'plank') setRecommendation(`Let's rebuild consistency: ${last.sets} sets • ${last.time} sec each`);
-      else if (lt === 'reps-sets') setRecommendation(`Let's rebuild consistency: ${last.sets} sets • ${last.reps} reps`);
-      else if (lt === 'footwork' || lt === 'sets-duration') setRecommendation(`Let's rebuild consistency: ${last.sets} sets`);
-      else if (lt === 'skipping') setRecommendation(`Let's rebuild consistency: ${last.sets} sets • ${last.reps} reps`);
-      else if (lt === 'duration-distance') setRecommendation(`Let's rebuild consistency: ${last.duration} min`);
+      if (lt === 'plank') setRec(`Let's rebuild consistency: ${last.sets} sets • ${last.time} sec each`, 'restore');
+      else if (lt === 'reps-sets') setRec(`Let's rebuild consistency: ${last.sets} sets • ${last.reps} reps`, 'restore');
+      else if (lt === 'footwork' || lt === 'sets-duration') setRec(`Let's rebuild consistency: ${last.sets} sets`, 'restore');
+      else if (lt === 'skipping') setRec(`Let's rebuild consistency: ${last.sets} sets • ${last.reps} reps`, 'restore');
+      else if (lt === 'duration-distance') setRec(`Let's rebuild consistency: ${last.duration} min`, 'restore');
       return;
     }
-    if (lt === 'plank') setRecommendation(`💪 Progress! Try ${last.sets} sets • ${parseInt(last.time) + 10} sec each`);
-    else if (lt === 'reps-sets') setRecommendation(`💪 Progress! Try ${(parseInt(last.sets) || 0) + 1} sets • ${(parseInt(last.reps) || 0) + 2} reps`);
-    else if (lt === 'footwork') setRecommendation(`💪 Progress! Try ${parseInt(last.sets) + 1} sets`);
-    else if (lt === 'skipping') setRecommendation(`💪 Progress! Try ${parseInt(last.sets) + 1} sets • ${parseInt(last.reps) + 10} reps`);
-    else if (lt === 'sets-duration') setRecommendation(`💪 Progress! Try ${parseInt(last.sets) + 1} sets`);
-    else if (lt === 'duration-distance') setRecommendation(`💪 Progress! Try ${parseInt(last.duration) + 5} min`);
+    if (lt === 'plank') setRec(`Progress! Try ${last.sets} sets • ${parseInt(last.time) + 10} sec each`, 'trending-up');
+    else if (lt === 'reps-sets') setRec(`Progress! Try ${(parseInt(last.sets) || 0) + 1} sets • ${(parseInt(last.reps) || 0) + 2} reps`, 'trending-up');
+    else if (lt === 'footwork') setRec(`Progress! Try ${parseInt(last.sets) + 1} sets`, 'trending-up');
+    else if (lt === 'skipping') setRec(`Progress! Try ${parseInt(last.sets) + 1} sets • ${parseInt(last.reps) + 10} reps`, 'trending-up');
+    else if (lt === 'sets-duration') setRec(`Progress! Try ${parseInt(last.sets) + 1} sets`, 'trending-up');
+    else if (lt === 'duration-distance') setRec(`Progress! Try ${parseInt(last.duration) + 5} min`, 'trending-up');
   };
 
   // Plyometric height only progresses when landings have been clean and consistent —
@@ -487,8 +502,8 @@ export default function ExerciseScreen() {
     const level = skillLevel?.toLowerCase() ?? 'beginner';
     const heightUnit = LOG_TYPE_FIELDS.plyometric.units?.height ?? 'in';
     if (sessionData.length === 0) {
-      if (level === 'advanced') { setRecommendation("Log your first session and we'll track your progress! 💪"); return; }
-      setRecommendation(`🎯 Target: ${getSkillRecommendation('plyometric', skillLevel) ?? '2 sets • 6 reps'}`);
+      if (level === 'advanced') { setRec("Log your first session and we'll track your progress!", 'trending-up'); return; }
+      setRec(`Target: ${getSkillRecommendation('plyometric', skillLevel) ?? '2 sets • 6 reps'}`);
       return;
     }
 
@@ -501,11 +516,11 @@ export default function ExerciseScreen() {
     // A shaky or missed landing blocks any height increase, regardless of reps completed.
     if (lastLanding === 2) {
       const stepDown = Math.max(lastHeight - PLYO_HEIGHT_INCREMENT_IN, 0);
-      setRecommendation(`⬇️ Step back down to ${stepDown}${heightUnit} and rebuild consistency before going higher`);
+      setRec(`Step back down to ${stepDown}${heightUnit} and rebuild consistency before going higher`, 'trending-down');
       return;
     }
     if (lastLanding === 1) {
-      setRecommendation(`Hold at ${lastHeight}${heightUnit} • ${lastSets} sets • ${lastReps} reps until landings feel fully clean`);
+      setRec(`Hold at ${lastHeight}${heightUnit} • ${lastSets} sets • ${lastReps} reps until landings feel fully clean`);
       return;
     }
 
@@ -532,13 +547,13 @@ export default function ExerciseScreen() {
     });
 
     if (lastHeight >= PLYO_MAX_HEIGHT_IN) {
-      setRecommendation(`You've hit the recommended max height (${PLYO_MAX_HEIGHT_IN}${heightUnit}) — build reps/sets instead of jumping higher`);
+      setRec(`You've hit the recommended max height (${PLYO_MAX_HEIGHT_IN}${heightUnit}) — build reps/sets instead of jumping higher`);
       return;
     }
 
     if (cleanStreak >= PLYO_CLEAN_STREAK_FOR_HEIGHT_BUMP && !bumpedRecently) {
       const nextHeight = Math.min(lastHeight + PLYO_HEIGHT_INCREMENT_IN, PLYO_MAX_HEIGHT_IN);
-      setRecommendation(`💪 Clean landings ${cleanStreak} sessions in a row at ${lastHeight}${heightUnit} — try ${nextHeight}${heightUnit} next time`);
+      setRec(`Clean landings ${cleanStreak} sessions in a row at ${lastHeight}${heightUnit} — try ${nextHeight}${heightUnit} next time`, 'trending-up');
       return;
     }
 
@@ -547,11 +562,11 @@ export default function ExerciseScreen() {
     if (last3.length >= 3) {
       const reps3 = last3.map((s: any) => parseInt(s.reps) || 0);
       const repsConsistent = reps3[0] >= reps3[1] && reps3[1] >= reps3[2];
-      if (repsConsistent) { setRecommendation(`💪 Progress! Try ${lastSets} sets • ${lastReps + 2} reps at ${lastHeight}${heightUnit}`); return; }
-      setRecommendation(`Let's rebuild consistency: ${lastSets} sets • ${lastReps} reps at ${lastHeight}${heightUnit}`);
+      if (repsConsistent) { setRec(`Progress! Try ${lastSets} sets • ${lastReps + 2} reps at ${lastHeight}${heightUnit}`, 'trending-up'); return; }
+      setRec(`Let's rebuild consistency: ${lastSets} sets • ${lastReps} reps at ${lastHeight}${heightUnit}`, 'restore');
       return;
     }
-    setRecommendation(bumpedRecently
+    setRec(bumpedRecently
       ? `Hold at ${lastHeight}${heightUnit} — already bumped height this week`
       : `Keep going! ${lastSets} sets • ${lastReps} reps at ${lastHeight}${heightUnit}`);
   };
@@ -635,7 +650,7 @@ export default function ExerciseScreen() {
     <TextInput
       style={styles.input}
       placeholder={placeholder}
-      placeholderTextColor={Colors.textSecondary}
+      placeholderTextColor={Theme.textSecondary}
       value={value}
       onChangeText={(text) => setValue(keyboardType === 'numeric' ? text.replace(/[^0-9.]/g, '') : text)}
       keyboardType={keyboardType}
@@ -647,9 +662,18 @@ export default function ExerciseScreen() {
       <Text style={styles.fieldLabel}>Feeling</Text>
       <View style={styles.feelingRow}>
         {FEELING_LABELS.map((label, i) => (
-          <TouchableOpacity key={i} style={[styles.feelingBtn, feeling === i && styles.feelingBtnActive]} onPress={() => setFeeling(i)}>
-            <Text style={[styles.feelingText, feeling === i && styles.feelingTextActive]}>{label}</Text>
-          </TouchableOpacity>
+          <Pressable
+            key={i}
+            style={[
+              styles.feelingBtn,
+              (feeling === i || hoveredFeeling === i) && { backgroundColor: catTheme.bg, borderColor: catTheme.bg },
+            ]}
+            onPress={() => setFeeling(i)}
+            onHoverIn={() => setHoveredFeeling(i)}
+            onHoverOut={() => setHoveredFeeling(null)}
+          >
+            <Text style={[styles.feelingText, feeling === i && { color: catTheme.fg, fontWeight: 'bold' }]}>{label}</Text>
+          </Pressable>
         ))}
       </View>
     </View>
@@ -660,9 +684,18 @@ export default function ExerciseScreen() {
       <Text style={styles.fieldLabel}>Landing Quality</Text>
       <View style={styles.feelingRow}>
         {LANDING_LABELS.map((label, i) => (
-          <TouchableOpacity key={i} style={[styles.feelingBtn, landingQuality === i && styles.feelingBtnActive]} onPress={() => setLandingQuality(i)}>
-            <Text style={[styles.feelingText, landingQuality === i && styles.feelingTextActive]}>{label}</Text>
-          </TouchableOpacity>
+          <Pressable
+            key={i}
+            style={[
+              styles.feelingBtn,
+              (landingQuality === i || hoveredLanding === i) && { backgroundColor: catTheme.bg, borderColor: catTheme.bg },
+            ]}
+            onPress={() => setLandingQuality(i)}
+            onHoverIn={() => setHoveredLanding(i)}
+            onHoverOut={() => setHoveredLanding(null)}
+          >
+            <Text style={[styles.feelingText, landingQuality === i && { color: catTheme.fg, fontWeight: 'bold' }]}>{label}</Text>
+          </Pressable>
         ))}
       </View>
     </View>
@@ -675,36 +708,36 @@ export default function ExerciseScreen() {
         <View style={styles.historyTop}>
           <Text style={styles.historyDate}>{session.date}</Text>
           <TouchableOpacity onPress={() => deleteSession(i)}>
-            <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />
+            <MaterialCommunityIcons name="trash-can-outline" size={22} color="#FF6B6B" />
           </TouchableOpacity>
         </View>
         <View style={styles.historyFields}>
           {category === 'strength' && logType === 'plank' && (
-            <>{session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}{session.time ? <Text style={styles.historyField}>⏱ {session.time} sec</Text> : null}</>
+            <>{session.sets ? <Text style={styles.historyField}>{session.sets} sets</Text> : null}{session.time ? <Text style={styles.historyField}>{session.time} sec</Text> : null}</>
           )}
           {logType === 'reps-sets' && (
-            <>{session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}{session.reps ? <Text style={styles.historyField}>💪 {session.reps} reps</Text> : null}</>
+            <>{session.sets ? <Text style={styles.historyField}>{session.sets} sets</Text> : null}{session.reps ? <Text style={styles.historyField}>{session.reps} reps</Text> : null}</>
           )}
           {logType === 'plyometric' && (
-            <>{session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}{session.reps ? <Text style={styles.historyField}>💪 {session.reps} reps</Text> : null}{session.height ? <Text style={styles.historyField}>📏 {session.height}{LOG_TYPE_FIELDS.plyometric.units?.height ?? 'in'}</Text> : null}{typeof session.landing === 'number' && session.landing >= 0 ? <Text style={styles.historyField}>{LANDING_LABELS[session.landing]}</Text> : null}</>
+            <>{session.sets ? <Text style={styles.historyField}>{session.sets} sets</Text> : null}{session.reps ? <Text style={styles.historyField}>{session.reps} reps</Text> : null}{session.height ? <Text style={styles.historyField}>{session.height}{LOG_TYPE_FIELDS.plyometric.units?.height ?? 'in'}</Text> : null}{typeof session.landing === 'number' && session.landing >= 0 ? <Text style={styles.historyField}>{LANDING_LABELS[session.landing]}</Text> : null}</>
           )}
           {category === 'strength' && logType !== 'plank' && logType !== 'reps-sets' && logType !== 'plyometric' && (
-            <>{session.weight ? <Text style={styles.historyField}>⚖️ {session.weight}kg</Text> : null}{session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}{session.reps ? <Text style={styles.historyField}>💪 {session.reps} reps</Text> : null}</>
+            <>{session.weight ? <Text style={styles.historyField}>{session.weight}kg</Text> : null}{session.sets ? <Text style={styles.historyField}>{session.sets} sets</Text> : null}{session.reps ? <Text style={styles.historyField}>{session.reps} reps</Text> : null}</>
           )}
           {category === 'footwork' && logType !== 'plyometric' && logType !== 'reps-sets' && (
-            <>{session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}{session.duration ? <Text style={styles.historyField}>⏱ {session.duration} min</Text> : null}</>
+            <>{session.sets ? <Text style={styles.historyField}>{session.sets} sets</Text> : null}{session.duration ? <Text style={styles.historyField}>{session.duration} min</Text> : null}</>
           )}
           {category === 'endurance' && logType === 'skipping' && (
-            <>{session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}{session.reps ? <Text style={styles.historyField}>💪 {session.reps} reps</Text> : null}{session.time ? <Text style={styles.historyField}>⏱ {session.time} sec</Text> : null}</>
+            <>{session.sets ? <Text style={styles.historyField}>{session.sets} sets</Text> : null}{session.reps ? <Text style={styles.historyField}>{session.reps} reps</Text> : null}{session.time ? <Text style={styles.historyField}>{session.time} sec</Text> : null}</>
           )}
           {category === 'endurance' && logType === 'sets-duration' && (
-            <>{session.sets ? <Text style={styles.historyField}>🔁 {session.sets} sets</Text> : null}{session.duration ? <Text style={styles.historyField}>⏱ {session.duration} min</Text> : null}</>
+            <>{session.sets ? <Text style={styles.historyField}>{session.sets} sets</Text> : null}{session.duration ? <Text style={styles.historyField}>{session.duration} min</Text> : null}</>
           )}
           {category === 'endurance' && logType === 'duration-distance' && (
-            <>{session.duration ? <Text style={styles.historyField}>⏱ {session.duration} min</Text> : null}{session.distance ? <Text style={styles.historyField}>📍 {session.distance}km</Text> : null}</>
+            <>{session.duration ? <Text style={styles.historyField}>{session.duration} min</Text> : null}{session.distance ? <Text style={styles.historyField}>{session.distance}km</Text> : null}</>
           )}
           {category === 'recovery' && (
-            <>{session.duration ? <Text style={styles.historyField}>⏱ {session.duration} min</Text> : null}{session.feeling >= 0 ? <Text style={styles.historyField}>{FEELING_LABELS[session.feeling]}</Text> : null}</>
+            <>{session.duration ? <Text style={styles.historyField}>{session.duration} min</Text> : null}{session.feeling >= 0 ? <Text style={styles.historyField}>{FEELING_LABELS[session.feeling]}</Text> : null}</>
           )}
         </View>
       </View>
@@ -712,7 +745,7 @@ export default function ExerciseScreen() {
   };
 
   const renderMedia = () => {
-    if (hasVideo) return <VideoView player={player} style={styles.video} contentFit="contain" />;
+    if (hasVideo) return <VideoView player={player} style={styles.video} contentFit="cover" />;
     if (imageUrl && imageUrl !== '') {
       const localImage = getLocalImage(imageUrl as string);
       if (localImage) return <Image source={localImage} style={styles.image} resizeMode="cover" />;
@@ -723,7 +756,7 @@ export default function ExerciseScreen() {
   const renderVoiceNotesSection = () => {
     if (!user) return (
       <View style={styles.voiceEmptyState}>
-        <MaterialCommunityIcons name="microphone-off" size={32} color={Colors.textSecondary} />
+        <MaterialCommunityIcons name="microphone-off" size={32} color={Theme.textSecondary} />
         <Text style={styles.emptyText}>Sign in to record voice notes.</Text>
       </View>
     );
@@ -731,7 +764,7 @@ export default function ExerciseScreen() {
       <View>
         {isUploading ? (
           <View style={styles.recordingCard}>
-            <ActivityIndicator size="large" color={Colors.accent} />
+            <ActivityIndicator size="large" color={Theme.eyebrowGreen} />
             <Text style={styles.uploadingText}>Saving voice note...</Text>
           </View>
         ) : isRecording ? (
@@ -746,16 +779,16 @@ export default function ExerciseScreen() {
                 <MaterialCommunityIcons name="close" size={20} color="#FF6B6B" />
                 <Text style={styles.cancelRecordText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.stopRecordBtn} onPress={stopRecording}>
+              <TouchableOpacity style={[styles.stopRecordBtn, { backgroundColor: catTheme.fg }]} onPress={stopRecording}>
                 <MaterialCommunityIcons name="stop" size={20} color="#FFFFFF" />
-                <Text style={styles.stopRecordText}>Save</Text>
+                <Text style={[styles.stopRecordText, { color: '#FFFFFF' }]}>Save</Text>
               </TouchableOpacity>
             </View>
           </View>
         ) : (
-          <TouchableOpacity style={styles.startRecordBtn} onPress={startRecording}>
+          <TouchableOpacity style={[styles.startRecordBtn, { backgroundColor: catTheme.fg }]} onPress={startRecording}>
             <MaterialCommunityIcons name="microphone" size={22} color="#FFFFFF" />
-            <Text style={styles.startRecordText}>Record Voice Note</Text>
+            <Text style={[styles.startRecordText, { color: '#FFFFFF' }]}>Record Voice Note</Text>
           </TouchableOpacity>
         )}
         {voiceNotes.length === 0 ? (
@@ -765,7 +798,7 @@ export default function ExerciseScreen() {
             {voiceNotes.map((note) => (
               <View key={note.id} style={styles.voiceNoteRow}>
                 <TouchableOpacity style={styles.playBtn} onPress={() => playVoiceNote(note)}>
-                  <MaterialCommunityIcons name={playingId === note.id ? 'pause' : 'play'} size={20} color="#FFFFFF" />
+                  <MaterialCommunityIcons name={playingId === note.id ? 'pause' : 'play'} size={20} color={Theme.limeAccentDark} />
                 </TouchableOpacity>
                 <View style={styles.voiceNoteInfo}>
                   <Text style={styles.voiceNoteDate}>{formatVoiceDate(note.created_at)}</Text>
@@ -790,30 +823,42 @@ export default function ExerciseScreen() {
   };
 
   return (
-    <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+    <View style={styles.container}>
       <TouchableOpacity style={styles.backBtn} onPress={() => {
         if (typeof window !== 'undefined') window.history.back();
         else router.back();
       }}>
-        <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
+        <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
       </TouchableOpacity>
 
+      <Text style={styles.eyebrow}>{(category as string)?.toUpperCase()}</Text>
       <Text style={styles.title}>{name}</Text>
       <View style={styles.tagRow}>
         {muscleList.map((muscle, i) => (
-          <View key={i} style={styles.tag}>
-            <Text style={styles.tagText}>{muscle}</Text>
+          <View key={i} style={[styles.tag, { backgroundColor: catTheme.bg }]}>
+            <Text style={[styles.tagText, { color: catTheme.fg }]}>{muscle}</Text>
           </View>
         ))}
       </View>
 
       <View style={styles.tabRow}>
         {(['howto', 'notes', 'timer'] as const).map(tab => (
-          <TouchableOpacity key={tab} style={[styles.tab, activeTab === tab && styles.tabActive]} onPress={() => setActiveTab(tab)}>
+          <Pressable
+            key={tab}
+            style={[
+              styles.tab,
+              activeTab === tab
+                ? { backgroundColor: catTheme.fg }
+                : hoveredTab === tab && { backgroundColor: catTheme.bg },
+            ]}
+            onPress={() => setActiveTab(tab)}
+            onHoverIn={() => setHoveredTab(tab)}
+            onHoverOut={() => setHoveredTab(null)}
+          >
             <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
               {tab === 'howto' ? 'How To' : tab === 'notes' ? 'Notes' : 'Timer'}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         ))}
       </View>
 
@@ -827,7 +872,7 @@ export default function ExerciseScreen() {
             <View style={styles.stepsCard}>
               {stepList.map((step, i) => (
                 <View key={i} style={styles.stepRow}>
-                  <View style={styles.stepNumber}><Text style={styles.stepNumberText}>{i + 1}</Text></View>
+                  <View style={[styles.stepNumber, { backgroundColor: catTheme.fg }]}><Text style={styles.stepNumberText}>{i + 1}</Text></View>
                   <Text style={styles.stepText}>{step}</Text>
                 </View>
               ))}
@@ -839,11 +884,11 @@ export default function ExerciseScreen() {
         {activeTab === 'notes' && (
           <View>
             {user && showWeightPrompt && logType === 'strength' && (
-              <View style={styles.weightPromptCard}>
-                <Text style={styles.weightPromptTitle}>🏋️ {startingWeight ? 'Update' : 'Set'} Your Starting Weight</Text>
+              <View style={[styles.weightPromptCard, { borderLeftColor: catTheme.fg }]}>
+                <Text style={styles.weightPromptTitle}>{startingWeight ? 'Update' : 'Set'} Your Starting Weight</Text>
                 <Text style={styles.weightPromptDesc}>Enter the weight you can comfortably lift. We'll use this to build personalized recommendations.</Text>
                 <View style={styles.weightPromptRow}>
-                  <TextInput style={styles.weightPromptInput} placeholder="e.g. 20" placeholderTextColor={Colors.textSecondary} value={startingWeightInput} onChangeText={(t) => setStartingWeightInput(t.replace(/[^0-9.]/g, ''))} keyboardType="numeric" />
+                  <TextInput style={styles.weightPromptInput} placeholder="e.g. 20" placeholderTextColor={Theme.textSecondary} value={startingWeightInput} onChangeText={(t) => setStartingWeightInput(t.replace(/[^0-9.]/g, ''))} keyboardType="numeric" />
                   <Text style={styles.weightPromptKg}>kg</Text>
                   <TouchableOpacity style={styles.weightPromptBtn} onPress={saveStartingWeight}>
                     <Text style={styles.weightPromptBtnText}>Save</Text>
@@ -852,19 +897,23 @@ export default function ExerciseScreen() {
               </View>
             )}
             {user && recommendation !== '' && category !== 'recovery' && (
-              <View style={styles.recommendationCard}>
+              <View style={[styles.recommendationCard, { backgroundColor: catTheme.bg, borderLeftColor: catTheme.fg }]}>
                 <View style={styles.recommendationHeader}>
-                  <Text style={styles.recommendationLabel}>💡 TODAY'S TARGET</Text>
+                  <Text style={[styles.recommendationLabel, { color: catTheme.fg }]}>TODAY'S TARGET</Text>
                   {logType === 'strength' && startingWeight && !showWeightPrompt && (
                     <TouchableOpacity onPress={() => setShowWeightPrompt(true)}>
                       <Text style={styles.editLink}>Edit weight</Text>
                     </TouchableOpacity>
                   )}
                 </View>
-                <Text style={styles.recommendationText}>{recommendation}</Text>
+                <View style={styles.recommendationBody}>
+                  <MaterialCommunityIcons name={recommendationIcon} size={22} color={catTheme.fg} style={styles.recommendationIcon} />
+                  <Text style={styles.recommendationText}>{recommendation}</Text>
+                </View>
                 {!profile?.age && (
-                  <TouchableOpacity onPress={() => { if (typeof window !== 'undefined') window.location.href = '/onboarding'; else router.push('/onboarding' as any); }}>
-                    <Text style={styles.onboardingHint}>Complete your profile for personalized recommendations →</Text>
+                  <TouchableOpacity style={styles.onboardingHintRow} onPress={() => { if (typeof window !== 'undefined') window.location.href = '/onboarding'; else router.push('/onboarding' as any); }}>
+                    <Text style={styles.onboardingHint}>Complete your profile for personalized recommendations</Text>
+                    <MaterialCommunityIcons name="chevron-right" size={19} color={Theme.eyebrowGreen} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -873,8 +922,8 @@ export default function ExerciseScreen() {
               <View style={styles.sessionCard}>
                 <Text style={styles.sectionLabel}>SESSION LOG</Text>
                 <Text style={styles.emptyText}>Sign in to save and track your progress.</Text>
-                <TouchableOpacity style={styles.addButton} onPress={() => router.push('/login' as any)}>
-                  <Text style={styles.addButtonText}>Sign In</Text>
+                <TouchableOpacity style={[styles.addButton, { backgroundColor: catTheme.fg }]} onPress={() => router.push('/login' as any)}>
+                  <Text style={[styles.addButtonText, { color: '#FFFFFF' }]}>Sign In</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -911,8 +960,8 @@ export default function ExerciseScreen() {
                 {category === 'recovery' && (
                   <View><View style={styles.inputRow}>{renderInput('Duration (min)', recoveryDuration, setRecoveryDuration, 'numeric')}</View>{renderFeeling()}</View>
                 )}
-                <TouchableOpacity style={styles.addButton} onPress={saveSession}>
-                  <Text style={styles.addButtonText}>+ Save Session</Text>
+                <TouchableOpacity style={[styles.addButton, { backgroundColor: catTheme.fg }]} onPress={saveSession}>
+                  <Text style={[styles.addButtonText, { color: '#FFFFFF' }]}>+ Save Session</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -923,18 +972,18 @@ export default function ExerciseScreen() {
             <View style={styles.sessionCard}>
               <Text style={styles.sectionLabel}>GENERAL NOTES</Text>
               <View style={styles.subTabRow}>
-                <TouchableOpacity style={[styles.subTab, notesSubTab === 'text' && styles.subTabActive]} onPress={() => setNotesSubTab('text')}>
-                  <MaterialCommunityIcons name="pencil-outline" size={14} color={notesSubTab === 'text' ? '#FFFFFF' : Colors.textSecondary} />
+                <TouchableOpacity style={[styles.subTab, notesSubTab === 'text' && { backgroundColor: catTheme.fg, borderColor: catTheme.fg }]} onPress={() => setNotesSubTab('text')}>
+                  <MaterialCommunityIcons name="pencil-outline" size={14} color={notesSubTab === 'text' ? '#FFFFFF' : Theme.textSecondary} />
                   <Text style={[styles.subTabText, notesSubTab === 'text' && styles.subTabTextActive]}>Text</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.subTab, notesSubTab === 'voice' && styles.subTabActive]} onPress={() => setNotesSubTab('voice')}>
-                  <MaterialCommunityIcons name="microphone-outline" size={14} color={notesSubTab === 'voice' ? '#FFFFFF' : Colors.textSecondary} />
+                <TouchableOpacity style={[styles.subTab, notesSubTab === 'voice' && { backgroundColor: catTheme.fg, borderColor: catTheme.fg }]} onPress={() => setNotesSubTab('voice')}>
+                  <MaterialCommunityIcons name="microphone-outline" size={14} color={notesSubTab === 'voice' ? '#FFFFFF' : Theme.textSecondary} />
                   <Text style={[styles.subTabText, notesSubTab === 'voice' && styles.subTabTextActive]}>Voice</Text>
                 </TouchableOpacity>
               </View>
               {notesSubTab === 'text' ? (
                 <View style={styles.notesContainer}>
-                  <TextInput style={styles.notesInput} placeholder="Add any extra things to remember..." placeholderTextColor={Colors.textSecondary} value={generalNote} onChangeText={saveNote} multiline numberOfLines={4} />
+                  <TextInput style={styles.notesInput} placeholder="Add any extra things to remember..." placeholderTextColor={Theme.textSecondary} value={generalNote} onChangeText={saveNote} multiline numberOfLines={4} />
                 </View>
               ) : renderVoiceNotesSection()}
             </View>
@@ -947,12 +996,21 @@ export default function ExerciseScreen() {
             <Text style={styles.timerDisplay}>{formatTime(timerSeconds)}</Text>
 
             <View style={styles.timerBtnRow}>
-              <TouchableOpacity style={[styles.timerBtn, timerRunning && styles.timerBtnPause]} onPress={timerRunning ? pauseTimer : startTimer}>
+              <TouchableOpacity
+                style={[
+                  styles.timerBtn,
+                  { backgroundColor: catTheme.fg },
+                  timerRunning && styles.timerBtnPause,
+                  !timerRunning && isCountdown && getCountdownTotal() === 0 && styles.timerBtnDisabled,
+                ]}
+                onPress={timerRunning ? pauseTimer : startTimer}
+                disabled={!timerRunning && isCountdown && getCountdownTotal() === 0}
+              >
                 <MaterialCommunityIcons name={timerRunning ? 'pause' : 'play'} size={20} color="#FFFFFF" />
-                <Text style={styles.timerBtnText}>{timerRunning ? 'Pause' : 'Start'}</Text>
+                <Text style={[styles.timerBtnText, { color: '#FFFFFF' }]}>{timerRunning ? 'Pause' : 'Start'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.timerResetBtn} onPress={resetTimer}>
-                <MaterialCommunityIcons name="refresh" size={20} color={Colors.textSecondary} />
+              <TouchableOpacity style={styles.timerResetBtn} onPress={() => resetTimer()}>
+                <MaterialCommunityIcons name="refresh" size={20} color={Theme.textSecondary} />
                 <Text style={styles.timerResetText}>Reset</Text>
               </TouchableOpacity>
             </View>
@@ -966,10 +1024,10 @@ export default function ExerciseScreen() {
             )}
 
             <View style={styles.timerModeRow}>
-              <TouchableOpacity style={[styles.modePill, !isCountdown && styles.modePillActive]} onPress={() => { setIsCountdown(false); resetTimer(); }}>
+              <TouchableOpacity style={[styles.modePill, !isCountdown && { backgroundColor: catTheme.fg, borderColor: catTheme.fg }]} onPress={() => { setIsCountdown(false); resetTimer(false); }}>
                 <Text style={[styles.modePillText, !isCountdown && styles.modePillTextActive]}>Stopwatch</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modePill, isCountdown && styles.modePillActive]} onPress={() => { setIsCountdown(true); resetTimer(); }}>
+              <TouchableOpacity style={[styles.modePill, isCountdown && { backgroundColor: catTheme.fg, borderColor: catTheme.fg }]} onPress={() => { setIsCountdown(true); resetTimer(true); }}>
                 <Text style={[styles.modePillText, isCountdown && styles.modePillTextActive]}>Countdown</Text>
               </TouchableOpacity>
             </View>
@@ -978,119 +1036,140 @@ export default function ExerciseScreen() {
               <View style={styles.countdownInputRow}>
                 <TextInput
                   style={styles.countdownInput}
-                  placeholder="Set seconds (e.g. 45)"
-                  placeholderTextColor={Colors.textSecondary}
-                  value={countdownInput}
-                  onChangeText={(t) => { setCountdownInput(t.replace(/[^0-9]/g, '')); if (!timerRunning) setTimerSeconds(parseInt(t) || 0); }}
+                  placeholder="0"
+                  placeholderTextColor={Theme.textSecondary}
+                  value={countdownMin}
+                  onChangeText={(t) => {
+                    const clean = t.replace(/[^0-9]/g, '');
+                    setCountdownMin(clean);
+                    if (!timerRunning) setTimerSeconds((parseInt(clean) || 0) * 60 + (parseInt(countdownSec) || 0));
+                  }}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.countdownLabel}>min</Text>
+                <TextInput
+                  style={styles.countdownInput}
+                  placeholder="0"
+                  placeholderTextColor={Theme.textSecondary}
+                  value={countdownSec}
+                  onChangeText={(t) => {
+                    const clean = t.replace(/[^0-9]/g, '');
+                    setCountdownSec(clean);
+                    if (!timerRunning) setTimerSeconds((parseInt(countdownMin) || 0) * 60 + (parseInt(clean) || 0));
+                  }}
                   keyboardType="numeric"
                 />
                 <Text style={styles.countdownLabel}>sec</Text>
               </View>
             )}
+            {isCountdown && getCountdownTotal() === 0 && (
+              <Text style={styles.countdownHint}>Set a time above to start the countdown.</Text>
+            )}
           </View>
         )}
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, paddingTop: 16 },
+  container: { flex: 1, backgroundColor: Theme.background, padding: 24, paddingTop: 50 },
   backBtn: { marginBottom: 8, alignSelf: 'flex-start' },
-  title: { fontSize: 24, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 12 },
+  eyebrow: { fontSize: 11, fontWeight: '500', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 2 },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 26, color: Theme.textPrimary, marginBottom: 12 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 20 },
-  tag: { backgroundColor: Colors.accentMuted, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
-  tagText: { color: Colors.accent, fontSize: 11, fontWeight: '600' },
-  tabRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  tab: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, backgroundColor: Colors.backgroundCard },
-  tabActive: { backgroundColor: Colors.accent },
-  tabText: { color: Colors.textSecondary, fontWeight: '600', fontSize: 13 },
+  tag: { backgroundColor: Theme.cardTinted, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  tagText: { color: Theme.eyebrowGreen, fontSize: 13, fontWeight: '600' },
+  tabRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
+  tab: { paddingHorizontal: 24, paddingVertical: 13, borderRadius: 24, backgroundColor: Theme.cardWhite },
+  tabText: { color: Theme.textSecondary, fontWeight: '600', fontSize: 15 },
   tabTextActive: { color: '#FFFFFF' },
   content: { paddingBottom: 40 },
-  video: { width: '100%', height: 300, borderRadius: 12, marginBottom: 16, backgroundColor: Colors.backgroundCard },
+  video: { width: '100%', height: 300, borderRadius: 12, marginBottom: 16, backgroundColor: Theme.cardWhite },
   image: { width: '100%', height: 340, borderRadius: 12, marginBottom: 16 },
-  description: { fontSize: 14, color: Colors.textSecondary, lineHeight: 22, marginBottom: 20 },
-  stepsCard: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, gap: 14 },
-  stepRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  stepNumber: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center' },
-  stepNumberText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 },
-  stepText: { flex: 1, color: Colors.textPrimary, fontSize: 14, lineHeight: 22 },
-  weightPromptCard: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, marginBottom: 16, borderLeftWidth: 3, borderLeftColor: Colors.accent },
-  weightPromptTitle: { fontSize: 15, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 6 },
-  weightPromptDesc: { fontSize: 12, color: Colors.textSecondary, lineHeight: 18, marginBottom: 12 },
+  description: { fontSize: 17, color: Theme.textSecondary, lineHeight: 24, marginBottom: 20 },
+  stepsCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 18, gap: 18 },
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  stepNumber: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  stepNumberText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
+  stepText: { flex: 1, color: Theme.textPrimary, fontSize: 17, lineHeight: 24 },
+  weightPromptCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 16, marginBottom: 16, borderLeftWidth: 3 },
+  weightPromptTitle: { fontSize: 16, fontWeight: 'bold', color: Theme.textPrimary, marginBottom: 6 },
+  weightPromptDesc: { fontSize: 15, color: Theme.textSecondary, lineHeight: 20, marginBottom: 12 },
   weightPromptRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  weightPromptInput: { flex: 1, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 8, padding: 10, color: Colors.textPrimary, fontSize: 16, textAlign: 'center', borderWidth: 1, borderColor: Colors.accent },
-  weightPromptKg: { fontSize: 14, color: Colors.textPrimary, fontWeight: '600' },
-  weightPromptBtn: { backgroundColor: Colors.accent, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16 },
-  weightPromptBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
-  recommendationCard: { backgroundColor: '#1a3a2a', borderRadius: 12, padding: 14, marginBottom: 16, borderLeftWidth: 3, borderLeftColor: Colors.accent },
+  weightPromptInput: { flex: 1, backgroundColor: Theme.background, borderRadius: 8, padding: 10, color: Theme.textPrimary, fontSize: 16, textAlign: 'center', borderWidth: 1, borderColor: Theme.divider },
+  weightPromptKg: { fontSize: 14, color: Theme.textPrimary, fontWeight: '600' },
+  weightPromptBtn: { backgroundColor: Theme.limeAccent, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16 },
+  weightPromptBtnText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 14 },
+  recommendationCard: { borderRadius: 14, padding: 14, marginBottom: 16, borderLeftWidth: 3 },
   recommendationHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  recommendationLabel: { fontSize: 10, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1 },
-  editLink: { fontSize: 11, color: Colors.accent, fontWeight: '600', textDecorationLine: 'underline' },
-  recommendationText: { fontSize: 16, fontWeight: 'bold', color: '#FFFFFF' },
-  onboardingHint: { fontSize: 11, color: Colors.accent, marginTop: 8, fontWeight: '600' },
-  timerCard: { backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 32, alignItems: 'center', justifyContent: 'center', minHeight: 320, marginBottom: 16 },
-  timerDisplay: { fontSize: 72, fontWeight: 'bold', color: Colors.textPrimary, marginVertical: 24, letterSpacing: 4 },
+  recommendationLabel: { fontSize: 12, fontWeight: 'bold', letterSpacing: 1 },
+  editLink: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600', textDecorationLine: 'underline' },
+  recommendationBody: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  recommendationIcon: { marginTop: 2 },
+  recommendationText: { flex: 1, fontSize: 16, fontWeight: 'bold', color: Theme.textPrimary },
+  onboardingHintRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  onboardingHint: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
+  timerCard: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 32, alignItems: 'center', justifyContent: 'center', minHeight: 320, marginBottom: 16 },
+  timerDisplay: { fontSize: 72, fontWeight: 'bold', color: Theme.textPrimary, marginVertical: 24, letterSpacing: 4 },
   timerBtnRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  timerBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.accent, borderRadius: 28, paddingHorizontal: 28, paddingVertical: 14 },
+  timerBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 28, paddingHorizontal: 28, paddingVertical: 14 },
   timerBtnPause: { backgroundColor: '#E67E22' },
-  timerBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 16 },
-  timerResetBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.backgroundTop, borderRadius: 28, paddingHorizontal: 24, paddingVertical: 14, borderWidth: 1, borderColor: Colors.border },
-  timerResetText: { color: Colors.textSecondary, fontWeight: '600', fontSize: 16 },
+  timerBtnDisabled: { opacity: 0.4 },
+  timerBtnText: { fontWeight: 'bold', fontSize: 16 },
+  timerResetBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Theme.cardWhite, borderRadius: 28, paddingHorizontal: 24, paddingVertical: 14, borderWidth: 1, borderColor: Theme.divider },
+  timerResetText: { color: Theme.textSecondary, fontWeight: '600', fontSize: 16 },
   stopSoundBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#E74C3C', borderRadius: 20, paddingHorizontal: 20, paddingVertical: 10, marginBottom: 16 },
   stopSoundText: { color: '#fff', fontWeight: '600', fontSize: 14 },
   timerModeRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
-  modePill: { paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.backgroundTop, borderWidth: 1, borderColor: Colors.border },
-  modePillActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  modePillText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  modePill: { paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20, backgroundColor: Theme.cardWhite, borderWidth: 1, borderColor: Theme.divider },
+  modePillText: { fontSize: 13, color: Theme.textSecondary, fontWeight: '600' },
   modePillTextActive: { color: '#FFFFFF' },
   countdownInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  countdownInput: { backgroundColor: Colors.backgroundTop, borderRadius: 10, padding: 12, color: Colors.textPrimary, fontSize: 16, borderWidth: 1, borderColor: Colors.border, width: 180, textAlign: 'center' },
-  countdownLabel: { fontSize: 14, color: Colors.textSecondary, fontWeight: '600' },
-  sessionCard: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, marginBottom: 16 },
-  sectionLabel: { color: Colors.accent, fontWeight: 'bold', fontSize: 12, letterSpacing: 1, marginBottom: 14 },
-  inputRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  input: { flex: 1, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 12, color: Colors.textPrimary, fontSize: 12, textAlign: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
-  fieldLabel: { color: Colors.textSecondary, fontSize: 13, marginBottom: 8 },
+  countdownInput: { backgroundColor: Theme.cardWhite, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 0, color: Theme.textPrimary, fontSize: 16, borderWidth: 1, borderColor: Theme.divider, width: 70, textAlign: 'center', textAlignVertical: 'center' },
+  countdownLabel: { fontSize: 14, color: Theme.textSecondary, fontWeight: '600' },
+  countdownHint: { fontSize: 13, color: Theme.textMuted, fontStyle: 'italic', marginTop: 10, textAlign: 'center' },
+  sessionCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 12, marginBottom: 16 },
+  sectionLabel: { color: Theme.eyebrowGreen, fontWeight: 'bold', fontSize: 12, letterSpacing: 1, marginBottom: 14 },
+  inputRow: { flexDirection: 'row', gap: 6, marginBottom: 12 },
+  input: { flex: 1, minWidth: 0, backgroundColor: Theme.background, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 6, color: Theme.textPrimary, fontSize: 14, textAlign: 'center', borderWidth: 1, borderColor: Theme.divider },
+  fieldLabel: { color: Theme.textSecondary, fontSize: 13, marginBottom: 8 },
   feelingRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  feelingBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  feelingBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  feelingText: { color: Colors.textSecondary, fontSize: 12 },
-  feelingTextActive: { color: '#FFFFFF', fontWeight: 'bold' },
-  addButton: { backgroundColor: Colors.accent, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
-  addButtonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
-  historyRow: { borderBottomWidth: 1, borderBottomColor: Colors.border, paddingVertical: 10 },
-  historyTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  historyDate: { color: Colors.textSecondary, fontSize: 12 },
-  historyFields: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  historyField: { color: Colors.textPrimary, fontSize: 13, backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  emptyText: { color: Colors.textSecondary, fontSize: 13, fontStyle: 'italic', marginBottom: 12 },
-  notesContainer: { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  notesInput: { color: Colors.textPrimary, fontSize: 13, lineHeight: 22, minHeight: 80, textAlignVertical: 'top' },
+  feelingBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, backgroundColor: Theme.background, alignItems: 'center', borderWidth: 1, borderColor: Theme.divider },
+  feelingText: { color: Theme.textSecondary, fontSize: 13 },
+  addButton: { borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
+  addButtonText: { fontWeight: 'bold', fontSize: 14 },
+  historyRow: { borderBottomWidth: 1, borderBottomColor: Theme.divider, paddingVertical: 14 },
+  historyTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  historyDate: { color: Theme.textSecondary, fontSize: 15, fontWeight: '600' },
+  historyFields: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  historyField: { color: Theme.textPrimary, fontSize: 15, fontWeight: '600', backgroundColor: Theme.background, paddingHorizontal: 13, paddingVertical: 7, borderRadius: 10, borderWidth: 1, borderColor: Theme.divider },
+  emptyText: { color: Theme.textSecondary, fontSize: 15, fontStyle: 'italic', marginBottom: 12 },
+  notesContainer: { backgroundColor: Theme.background, borderRadius: 8, padding: 10, borderWidth: 1, borderColor: Theme.divider },
+  notesInput: { color: Theme.textPrimary, fontSize: 15, lineHeight: 22, minHeight: 80, textAlignVertical: 'top' },
   subTabRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  subTab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  subTabActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  subTabText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
+  subTab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: Theme.background, borderWidth: 1, borderColor: Theme.divider },
+  subTabText: { fontSize: 13, fontWeight: '600', color: Theme.textSecondary },
   subTabTextActive: { color: '#FFFFFF' },
   voiceEmptyState: { alignItems: 'center', paddingVertical: 24, gap: 8 },
   recordingCard: { alignItems: 'center', paddingVertical: 24, gap: 12 },
   recordingPulse: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#E74C3C', alignItems: 'center', justifyContent: 'center' },
-  recordingTime: { fontSize: 32, fontWeight: 'bold', color: Colors.textPrimary, letterSpacing: 2 },
+  recordingTime: { fontSize: 32, fontWeight: 'bold', color: Theme.textPrimary, letterSpacing: 2 },
   recordingLabel: { fontSize: 13, color: '#E74C3C', fontWeight: '600' },
   recordingActions: { flexDirection: 'row', gap: 16, marginTop: 8 },
-  cancelRecordBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, backgroundColor: 'rgba(255,107,107,0.15)', borderWidth: 1, borderColor: 'rgba(255,107,107,0.3)' },
-  cancelRecordText: { color: '#FF6B6B', fontWeight: '600', fontSize: 13 },
-  stopRecordBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, backgroundColor: Colors.accent },
-  stopRecordText: { color: '#FFFFFF', fontWeight: '600', fontSize: 13 },
-  uploadingText: { color: Colors.textSecondary, fontSize: 13, marginTop: 8 },
-  startRecordBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: Colors.accent, borderRadius: 12, paddingVertical: 14 },
-  startRecordText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
-  voiceNoteRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  playBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center' },
+  cancelRecordBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, backgroundColor: 'rgba(255,107,107,0.12)', borderWidth: 1, borderColor: 'rgba(255,107,107,0.3)' },
+  cancelRecordText: { color: '#E74C3C', fontWeight: '600', fontSize: 13 },
+  stopRecordBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
+  stopRecordText: { fontWeight: '600', fontSize: 13 },
+  uploadingText: { color: Theme.textSecondary, fontSize: 13, marginTop: 8 },
+  startRecordBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 12, paddingVertical: 14 },
+  startRecordText: { fontWeight: 'bold', fontSize: 14 },
+  voiceNoteRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Theme.divider },
+  playBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Theme.limeAccent, alignItems: 'center', justifyContent: 'center' },
   voiceNoteInfo: { flex: 1, gap: 4 },
-  voiceNoteDate: { color: Colors.textSecondary, fontSize: 11 },
-  voiceNoteDuration: { color: Colors.textPrimary, fontSize: 13, fontWeight: '600' },
-  progressBarBg: { height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)', overflow: 'hidden' },
-  progressBarFill: { height: '100%', borderRadius: 2, backgroundColor: Colors.accent },
-  voiceNoteCount: { color: Colors.textSecondary, fontSize: 11, textAlign: 'right', marginTop: 8 },
+  voiceNoteDate: { color: Theme.textSecondary, fontSize: 13 },
+  voiceNoteDuration: { color: Theme.textPrimary, fontSize: 13, fontWeight: '600' },
+  progressBarBg: { height: 4, borderRadius: 2, backgroundColor: Theme.divider, overflow: 'hidden' },
+  progressBarFill: { height: '100%', borderRadius: 2, backgroundColor: Theme.eyebrowGreen },
+  voiceNoteCount: { color: Theme.textSecondary, fontSize: 13, textAlign: 'right', marginTop: 8 },
 });

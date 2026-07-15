@@ -1,10 +1,10 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Platform } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Platform } from 'react-native';
+import { Text } from '@/components/Text';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useState, useEffect } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Colors } from '@/constants/theme';
+import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
 
 const CLOUDINARY_CLOUD_NAME = 'pyqqwrax';
@@ -277,7 +277,7 @@ export default function CreateExerciseScreen() {
     if (createAnother) {
       const next = savedCount + 1;
       setSavedCount(next);
-      setSavedBanner(`✓ "${payload.name}" saved${next > 1 ? ` — ${next} created this session` : ''}. Ready for the next one!`);
+      setSavedBanner(`"${payload.name}" saved${next > 1 ? ` — ${next} created this session` : ''}. Ready for the next one!`);
       resetForNext();
     } else {
       goBack();
@@ -288,10 +288,7 @@ export default function CreateExerciseScreen() {
   const isSingleLogType = logTypesForCategory.length === 1;
 
   return (
-    <LinearGradient
-      colors={[Colors.backgroundTop, Colors.backgroundBottom]}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
@@ -299,14 +296,14 @@ export default function CreateExerciseScreen() {
       >
         <View style={styles.titleRow}>
           <TouchableOpacity onPress={goBack}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
+            <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>{isEditing ? 'Edit Exercise' : 'Create Exercise'}</Text>
         </View>
 
         {savedBanner !== '' && (
           <View style={styles.banner}>
-            <MaterialCommunityIcons name="check-circle" size={18} color={Colors.accent} />
+            <MaterialCommunityIcons name="check-circle" size={18} color={Theme.eyebrowGreen} />
             <Text style={styles.bannerText}>{savedBanner}</Text>
           </View>
         )}
@@ -319,7 +316,7 @@ export default function CreateExerciseScreen() {
           <TextInput
             style={styles.input}
             placeholder="e.g. Jump Lunge"
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={Theme.textSecondary}
             value={name}
             onChangeText={(t) => { setName(t); if (savedBanner) setSavedBanner(''); }}
             autoCapitalize="words"
@@ -327,22 +324,26 @@ export default function CreateExerciseScreen() {
 
           <Text style={styles.label}>Category</Text>
           <View style={styles.optionsRow}>
-            {CATEGORIES.map((option) => (
-              <TouchableOpacity
-                key={option}
-                style={[styles.categoryBtn, category === option && styles.categoryBtnActive]}
-                onPress={() => selectCategory(option)}
-              >
-                <MaterialCommunityIcons
-                  name={CATEGORY_ICONS[option] as any}
-                  size={16}
-                  color={category === option ? '#FFFFFF' : Colors.textSecondary}
-                />
-                <Text style={[styles.categoryBtnText, category === option && styles.categoryBtnTextActive]}>
-                  {option.charAt(0).toUpperCase() + option.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {CATEGORIES.map((option) => {
+              const cat = CategoryTheme[option as keyof typeof CategoryTheme];
+              const active = category === option;
+              return (
+                <TouchableOpacity
+                  key={option}
+                  style={[styles.categoryBtn, active && { backgroundColor: cat.fg, borderColor: cat.fg }]}
+                  onPress={() => selectCategory(option)}
+                >
+                  <MaterialCommunityIcons
+                    name={CATEGORY_ICONS[option] as any}
+                    size={16}
+                    color={active ? '#FFFFFF' : Theme.textSecondary}
+                  />
+                  <Text style={[styles.categoryBtnText, active && styles.categoryBtnTextActive]}>
+                    {option.charAt(0).toUpperCase() + option.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           <Text style={[styles.label, { marginTop: 8 }]}>What does it track?</Text>
@@ -350,7 +351,7 @@ export default function CreateExerciseScreen() {
             <Text style={styles.trackHint}>Pick a category first and we'll show the right options.</Text>
           ) : isSingleLogType ? (
             <View style={styles.trackInfo}>
-              <MaterialCommunityIcons name="check-circle-outline" size={18} color={Colors.accent} />
+              <MaterialCommunityIcons name="check-circle-outline" size={18} color={Theme.eyebrowGreen} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.trackInfoLabel}>{logTypesForCategory[0].label}</Text>
                 <Text style={styles.trackInfoDesc}>{logTypesForCategory[0].desc}</Text>
@@ -367,7 +368,7 @@ export default function CreateExerciseScreen() {
                   <MaterialCommunityIcons
                     name={logType === lt.key ? 'radiobox-marked' : 'radiobox-blank'}
                     size={18}
-                    color={logType === lt.key ? Colors.accent : Colors.textSecondary}
+                    color={logType === lt.key ? Theme.eyebrowGreen : Theme.textSecondary}
                   />
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.logTypeLabel, logType === lt.key && styles.logTypeLabelActive]}>
@@ -386,7 +387,7 @@ export default function CreateExerciseScreen() {
           <MaterialCommunityIcons
             name={showMore ? 'chevron-down' : 'chevron-right'}
             size={22}
-            color={Colors.accent}
+            color={Theme.eyebrowGreen}
           />
           <Text style={styles.moreToggleText}>Add more detail</Text>
           <Text style={styles.moreToggleHint}>optional</Text>
@@ -400,7 +401,7 @@ export default function CreateExerciseScreen() {
               <TextInput
                 style={[styles.input, styles.multilineInput, { marginBottom: 0 }]}
                 placeholder="What does this exercise do? Why is it useful for badminton?"
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={Theme.textSecondary}
                 value={description}
                 onChangeText={setDescription}
                 multiline
@@ -421,7 +422,7 @@ export default function CreateExerciseScreen() {
                   <TextInput
                     style={styles.stepInput}
                     placeholder={`Step ${i + 1}`}
-                    placeholderTextColor={Colors.textSecondary}
+                    placeholderTextColor={Theme.textSecondary}
                     value={step}
                     onChangeText={(v) => updateStep(i, v)}
                     multiline
@@ -434,7 +435,7 @@ export default function CreateExerciseScreen() {
                 </View>
               ))}
               <TouchableOpacity style={styles.addStepBtn} onPress={addStep}>
-                <MaterialCommunityIcons name="plus" size={16} color={Colors.accent} />
+                <MaterialCommunityIcons name="plus" size={16} color={Theme.eyebrowGreen} />
                 <Text style={styles.addStepText}>Add Step</Text>
               </TouchableOpacity>
             </View>
@@ -446,13 +447,13 @@ export default function CreateExerciseScreen() {
 
               {uploading ? (
                 <View style={styles.uploadingState}>
-                  <MaterialCommunityIcons name="cloud-upload-outline" size={24} color={Colors.accent} />
+                  <MaterialCommunityIcons name="cloud-upload-outline" size={24} color={Theme.eyebrowGreen} />
                   <Text style={styles.uploadingText}>Uploading...</Text>
                 </View>
               ) : videoUri && videoUri.startsWith('https://') ? (
                 <View style={styles.videoSelected}>
-                  <MaterialCommunityIcons name="video-check" size={24} color={Colors.accent} />
-                  <Text style={styles.videoSelectedText}>Video uploaded ✓</Text>
+                  <MaterialCommunityIcons name="video-check" size={24} color={Theme.eyebrowGreen} />
+                  <Text style={styles.videoSelectedText}>Video uploaded</Text>
                   <TouchableOpacity onPress={() => setVideoUri('')}>
                     <MaterialCommunityIcons name="close-circle" size={20} color="#FF6B6B" />
                   </TouchableOpacity>
@@ -461,12 +462,12 @@ export default function CreateExerciseScreen() {
                 <View style={styles.videoOptions}>
                   {Platform.OS !== 'web' && (
                     <TouchableOpacity style={styles.videoBtn} onPress={filmVideo}>
-                      <MaterialCommunityIcons name="video" size={22} color={Colors.accent} />
+                      <MaterialCommunityIcons name="video" size={22} color={Theme.eyebrowGreen} />
                       <Text style={styles.videoBtnText}>Film Now</Text>
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={styles.videoBtn} onPress={pickFromCameraRoll}>
-                    <MaterialCommunityIcons name="image-multiple" size={22} color={Colors.accent} />
+                    <MaterialCommunityIcons name="image-multiple" size={22} color={Theme.eyebrowGreen} />
                     <Text style={styles.videoBtnText}>
                       {Platform.OS === 'web' ? 'Upload Video' : 'Camera Roll'}
                     </Text>
@@ -481,7 +482,7 @@ export default function CreateExerciseScreen() {
               <TextInput
                 style={[styles.input, styles.multilineInput, { marginBottom: 0 }]}
                 placeholder="Any personal reminders, modifications, or things to watch out for..."
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={Theme.textSecondary}
                 value={notes}
                 onChangeText={setNotes}
                 multiline
@@ -509,45 +510,43 @@ export default function CreateExerciseScreen() {
             onPress={() => save(true)}
             disabled={loading || uploading}
           >
-            <MaterialCommunityIcons name="plus-circle-outline" size={18} color={Colors.accent} />
+            <MaterialCommunityIcons name="plus-circle-outline" size={18} color={Theme.eyebrowGreen} />
             <Text style={styles.saveAltBtnText}>Save & Add Another</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: Theme.background },
   scroll: { padding: 24, paddingTop: 60, paddingBottom: 60 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
-  title: { fontSize: 24, fontWeight: 'bold', color: Colors.textPrimary },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 24, color: Theme.textPrimary },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: Colors.accentMuted,
+    backgroundColor: Theme.cardTinted,
     borderRadius: 12,
     padding: 14,
     marginBottom: 16,
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.accent,
   },
-  bannerText: { flex: 1, fontSize: 13, color: Colors.textPrimary, fontWeight: '600', lineHeight: 18 },
-  card: { backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 16, marginBottom: 16 },
-  cardSectionLabel: { fontSize: 11, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1, marginBottom: 12 },
-  cardHint: { fontSize: 12, color: Colors.textSecondary, marginBottom: 12, lineHeight: 17 },
-  label: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8 },
+  bannerText: { flex: 1, fontSize: 15, color: Theme.textPrimary, fontWeight: '600', lineHeight: 20 },
+  card: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 16, marginBottom: 16 },
+  cardSectionLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 12 },
+  cardHint: { fontSize: 13, color: Theme.textSecondary, marginBottom: 12, lineHeight: 18 },
+  label: { fontSize: 13, color: Theme.textSecondary, marginBottom: 8 },
   input: {
-    backgroundColor: Colors.backgroundTop,
+    backgroundColor: Theme.background,
     borderRadius: 10,
     padding: 14,
-    color: Colors.textPrimary,
-    fontSize: 14,
+    color: Theme.textPrimary,
+    fontSize: 15,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
   multilineInput: { minHeight: 80, textAlignVertical: 'top' },
   optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
@@ -558,24 +557,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 20,
-    backgroundColor: Colors.backgroundTop,
+    backgroundColor: Theme.cardWhite,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
-  categoryBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  categoryBtnText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  categoryBtnText: { fontSize: 13, color: Theme.textSecondary, fontWeight: '600' },
   categoryBtnTextActive: { color: '#FFFFFF' },
-  trackHint: { fontSize: 12, color: Colors.textSecondary, fontStyle: 'italic', lineHeight: 17 },
+  trackHint: { fontSize: 13, color: Theme.textSecondary, fontStyle: 'italic', lineHeight: 18 },
   trackInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: Colors.accentMuted,
+    backgroundColor: Theme.cardTinted,
     borderRadius: 10,
     padding: 12,
   },
-  trackInfoLabel: { fontSize: 13, fontWeight: '600', color: Colors.textPrimary },
-  trackInfoDesc: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  trackInfoLabel: { fontSize: 13, fontWeight: '600', color: Theme.textPrimary },
+  trackInfoDesc: { fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
   logTypeList: { gap: 10 },
   logTypeOption: {
     flexDirection: 'row',
@@ -583,14 +581,14 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 12,
     borderRadius: 10,
-    backgroundColor: Colors.backgroundTop,
+    backgroundColor: Theme.cardWhite,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
-  logTypeOptionActive: { borderColor: Colors.accent, backgroundColor: Colors.accentMuted },
-  logTypeLabel: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
-  logTypeLabelActive: { color: Colors.textPrimary },
-  logTypeDesc: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  logTypeOptionActive: { borderColor: Theme.eyebrowGreen, backgroundColor: Theme.cardTinted },
+  logTypeLabel: { fontSize: 13, fontWeight: '600', color: Theme.textSecondary },
+  logTypeLabelActive: { color: Theme.textPrimary },
+  logTypeDesc: { fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
   moreToggle: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -598,14 +596,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginBottom: 8,
   },
-  moreToggleText: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
-  moreToggleHint: { fontSize: 12, color: Colors.textSecondary, fontStyle: 'italic' },
+  moreToggleText: { fontSize: 15, fontWeight: '600', color: Theme.textPrimary },
+  moreToggleHint: { fontSize: 13, color: Theme.textSecondary, fontStyle: 'italic' },
   stepRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10 },
   stepNum: {
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: Colors.accent,
+    backgroundColor: Theme.eyebrowGreen,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 10,
@@ -613,13 +611,13 @@ const styles = StyleSheet.create({
   stepNumText: { color: '#FFFFFF', fontSize: 12, fontWeight: 'bold' },
   stepInput: {
     flex: 1,
-    backgroundColor: Colors.backgroundTop,
+    backgroundColor: Theme.cardWhite,
     borderRadius: 10,
     padding: 10,
-    color: Colors.textPrimary,
+    color: Theme.textPrimary,
     fontSize: 13,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
     minHeight: 44,
   },
   addStepBtn: {
@@ -629,7 +627,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     alignSelf: 'flex-start',
   },
-  addStepText: { fontSize: 13, color: Colors.accent, fontWeight: '600' },
+  addStepText: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
   videoOptions: { flexDirection: 'row', gap: 12 },
   videoBtn: {
     flex: 1,
@@ -637,34 +635,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: Colors.accentMuted,
+    backgroundColor: Theme.cardTinted,
     borderRadius: 12,
     paddingVertical: 20,
     borderWidth: 1,
-    borderColor: Colors.accent,
+    borderColor: Theme.eyebrowGreen,
     borderStyle: 'dashed',
   },
-  videoBtnText: { fontSize: 13, color: Colors.accent, fontWeight: '600' },
+  videoBtnText: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
   videoSelected: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: Colors.accentMuted,
+    backgroundColor: Theme.cardTinted,
     borderRadius: 10,
     padding: 12,
   },
-  videoSelectedText: { flex: 1, fontSize: 13, color: Colors.accent, fontWeight: '600' },
+  videoSelectedText: { flex: 1, fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
   uploadingState: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: Colors.accentMuted,
+    backgroundColor: Theme.cardTinted,
     borderRadius: 10,
     padding: 12,
   },
-  uploadingText: { fontSize: 13, color: Colors.accent, fontWeight: '600' },
+  uploadingText: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
   saveBtn: {
-    backgroundColor: Colors.accent,
+    backgroundColor: '#44403C',
     borderRadius: 30,
     paddingVertical: 16,
     alignItems: 'center',
@@ -681,7 +679,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     marginTop: 12,
     borderWidth: 1,
-    borderColor: Colors.accent,
+    borderColor: '#44403C',
   },
-  saveAltBtnText: { color: Colors.accent, fontWeight: 'bold', fontSize: 15 },
+  saveAltBtnText: { color: '#44403C', fontWeight: 'bold', fontSize: 15 },
 });

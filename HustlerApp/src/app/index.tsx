@@ -1,8 +1,8 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { Text } from '@/components/Text';
 import { router } from 'expo-router';
 import { useEffect } from 'react';
-import { Colors } from '@/constants/theme';
+import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
 
 export default function HomeScreen() {
@@ -28,18 +28,15 @@ export default function HomeScreen() {
   }, []);
 
   return (
-    <LinearGradient
-      colors={[Colors.backgroundTop, Colors.backgroundBottom]}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <View style={styles.header}>
         <Image
-          source={require('../../assets/images/logo.png')}
+          source={require('../../assets/images/logo-green.png')}
           style={styles.logo}
           resizeMode="contain"
         />
-        <Text style={styles.headline}>TRAIN SMART. DOMINATE.</Text>
-        <Text style={styles.tagline}>Your personal badminton training coach</Text>
+        <Text style={styles.eyebrow}>YOUR PERSONAL BADMINTON COACH</Text>
+        <Text style={styles.headline}>Train smart. Dominate.</Text>
       </View>
 
       <View style={styles.heroContainer}>
@@ -68,13 +65,14 @@ export default function HomeScreen() {
         <Text style={styles.ctaText}>Get Started</Text>
       </TouchableOpacity>
 
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Theme.background,
     padding: 24,
     alignItems: 'center',
   },
@@ -87,17 +85,17 @@ const styles = StyleSheet.create({
     height: 80,
     marginBottom: 16,
   },
-  headline: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: Theme.eyebrowGreen,
     letterSpacing: 1,
-    textAlign: 'center',
+    marginBottom: 8,
   },
-  tagline: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    marginTop: 6,
+  headline: {
+    fontFamily: Fonts.serifMedium,
+    fontSize: 30,
+    color: Theme.textPrimary,
     textAlign: 'center',
   },
   heroContainer: {
@@ -119,7 +117,7 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: Theme.cardWhite,
     borderRadius: 16,
     padding: 20,
     alignItems: 'flex-start',
@@ -133,15 +131,15 @@ const styles = StyleSheet.create({
   statNumber: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: Colors.textPrimary,
+    color: Theme.textPrimary,
   },
   statLabel: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: Theme.textSecondary,
     marginTop: 4,
   },
   ctaButton: {
-    backgroundColor: Colors.accent,
+    backgroundColor: Theme.limeAccent,
     borderRadius: 30,
     paddingVertical: 16,
     alignItems: 'center',
@@ -151,6 +149,6 @@ const styles = StyleSheet.create({
   ctaText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: Theme.limeAccentDark,
   },
 });

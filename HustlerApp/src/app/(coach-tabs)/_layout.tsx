@@ -1,8 +1,9 @@
 import { Tabs } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { View, Text, StyleSheet, ColorValue } from 'react-native';
+import { View, StyleSheet, ColorValue } from 'react-native';
+import { Text } from '@/components/Text';
 import { useEffect, useState } from 'react';
-import { Colors } from '@/constants/theme';
+import { Theme } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
 import { registerForPushNotifications } from '../../lib/notifications';
 
@@ -53,24 +54,24 @@ export default function CoachTabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: Colors.backgroundTop,
-          borderTopColor: 'rgba(255,255,255,0.08)',
+          backgroundColor: Theme.background,
+          borderTopColor: Theme.divider,
           borderTopWidth: 1,
-          height: 80,
-          paddingBottom: 16,
-          paddingTop: 8,
+          height: 96,
+          paddingBottom: 20,
+          paddingTop: 12,
         },
-        tabBarActiveTintColor: Colors.accent,
-        tabBarInactiveTintColor: Colors.textSecondary,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarActiveTintColor: Theme.todayBlue,
+        tabBarInactiveTintColor: Theme.textMuted,
+        tabBarLabelStyle: { fontSize: 12, fontWeight: '600', marginTop: 2 },
       }}
     >
       <Tabs.Screen
         name="players"
         options={{
           title: 'Players',
-          tabBarIcon: ({ color, size }) => (
-            <BadgeIcon name="account-group" color={color} size={size} count={alertCount} />
+          tabBarIcon: ({ color }) => (
+            <BadgeIcon name="account-multiple-outline" color={color} size={26} count={alertCount} />
           ),
         }}
       />
@@ -78,8 +79,8 @@ export default function CoachTabLayout() {
         name="schedule"
         options={{
           title: 'Schedule',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="calendar-month-outline" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <MaterialCommunityIcons name="calendar-month-outline" size={26} color={color} />
           ),
         }}
       />
@@ -87,8 +88,8 @@ export default function CoachTabLayout() {
         name="community"
         options={{
           title: 'Community',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="forum-outline" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <MaterialCommunityIcons name="account-group" size={26} color={color} />
           ),
         }}
       />
@@ -96,8 +97,8 @@ export default function CoachTabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="account-circle" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <MaterialCommunityIcons name="account-circle" size={26} color={color} />
           ),
         }}
       />
@@ -111,7 +112,7 @@ const styles = StyleSheet.create({
     minWidth: 16, height: 16, borderRadius: 8,
     backgroundColor: '#FF3B30', alignItems: 'center',
     justifyContent: 'center', paddingHorizontal: 3,
-    borderWidth: 1.5, borderColor: Colors.backgroundTop as string,
+    borderWidth: 1.5, borderColor: Theme.background as string,
   },
   badgeText: { color: '#fff', fontSize: 9, fontWeight: 'bold' },
 });

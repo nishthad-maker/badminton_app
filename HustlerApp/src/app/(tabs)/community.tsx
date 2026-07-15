@@ -1,11 +1,11 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, RefreshControl } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, Pressable, ScrollView, Alert, RefreshControl } from 'react-native';
+import { Text } from '@/components/Text';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState, useCallback } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Colors } from '@/constants/theme';
+import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
-import { TOPICS, TOPIC_ICONS, formatTimeAgo, getOrCreateUsername } from '../../lib/community';
+import { TOPICS, TOPIC_ICONS, formatTimeAgo, getOrCreateUsername, avatarColorFor } from '../../lib/community';
 
 const showAlert = (title: string, message: string) => {
   if (typeof window !== 'undefined') {
@@ -30,6 +30,7 @@ export default function CommunityScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [usernames, setUsernames] = useState<Record<string, string>>({});
+  const [newPostActive, setNewPostActive] = useState(false);
 
   useEffect(() => {
     init();
@@ -140,26 +141,36 @@ export default function CommunityScreen() {
 
   if (!user && !loading) {
     return (
-      <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+      <View style={styles.container}>
         <View style={styles.signInPrompt}>
-          <MaterialCommunityIcons name="forum-outline" size={56} color={Colors.accent} />
+          <MaterialCommunityIcons name="forum-outline" size={64} color={Theme.eyebrowGreen} />
           <Text style={styles.signInTitle}>Join the Community</Text>
           <Text style={styles.signInDesc}>Sign in to read and post anonymously with other badminton players.</Text>
           <TouchableOpacity style={styles.signInBtn} onPress={() => router.push('/login' as any)}>
             <Text style={styles.signInBtnText}>Sign In</Text>
           </TouchableOpacity>
         </View>
-      </LinearGradient>
+      </View>
     );
   }
 
   return (
-    <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Community</Text>
-        <TouchableOpacity style={styles.newPostBtn} onPress={goToNewPost}>
-          <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
+        <View>
+          <Text style={styles.eyebrow}>PLAYER FORUM</Text>
+          <Text style={styles.title}>Community</Text>
+        </View>
+        <Pressable
+          style={[styles.newPostBtn, newPostActive && styles.newPostBtnActive]}
+          onPress={goToNewPost}
+          onHoverIn={() => setNewPostActive(true)}
+          onHoverOut={() => setNewPostActive(false)}
+          onPressIn={() => setNewPostActive(true)}
+          onPressOut={() => setNewPostActive(false)}
+        >
+          <MaterialCommunityIcons name="plus" size={26} color={newPostActive ? '#FFFFFF' : '#534AB7'} />
+        </Pressable>
       </View>
 
       <ScrollView
@@ -176,8 +187,8 @@ export default function CommunityScreen() {
           >
             <MaterialCommunityIcons
               name={TOPIC_ICONS[topic] as any}
-              size={14}
-              color={activeTopic === topic ? '#FFFFFF' : Colors.textSecondary}
+              size={17}
+              color={activeTopic === topic ? '#FFFFFF' : Theme.textSecondary}
             />
             <Text style={[styles.topicPillText, activeTopic === topic && styles.topicPillTextActive]}>
               {topic}
@@ -188,7 +199,7 @@ export default function CommunityScreen() {
 
       {activeTopic === 'Recovery & Wellness' && (
         <View style={styles.disclaimer}>
-          <MaterialCommunityIcons name="information-outline" size={16} color={Colors.accent} />
+          <MaterialCommunityIcons name="information-outline" size={19} color={Theme.eyebrowGreen} />
           <Text style={styles.disclaimerText}>
             For sharing wellness routines only — not medical advice. Always consult a doctor for injuries.
           </Text>
@@ -202,8 +213,8 @@ export default function CommunityScreen() {
         >
           <MaterialCommunityIcons
             name="clock-outline"
-            size={13}
-            color={sortMode === 'newest' ? Colors.accent : Colors.textSecondary}
+            size={16}
+            color={sortMode === 'newest' ? '#534AB7' : Theme.textSecondary}
           />
           <Text style={[styles.sortBtnText, sortMode === 'newest' && styles.sortBtnTextActive]}>Newest</Text>
         </TouchableOpacity>
@@ -213,8 +224,8 @@ export default function CommunityScreen() {
         >
           <MaterialCommunityIcons
             name="heart-outline"
-            size={13}
-            color={sortMode === 'liked' ? Colors.accent : Colors.textSecondary}
+            size={16}
+            color={sortMode === 'liked' ? '#534AB7' : Theme.textSecondary}
           />
           <Text style={[styles.sortBtnText, sortMode === 'liked' && styles.sortBtnTextActive]}>Most Liked</Text>
         </TouchableOpacity>
@@ -224,23 +235,25 @@ export default function CommunityScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.postList}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} colors={[Colors.accent]} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Theme.eyebrowGreen} colors={[Theme.eyebrowGreen]} />
         }
       >
         {loading ? (
           <Text style={styles.emptyText}>Loading...</Text>
         ) : posts.length === 0 ? (
           <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="comment-outline" size={40} color={Colors.textSecondary} />
+            <MaterialCommunityIcons name="comment-outline" size={48} color={Theme.textSecondary} />
             <Text style={styles.emptyText}>No posts yet in {activeTopic}.</Text>
             <Text style={styles.emptySubtext}>Be the first to start a discussion!</Text>
           </View>
         ) : (
-          posts.map((post) => (
+          posts.map((post) => {
+            const avatarColor = avatarColorFor(post.user_id);
+            return (
             <TouchableOpacity key={post.id} style={styles.postCard} onPress={() => goToThread(post.id)}>
               <View style={styles.postHeader}>
-                <View style={styles.avatarCircle}>
-                  <MaterialCommunityIcons name="account" size={16} color={Colors.accent} />
+                <View style={[styles.avatarCircle, { backgroundColor: avatarColor.bg }]}>
+                  <MaterialCommunityIcons name="account" size={20} color={avatarColor.fg} />
                 </View>
                 <Text style={styles.postAuthor}>{usernames[post.user_id] ?? 'Player'}</Text>
                 <Text style={styles.postTime}>{formatTimeAgo(post.created_at)}</Text>
@@ -249,113 +262,116 @@ export default function CommunityScreen() {
               <Text style={styles.postBody} numberOfLines={2}>{post.body}</Text>
               <View style={styles.postFooter}>
                 <View style={styles.postStat}>
-                  <MaterialCommunityIcons name="heart-outline" size={14} color={Colors.textSecondary} />
+                  <MaterialCommunityIcons name="heart-outline" size={17} color={Theme.textSecondary} />
                   <Text style={styles.postStatText}>{post.likes_count ?? 0}</Text>
                 </View>
                 <View style={styles.postStat}>
-                  <MaterialCommunityIcons name="comment-outline" size={14} color={Colors.textSecondary} />
+                  <MaterialCommunityIcons name="comment-outline" size={17} color={Theme.textSecondary} />
                   <Text style={styles.postStatText}>{post.reply_count ?? 0}</Text>
                 </View>
               </View>
             </TouchableOpacity>
-          ))
+            );
+          })
         )}
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, paddingTop: 60 },
+  container: { flex: 1, backgroundColor: Theme.background, padding: 24, paddingTop: 60 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
-  title: { fontSize: 28, fontWeight: 'bold', color: Colors.textPrimary },
+  eyebrow: { fontSize: 13, fontWeight: '500', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 6 },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 36, color: Theme.textPrimary },
   newPostBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.accent,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#E3D9F5',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  topicRow: { flexGrow: 0, marginBottom: 12, minHeight: 40 },
-  topicContent: { gap: 8, paddingRight: 8 },
+  newPostBtnActive: { backgroundColor: '#534AB7' },
+  topicRow: { flexGrow: 0, marginBottom: 16, minHeight: 48 },
+  topicContent: { gap: 10, paddingRight: 8 },
   topicPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Colors.backgroundCard,
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 24,
+    backgroundColor: Theme.cardWhite,
   },
-  topicPillActive: { backgroundColor: Colors.accent },
-  topicPillText: { color: Colors.textSecondary, fontSize: 12, fontWeight: '600' },
+  topicPillActive: { backgroundColor: '#534AB7' },
+  topicPillText: { color: Theme.textSecondary, fontSize: 15, fontWeight: '600' },
   topicPillTextActive: { color: '#FFFFFF' },
   disclaimer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
-    backgroundColor: Colors.accentMuted,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
+    gap: 10,
+    backgroundColor: Theme.cardTinted,
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 16,
   },
-  disclaimerText: { flex: 1, fontSize: 11, color: Colors.textSecondary, lineHeight: 16 },
-  sortRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  disclaimerText: { flex: 1, fontSize: 15, color: Theme.textSecondary, lineHeight: 21 },
+  sortRow: { flexDirection: 'row', gap: 10, marginBottom: 18 },
   sortBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: 'transparent',
+    gap: 6,
+    paddingHorizontal: 15,
+    paddingVertical: 9,
+    borderRadius: 18,
+    backgroundColor: Theme.cardWhite,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
-  sortBtnActive: { borderColor: Colors.accent, backgroundColor: Colors.accentMuted },
-  sortBtnText: { fontSize: 11, color: Colors.textSecondary, fontWeight: '600' },
-  sortBtnTextActive: { color: Colors.accent },
-  postList: { paddingBottom: 120 },
+  sortBtnActive: { borderColor: '#534AB7', backgroundColor: '#E3D9F5' },
+  sortBtnText: { fontSize: 15, color: Theme.textSecondary, fontWeight: '600' },
+  sortBtnTextActive: { color: '#534AB7' },
+  postList: { paddingBottom: 170 },
   postCard: {
-    backgroundColor: Colors.backgroundCard,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: Theme.cardWhite,
+    borderRadius: 18,
+    padding: 20,
+    marginBottom: 14,
   },
-  postHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  postHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   avatarCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.accentMuted,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Theme.cardTinted,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  postAuthor: { fontSize: 12, fontWeight: '600', color: Colors.accent, flex: 1 },
-  postTime: { fontSize: 11, color: Colors.textSecondary },
-  postTitle: { fontSize: 15, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 4 },
-  postBody: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19, marginBottom: 10 },
-  postFooter: { flexDirection: 'row', gap: 16 },
-  postStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  postStatText: { fontSize: 12, color: Colors.textSecondary },
-  emptyState: { alignItems: 'center', paddingTop: 60, gap: 8 },
-  emptyText: { fontSize: 14, color: Colors.textSecondary, fontStyle: 'italic' },
-  emptySubtext: { fontSize: 12, color: Colors.textSecondary },
-  signInPrompt: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
-  signInTitle: { fontSize: 22, fontWeight: 'bold', color: Colors.textPrimary, marginTop: 8 },
-  signInDesc: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  postAuthor: { fontSize: 15, fontWeight: '600', color: Theme.eyebrowGreen, flex: 1 },
+  postTime: { fontSize: 14, color: Theme.textSecondary },
+  postTitle: { fontSize: 19, fontWeight: 'bold', color: Theme.textPrimary, marginBottom: 6 },
+  postBody: { fontSize: 16, color: Theme.textSecondary, lineHeight: 22, marginBottom: 12 },
+  postFooter: { flexDirection: 'row', gap: 20 },
+  postStat: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  postStatText: { fontSize: 15, color: Theme.textSecondary },
+  emptyState: { alignItems: 'center', paddingTop: 60, gap: 10 },
+  emptyText: { fontSize: 17, color: Theme.textSecondary, fontStyle: 'italic' },
+  emptySubtext: { fontSize: 15, color: Theme.textSecondary },
+  signInPrompt: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 14 },
+  signInTitle: { fontSize: 26, fontWeight: 'bold', color: Theme.textPrimary, marginTop: 10 },
+  signInDesc: { fontSize: 17, color: Theme.textSecondary, textAlign: 'center', lineHeight: 23 },
   signInBtn: {
-    backgroundColor: Colors.accent,
-    borderRadius: 24,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    marginTop: 8,
+    backgroundColor: Theme.limeAccent,
+    borderRadius: 28,
+    paddingHorizontal: 28,
+    paddingVertical: 15,
+    marginTop: 10,
   },
-  signInBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
+  signInBtnText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 16 },
 });

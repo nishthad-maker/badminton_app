@@ -1,9 +1,10 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Image } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, TextInput, Alert, Image } from 'react-native';
+import { Text } from '@/components/Text';
 import { router } from 'expo-router';
 import { useState } from 'react';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { supabase } from '../lib/supabase';
-import { Colors } from '@/constants/theme';
+import { Theme, Fonts } from '@/constants/theme';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
@@ -28,12 +29,9 @@ export default function ForgotPasswordScreen() {
   };
 
   return (
-    <LinearGradient
-      colors={[Colors.backgroundTop, Colors.backgroundBottom]}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <Image
-        source={require('../../assets/images/logo.png')}
+        source={require('../../assets/images/logo-green.png')}
         style={styles.logo}
         resizeMode="contain"
       />
@@ -50,7 +48,7 @@ export default function ForgotPasswordScreen() {
             <TextInput
               style={styles.input}
               placeholder="Enter your email"
-              placeholderTextColor={Colors.textSecondary}
+              placeholderTextColor={Theme.textSecondary}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -73,7 +71,7 @@ export default function ForgotPasswordScreen() {
           </>
         ) : (
           <>
-            <Text style={styles.successIcon}>📧</Text>
+            <MaterialCommunityIcons name="email-check-outline" size={44} color={Theme.eyebrowGreen} style={styles.successIcon} />
             <Text style={styles.title}>Check your email</Text>
             <Text style={styles.subtitle}>
               We sent a password reset link to {email}. Check your inbox and follow the instructions.
@@ -88,13 +86,14 @@ export default function ForgotPasswordScreen() {
           </>
         )}
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Theme.background,
     padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
@@ -105,40 +104,40 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   card: {
-    backgroundColor: Colors.backgroundCard,
+    backgroundColor: Theme.cardWhite,
     borderRadius: 16,
     padding: 24,
     width: '100%',
   },
   title: {
+    fontFamily: Fonts.serifMedium,
     fontSize: 22,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
+    color: Theme.textPrimary,
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 13,
-    color: Colors.textSecondary,
+    fontSize: 15,
+    color: Theme.textSecondary,
     lineHeight: 20,
     marginBottom: 24,
   },
   label: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: Theme.textSecondary,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: Colors.backgroundTop,
+    backgroundColor: Theme.background,
     borderRadius: 10,
     padding: 14,
-    color: Colors.textPrimary,
-    fontSize: 14,
+    color: Theme.textPrimary,
+    fontSize: 15,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
   button: {
-    backgroundColor: Colors.accent,
+    backgroundColor: Theme.limeAccent,
     borderRadius: 30,
     paddingVertical: 14,
     alignItems: 'center',
@@ -148,19 +147,19 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: '#FFFFFF',
+    color: Theme.limeAccentDark,
     fontWeight: 'bold',
     fontSize: 15,
   },
   backText: {
-    color: Colors.textSecondary,
+    color: Theme.textSecondary,
     fontSize: 13,
     textAlign: 'center',
     textDecorationLine: 'underline',
   },
   successIcon: {
-    fontSize: 48,
     textAlign: 'center',
     marginBottom: 16,
+    alignSelf: 'center',
   },
 });

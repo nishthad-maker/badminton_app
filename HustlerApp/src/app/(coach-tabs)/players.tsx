@@ -1,9 +1,10 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, Alert } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, Alert } from 'react-native';
+import { Text } from '@/components/Text';
 import { router, useFocusEffect } from 'expo-router';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Colors } from '@/constants/theme';
+import * as Clipboard from 'expo-clipboard';
+import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
 import { notifyConnectionAccepted } from '../../lib/notifications';
 
@@ -52,12 +53,15 @@ export default function CoachPlayersScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [myId, setMyId] = useState<string | null>(null);
+  const myIdRef = useRef<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const load = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) { router.replace('/login' as any); return; }
     const me = session.user.id;
     setMyId(me);
+    myIdRef.current = me;
 
     const { data: myProfile } = await supabase
       .from('profiles').select('coach_username, is_coach').eq('id', me).single();
@@ -150,6 +154,19 @@ export default function CoachPlayersScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, []));
 
+  // Live-refresh when a player sends/withdraws a connection request while
+  // this screen is already open, instead of waiting for a manual pull-to-refresh.
+  useEffect(() => {
+    const channel = supabase
+      .channel('coach_connections_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'coach_connections' }, (payload: any) => {
+        const row = payload.new ?? payload.old;
+        if (row?.coach_id === myIdRef.current) load();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
   const onRefresh = () => { setRefreshing(true); load(); };
 
   const acceptRequest = async (id: string) => {
@@ -192,6 +209,13 @@ export default function CoachPlayersScreen() {
     router.push({ pathname: '/assign-workout', params: { multiMode: 'true', coachId: myId ?? '' } });
   };
 
+  const copyUsername = async () => {
+    if (!coachUsername) return;
+    await Clipboard.setStringAsync(coachUsername);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const initial = (name: string) => (name?.trim()?.charAt(0)?.toUpperCase() ?? '?');
 
   const activeThisWeek = players.filter(p => p.weekSessions > 0).length;
@@ -199,34 +223,50 @@ export default function CoachPlayersScreen() {
   const totalUnread = players.reduce((sum, p) => sum + p.unread, 0);
 
   return (
-    <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>My Players</Text>
+        <View>
+          <Text style={styles.eyebrow}>ROSTER</Text>
+          <Text style={styles.title}>My Players</Text>
+        </View>
         <View style={styles.headerBtns}>
           {players.length > 0 && (
             <TouchableOpacity style={styles.assignAllBtn} onPress={assignToMultiple}>
-              <MaterialCommunityIcons name="clipboard-plus-outline" size={18} color="#fff" />
+              <MaterialCommunityIcons name="clipboard-plus-outline" size={18} color={Theme.limeAccentDark} />
               <Text style={styles.assignAllText}>Assign</Text>
             </TouchableOpacity>
           )}
+          <TouchableOpacity style={styles.bellButton} onPress={() => router.push('/coach-notifications' as any)} activeOpacity={0.8}>
+            <MaterialCommunityIcons name="bell-outline" size={24} color={Theme.textPrimary} />
+            {(pending.length + totalUnread) > 0 && (
+              <View style={styles.bellBadge}>
+                <Text style={styles.bellBadgeText}>{(pending.length + totalUnread) > 9 ? '9+' : pending.length + totalUnread}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
       </View>
 
       {coachUsername !== '' && (
-        <View style={styles.usernameCard}>
-          <MaterialCommunityIcons name="account-badge" size={18} color={Colors.accent} />
+        <TouchableOpacity style={styles.usernameCard} onPress={copyUsername} activeOpacity={0.85}>
+          <View style={styles.usernameIconWrap}>
+            <MaterialCommunityIcons name="account-badge" size={18} color={Theme.limeAccentDark} />
+          </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.usernameLabel}>Your coach username</Text>
             <Text style={styles.usernameValue}>{coachUsername}</Text>
+            <Text style={styles.usernameHint}>{copied ? 'Copied!' : 'Tap to copy · Share with players to connect'}</Text>
           </View>
-          <Text style={styles.usernameHint}>Share with players to connect</Text>
-        </View>
+          <View style={styles.copyBtn}>
+            <MaterialCommunityIcons name={copied ? 'check' : 'content-copy'} size={18} color={Theme.limeAccentDark} />
+          </View>
+        </TouchableOpacity>
       )}
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} colors={[Colors.accent]} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Theme.eyebrowGreen} colors={[Theme.eyebrowGreen]} />}
       >
         {loading ? (
           <Text style={styles.muted}>Loading...</Text>
@@ -246,7 +286,7 @@ export default function CoachPlayersScreen() {
                 </View>
                 <View style={styles.rosterDivider} />
                 <View style={styles.rosterStat}>
-                  <Text style={[styles.rosterStatNum, { color: inactiveThisWeek > 0 ? '#E67E22' : Colors.textSecondary }]}>
+                  <Text style={[styles.rosterStatNum, { color: inactiveThisWeek > 0 ? '#E67E22' : Theme.textSecondary }]}>
                     {inactiveThisWeek}
                   </Text>
                   <Text style={styles.rosterStatLabel}>Need a nudge</Text>
@@ -275,7 +315,7 @@ export default function CoachPlayersScreen() {
                       <Text style={styles.muted}>wants to connect</Text>
                     </View>
                     <TouchableOpacity style={styles.acceptBtn} onPress={() => acceptRequest(req.id)}>
-                      <MaterialCommunityIcons name="check" size={18} color="#FFFFFF" />
+                      <MaterialCommunityIcons name="check" size={18} color={Theme.limeAccentDark} />
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.declineBtn} onPress={() => declineRequest(req.id, req.name)}>
                       <MaterialCommunityIcons name="close" size={18} color="#FF6B6B" />
@@ -316,9 +356,9 @@ export default function CoachPlayersScreen() {
                             <MaterialCommunityIcons
                               name={p.weekSessions > 0 ? 'lightning-bolt' : 'sleep'}
                               size={11}
-                              color={p.weekSessions > 0 ? '#2ECC71' : Colors.textSecondary}
+                              color={p.weekSessions > 0 ? '#2ECC71' : Theme.textSecondary}
                             />
-                            <Text style={[styles.statusChipText, { color: p.weekSessions > 0 ? '#2ECC71' : Colors.textSecondary }]}>
+                            <Text style={[styles.statusChipText, { color: p.weekSessions > 0 ? '#2ECC71' : Theme.textSecondary }]}>
                               {p.weekSessions > 0 ? `${p.weekSessions} this week` : 'No sessions this week'}
                             </Text>
                           </View>
@@ -345,14 +385,14 @@ export default function CoachPlayersScreen() {
                       >
                         <MaterialCommunityIcons name="account-remove-outline" size={18} color="#FF6B6B" />
                       </TouchableOpacity>
-                      <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
+                      <MaterialCommunityIcons name="chevron-right" size={20} color={Theme.textSecondary} />
                     </TouchableOpacity>
                   );
                 })}
               </View>
             ) : pending.length === 0 ? (
               <View style={styles.emptyState}>
-                <MaterialCommunityIcons name="account-group-outline" size={48} color={Colors.textSecondary} />
+                <MaterialCommunityIcons name="account-group-outline" size={48} color={Theme.textSecondary} />
                 <Text style={styles.emptyTitle}>No players yet</Text>
                 <Text style={styles.emptyDesc}>Share your username with players at your club.</Text>
                 {coachUsername !== '' && (
@@ -365,51 +405,57 @@ export default function CoachPlayersScreen() {
           </>
         )}
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, paddingTop: 60 },
+  container: { flex: 1, backgroundColor: Theme.background, padding: 24, paddingTop: 60 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
-  title: { fontSize: 28, fontWeight: 'bold', color: Colors.textPrimary },
+  eyebrow: { fontSize: 11, fontWeight: '500', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 4 },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 28, color: Theme.textPrimary },
   headerBtns: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  assignAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.accent, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
-  assignAllText: { fontSize: 13, fontWeight: '700', color: '#fff' },
-  usernameCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 14, marginBottom: 16, borderLeftWidth: 3, borderLeftColor: Colors.accent },
-  usernameLabel: { fontSize: 11, color: Colors.textSecondary },
-  usernameValue: { fontSize: 15, fontWeight: 'bold', color: Colors.accent, marginTop: 1 },
-  usernameHint: { fontSize: 10, color: Colors.textSecondary, maxWidth: 90, textAlign: 'right' },
+  assignAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Theme.limeAccent, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
+  assignAllText: { fontSize: 13, fontWeight: '700', color: Theme.limeAccentDark },
+  bellButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: Theme.cardWhite, alignItems: 'center', justifyContent: 'center' },
+  bellBadge: { position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: '#D64545', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3, borderWidth: 1.5, borderColor: Theme.background },
+  bellBadgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+  usernameCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Theme.limeAccent, borderRadius: 14, padding: 14, marginBottom: 16 },
+  usernameIconWrap: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(26,61,39,0.14)', alignItems: 'center', justifyContent: 'center' },
+  usernameLabel: { fontSize: 12, fontWeight: '600', color: Theme.limeAccentDark, opacity: 0.8 },
+  usernameValue: { fontSize: 17, fontWeight: '700', color: Theme.limeAccentDark, marginTop: 1 },
+  usernameHint: { fontSize: 11, fontWeight: '600', color: Theme.limeAccentDark, opacity: 0.75, marginTop: 3 },
+  copyBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: Theme.cardWhite, alignItems: 'center', justifyContent: 'center' },
   scroll: { paddingBottom: 100 },
-  rosterOverview: { flexDirection: 'row', backgroundColor: Colors.backgroundCard, borderRadius: 14, padding: 16, marginBottom: 20, alignItems: 'center' },
-  rosterStat: { flex: 1, alignItems: 'center', gap: 4 },
-  rosterStatNum: { fontSize: 22, fontWeight: 'bold', color: Colors.textPrimary },
-  rosterStatLabel: { fontSize: 10, color: Colors.textSecondary, textAlign: 'center' },
-  rosterDivider: { width: 1, height: 36, backgroundColor: Colors.border },
+  rosterOverview: { flexDirection: 'row', backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 22, marginBottom: 20, alignItems: 'flex-start' },
+  rosterStat: { flex: 1, alignItems: 'center', gap: 6 },
+  rosterStatNum: { fontSize: 30, fontWeight: 'bold', color: Theme.textPrimary },
+  rosterStatLabel: { fontSize: 13, color: Theme.textSecondary, textAlign: 'center' },
+  rosterDivider: { width: 1, alignSelf: 'stretch', backgroundColor: Theme.divider },
   section: { marginBottom: 20 },
-  sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1, marginBottom: 12 },
-  requestCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: Colors.accent },
-  playerCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 14, marginBottom: 10 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.accentMuted, alignItems: 'center', justifyContent: 'center' },
-  avatarInactive: { backgroundColor: 'rgba(255,255,255,0.06)' },
-  avatarText: { fontSize: 17, fontWeight: 'bold', color: Colors.accent },
-  unreadBadge: { position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: '#FF3B30', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3, borderWidth: 1.5, borderColor: Colors.backgroundTop },
-  unreadBadgeText: { color: '#fff', fontSize: 9, fontWeight: 'bold' },
-  playerName: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
-  muted: { fontSize: 12, color: Colors.textSecondary, fontStyle: 'italic', marginTop: 1 },
-  mutedActive: { color: Colors.accent, fontStyle: 'normal', fontWeight: '600' },
+  sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 12 },
+  requestCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Theme.cardTinted, borderRadius: 12, padding: 14, marginBottom: 10 },
+  playerCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Theme.cardWhite, borderRadius: 12, padding: 14, marginBottom: 10 },
+  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: Theme.cardTinted, alignItems: 'center', justifyContent: 'center' },
+  avatarInactive: { backgroundColor: Theme.background },
+  avatarText: { fontSize: 17, fontWeight: 'bold', color: Theme.eyebrowGreen },
+  unreadBadge: { position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: '#D64545', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3, borderWidth: 1.5, borderColor: Theme.cardWhite },
+  unreadBadgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+  playerName: { fontSize: 16, fontWeight: '600', color: Theme.textPrimary },
+  muted: { fontSize: 13, color: Theme.textSecondary, fontStyle: 'italic', marginTop: 1 },
+  mutedActive: { color: Theme.eyebrowGreen, fontStyle: 'normal', fontWeight: '600' },
   statusRow: { flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' },
   statusChip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
-  chipGreen: { backgroundColor: 'rgba(46,204,113,0.12)' },
-  chipGrey: { backgroundColor: 'rgba(255,255,255,0.06)' },
-  chipOrange: { backgroundColor: 'rgba(230,126,34,0.12)' },
-  statusChipText: { fontSize: 11, fontWeight: '600' },
+  chipGreen: { backgroundColor: 'rgba(46,204,113,0.14)' },
+  chipGrey: { backgroundColor: Theme.background },
+  chipOrange: { backgroundColor: 'rgba(230,126,34,0.14)' },
+  statusChipText: { fontSize: 12, fontWeight: '600' },
   disconnectBtn: { padding: 6 },
-  acceptBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center' },
-  declineBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,107,107,0.12)', borderWidth: 1, borderColor: 'rgba(255,107,107,0.3)', alignItems: 'center', justifyContent: 'center' },
+  acceptBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: Theme.limeAccent, alignItems: 'center', justifyContent: 'center' },
+  declineBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(231,76,60,0.12)', borderWidth: 1, borderColor: 'rgba(231,76,60,0.3)', alignItems: 'center', justifyContent: 'center' },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: 10 },
-  emptyTitle: { fontSize: 18, fontWeight: 'bold', color: Colors.textPrimary },
-  emptyDesc: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20, paddingHorizontal: 20 },
-  emptyUsernameChip: { backgroundColor: Colors.accentMuted, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 8, marginTop: 8 },
-  emptyUsernameText: { fontSize: 15, fontWeight: 'bold', color: Colors.accent },
+  emptyTitle: { fontSize: 18, fontWeight: 'bold', color: Theme.textPrimary },
+  emptyDesc: { fontSize: 15, color: Theme.textSecondary, textAlign: 'center', lineHeight: 20, paddingHorizontal: 20 },
+  emptyUsernameChip: { backgroundColor: Theme.cardTinted, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 8, marginTop: 8 },
+  emptyUsernameText: { fontSize: 15, fontWeight: 'bold', color: Theme.eyebrowGreen },
 });

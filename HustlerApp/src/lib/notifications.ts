@@ -185,3 +185,23 @@ export async function notifyPlayerQuestion(coachId: string, playerName: string, 
     { screen: 'coach-player' }
   );
 }
+
+// Player shared a match/opponent scouting log
+export async function notifyMatchShared(coachId: string, playerName: string, opponentName: string) {
+  await sendPushToUser(
+    coachId,
+    `🏸 ${playerName} shared a match report`,
+    `New scouting notes vs ${opponentName}`,
+    { screen: 'coach-player' }
+  );
+}
+
+// Player shared a journal entry
+export async function notifyJournalShared(coachId: string, playerName: string) {
+  await sendPushToUser(
+    coachId,
+    `📓 ${playerName} shared a journal entry`,
+    "Tap to see how they're feeling",
+    { screen: 'coach-player' }
+  );
+}

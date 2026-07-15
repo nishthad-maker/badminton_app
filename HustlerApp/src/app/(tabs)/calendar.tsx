@@ -1,10 +1,10 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { router, useLocalSearchParams } from 'expo-router';
+import { View, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert } from 'react-native';
+import { Text } from '@/components/Text';
+import { useLocalSearchParams } from 'expo-router';
 import { useState, useEffect } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Colors } from '@/constants/theme';
-import { supabase } from '../lib/supabase';
+import { Theme, Fonts } from '@/constants/theme';
+import { supabase } from '@/lib/supabase';
 
 type CalendarEvent = {
   id: string;
@@ -298,20 +298,8 @@ export default function CalendarScreen() {
   };
 
   return (
-    <LinearGradient
-      colors={[Colors.backgroundTop, Colors.backgroundBottom]}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => {
-          if (typeof window !== 'undefined') {
-            window.history.back();
-          } else {
-            router.back();
-          }
-        }}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
-        </TouchableOpacity>
         <Text style={styles.headerTitle}>Calendar</Text>
         <TouchableOpacity onPress={goToToday}>
           <Text style={styles.todayBtn}>Today</Text>
@@ -319,37 +307,41 @@ export default function CalendarScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        <View style={styles.monthNav}>
-          <TouchableOpacity onPress={prevMonth} style={styles.monthArrow}>
-            <MaterialCommunityIcons name="chevron-left" size={28} color={Colors.textPrimary} />
-          </TouchableOpacity>
-          <Text style={styles.monthTitle}>
-            {MONTH_NAMES[viewMonth]} {viewYear}
-          </Text>
-          <TouchableOpacity onPress={nextMonth} style={styles.monthArrow}>
-            <MaterialCommunityIcons name="chevron-right" size={28} color={Colors.textPrimary} />
-          </TouchableOpacity>
-        </View>
+        <View style={styles.calendarCard}>
+          <View style={styles.monthNav}>
+            <TouchableOpacity onPress={prevMonth} style={styles.monthArrow}>
+              <MaterialCommunityIcons name="chevron-left" size={28} color={Theme.textPrimary} />
+            </TouchableOpacity>
+            <Text style={styles.monthTitle}>
+              {MONTH_NAMES[viewMonth]} {viewYear}
+            </Text>
+            <TouchableOpacity onPress={nextMonth} style={styles.monthArrow}>
+              <MaterialCommunityIcons name="chevron-right" size={28} color={Theme.textPrimary} />
+            </TouchableOpacity>
+          </View>
 
-        <View style={styles.dayHeaderRow}>
-          {DAY_HEADERS.map(d => (
-            <View key={d} style={styles.dayHeaderCell}>
-              <Text style={styles.dayHeaderText}>{d}</Text>
-            </View>
-          ))}
-        </View>
+          <View style={styles.dayHeaderRow}>
+            {DAY_HEADERS.map(d => (
+              <View key={d} style={styles.dayHeaderCell}>
+                <Text style={styles.dayHeaderText}>{d}</Text>
+              </View>
+            ))}
+          </View>
 
-        <View style={styles.calendarGrid}>
-          {renderCalendarGrid()}
-        </View>
+          <View style={styles.calendarGrid}>
+            {renderCalendarGrid()}
+          </View>
 
-        <View style={styles.legendRow}>
-          {EVENT_TYPES.map(t => (
-            <View key={t.key} style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: t.color }]} />
-              <Text style={styles.legendLabel}>{t.label}</Text>
-            </View>
-          ))}
+          <View style={styles.calendarDivider} />
+
+          <View style={styles.legendRow}>
+            {EVENT_TYPES.map(t => (
+              <View key={t.key} style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: t.color }]} />
+                <Text style={styles.legendLabel}>{t.label}</Text>
+              </View>
+            ))}
+          </View>
         </View>
 
         <View style={styles.selectedDateCard}>
@@ -359,7 +351,7 @@ export default function CalendarScreen() {
               style={styles.addBtn}
               onPress={() => openAddModal()}
             >
-              <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+              <MaterialCommunityIcons name="plus" size={20} color={Theme.limeAccentDark} />
             </TouchableOpacity>
           </View>
 
@@ -386,7 +378,7 @@ export default function CalendarScreen() {
                     </View>
                     <View style={styles.eventActions}>
                       <TouchableOpacity onPress={() => openEditModal(event)}>
-                        <MaterialCommunityIcons name="pencil-outline" size={18} color={Colors.textSecondary} />
+                        <MaterialCommunityIcons name="pencil-outline" size={18} color={Theme.textSecondary} />
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => deleteEvent(event)}>
                         <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />
@@ -395,7 +387,7 @@ export default function CalendarScreen() {
                   </View>
                   {event.start_time && (
                     <View style={styles.eventDetailRow}>
-                      <MaterialCommunityIcons name="clock-outline" size={13} color={Colors.textSecondary} />
+                      <MaterialCommunityIcons name="clock-outline" size={13} color={Theme.textSecondary} />
                       <Text style={styles.eventDetailText}>
                         {event.start_time}{event.end_time ? ` — ${event.end_time}` : ''}
                       </Text>
@@ -403,7 +395,7 @@ export default function CalendarScreen() {
                   )}
                   {event.location && (
                     <View style={styles.eventDetailRow}>
-                      <MaterialCommunityIcons name="map-marker-outline" size={13} color={Colors.textSecondary} />
+                      <MaterialCommunityIcons name="map-marker-outline" size={13} color={Theme.textSecondary} />
                       <Text style={styles.eventDetailText}>{event.location}</Text>
                     </View>
                   )}
@@ -437,7 +429,7 @@ export default function CalendarScreen() {
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setShowModal(false)}>
-                <MaterialCommunityIcons name="close" size={24} color={Colors.textPrimary} />
+                <MaterialCommunityIcons name="close" size={24} color={Theme.textPrimary} />
               </TouchableOpacity>
             </View>
 
@@ -446,7 +438,7 @@ export default function CalendarScreen() {
               <TextInput
                 style={styles.formInput}
                 placeholder="e.g. Leg Day, Tournament"
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={Theme.textSecondary}
                 value={formTitle}
                 onChangeText={setFormTitle}
               />
@@ -465,7 +457,7 @@ export default function CalendarScreen() {
                     <MaterialCommunityIcons
                       name={t.icon as any}
                       size={14}
-                      color={formType === t.key ? '#FFFFFF' : Colors.textSecondary}
+                      color={formType === t.key ? '#FFFFFF' : Theme.textSecondary}
                     />
                     <Text style={[
                       styles.typePillText,
@@ -482,7 +474,7 @@ export default function CalendarScreen() {
                 <TextInput
                   style={[styles.formInput, { flex: 1 }]}
                   placeholder="Start (e.g. 9:00 AM)"
-                  placeholderTextColor={Colors.textSecondary}
+                  placeholderTextColor={Theme.textSecondary}
                   value={formStartTime}
                   onChangeText={setFormStartTime}
                 />
@@ -490,7 +482,7 @@ export default function CalendarScreen() {
                 <TextInput
                   style={[styles.formInput, { flex: 1 }]}
                   placeholder="End (e.g. 11:00 AM)"
-                  placeholderTextColor={Colors.textSecondary}
+                  placeholderTextColor={Theme.textSecondary}
                   value={formEndTime}
                   onChangeText={setFormEndTime}
                 />
@@ -500,7 +492,7 @@ export default function CalendarScreen() {
               <TextInput
                 style={styles.formInput}
                 placeholder="e.g. Community Center"
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={Theme.textSecondary}
                 value={formLocation}
                 onChangeText={setFormLocation}
               />
@@ -509,7 +501,7 @@ export default function CalendarScreen() {
               <TextInput
                 style={[styles.formInput, styles.formNotesInput]}
                 placeholder="Any details to remember..."
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={Theme.textSecondary}
                 value={formNotes}
                 onChangeText={setFormNotes}
                 multiline
@@ -525,12 +517,12 @@ export default function CalendarScreen() {
           </View>
         </View>
       </Modal>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: Theme.background },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -539,9 +531,22 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 16,
   },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: Colors.textPrimary },
-  todayBtn: { fontSize: 14, color: Colors.accent, fontWeight: '600' },
+  headerTitle: { fontFamily: Fonts.serifMedium, fontSize: 20, color: Theme.textPrimary },
+  todayBtn: { fontSize: 14, color: Theme.eyebrowGreen, fontWeight: '600' },
   scroll: { paddingHorizontal: 24, paddingBottom: 120 },
+  calendarCard: {
+    backgroundColor: Theme.cardWhite,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Theme.divider,
+    padding: 20,
+    marginBottom: 16,
+  },
+  calendarDivider: {
+    height: 1,
+    backgroundColor: Theme.divider,
+    marginVertical: 16,
+  },
   monthNav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -549,39 +554,39 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   monthArrow: { padding: 4 },
-  monthTitle: { fontSize: 20, fontWeight: 'bold', color: Colors.textPrimary },
+  monthTitle: { fontSize: 24, fontWeight: 'bold', color: Theme.textPrimary },
   dayHeaderRow: { flexDirection: 'row', marginBottom: 8 },
   dayHeaderCell: { flex: 1, alignItems: 'center' },
-  dayHeaderText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
+  dayHeaderText: { fontSize: 14, fontWeight: '600', color: Theme.textSecondary },
   calendarGrid: { marginBottom: 16 },
   calendarRow: { flexDirection: 'row' },
   dayCell: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 8,
-    minHeight: 48,
+    paddingVertical: 10,
+    minHeight: 58,
   },
   dayCellSelected: {
-    backgroundColor: Colors.accent,
-    borderRadius: 12,
+    backgroundColor: Theme.limeAccent,
+    borderRadius: 14,
   },
   dayCellToday: {
     borderWidth: 1.5,
-    borderColor: Colors.accent,
-    borderRadius: 12,
+    borderColor: Theme.eyebrowGreen,
+    borderRadius: 14,
   },
-  dayCellText: { fontSize: 14, color: Colors.textPrimary, fontWeight: '500' },
-  dayCellTextSelected: { color: '#FFFFFF', fontWeight: 'bold' },
-  dayCellTextToday: { color: Colors.accent, fontWeight: 'bold' },
+  dayCellText: { fontSize: 18, color: Theme.textPrimary, fontWeight: '500' },
+  dayCellTextSelected: { color: Theme.limeAccentDark, fontWeight: 'bold' },
+  dayCellTextToday: { color: Theme.eyebrowGreen, fontWeight: 'bold' },
   dotRow: {
     flexDirection: 'row',
     gap: 3,
-    marginTop: 4,
+    marginTop: 5,
   },
   eventDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   legendRow: {
     flexDirection: 'row',
@@ -592,9 +597,9 @@ const styles = StyleSheet.create({
   },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendLabel: { fontSize: 11, color: Colors.textSecondary },
+  legendLabel: { fontSize: 13, color: Theme.textSecondary },
   selectedDateCard: {
-    backgroundColor: Colors.backgroundCard,
+    backgroundColor: Theme.cardWhite,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
@@ -605,23 +610,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 14,
   },
-  selectedDateTitle: { fontSize: 16, fontWeight: 'bold', color: Colors.textPrimary },
+  selectedDateTitle: { fontSize: 16, fontWeight: 'bold', color: Theme.textPrimary },
   addBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.accent,
+    backgroundColor: Theme.limeAccent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   noEventsWrap: { alignItems: 'center', paddingVertical: 20, gap: 8 },
-  noEventsText: { fontSize: 13, color: Colors.textSecondary, fontStyle: 'italic' },
-  addEventLink: { fontSize: 13, color: Colors.accent, fontWeight: '600' },
+  noEventsText: { fontSize: 15, color: Theme.textSecondary, fontStyle: 'italic' },
+  addEventLink: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
   eventCard: {
     flexDirection: 'row',
     marginBottom: 12,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: Theme.background,
     overflow: 'hidden',
   },
   eventColorBar: { width: 4 },
@@ -633,18 +638,18 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   eventTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
-  eventTitle: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
+  eventTitle: { fontSize: 15, fontWeight: '600', color: Theme.textPrimary },
   eventActions: { flexDirection: 'row', gap: 12 },
   eventDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
-  eventDetailText: { fontSize: 12, color: Colors.textSecondary },
-  eventNotes: { fontSize: 12, color: Colors.textSecondary, marginTop: 6, fontStyle: 'italic' },
+  eventDetailText: { fontSize: 13, color: Theme.textSecondary },
+  eventNotes: { fontSize: 13, color: Theme.textSecondary, marginTop: 6, fontStyle: 'italic' },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: Colors.backgroundTop,
+    backgroundColor: Theme.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -656,24 +661,24 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 20,
   },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', color: Colors.textPrimary },
-  modalDate: { fontSize: 13, color: Colors.accent, marginTop: 2 },
-  formLabel: { fontSize: 13, color: Colors.textSecondary, marginBottom: 6, marginTop: 12 },
+  modalTitle: { fontFamily: Fonts.serifMedium, fontSize: 20, color: Theme.textPrimary },
+  modalDate: { fontSize: 13, color: Theme.eyebrowGreen, marginTop: 2 },
+  formLabel: { fontSize: 13, color: Theme.textSecondary, marginBottom: 6, marginTop: 12 },
   formInput: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: Theme.cardWhite,
     borderRadius: 10,
     padding: 14,
-    color: Colors.textPrimary,
-    fontSize: 14,
+    color: Theme.textPrimary,
+    fontSize: 15,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: Theme.divider,
   },
   formNotesInput: {
     minHeight: 80,
     textAlignVertical: 'top',
   },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  timeDash: { color: Colors.textSecondary, fontSize: 16 },
+  timeDash: { color: Theme.textSecondary, fontSize: 16 },
   typePillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   typePill: {
     flexDirection: 'row',
@@ -682,19 +687,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: Theme.cardWhite,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: Theme.divider,
   },
-  typePillText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
+  typePillText: { fontSize: 13, fontWeight: '600', color: Theme.textSecondary },
   typePillTextActive: { color: '#FFFFFF' },
   saveBtn: {
-    backgroundColor: Colors.accent,
+    backgroundColor: Theme.limeAccent,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 24,
     marginBottom: 16,
   },
-  saveBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 16 },
+  saveBtnText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 16 },
 });

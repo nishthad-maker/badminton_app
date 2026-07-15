@@ -13,7 +13,7 @@ const workouts = {
 
       logType: 'strength',
 
-      description: 'One leg gets stronger for lunges, jumps, and fast movement on court. Do it on leg day so you can build balance and power one side at a time.',
+      description: 'Builds single-leg balance and power for lunges and quick court movement.',
 
       muscles: ['Quads', 'Glutes', 'Hamstrings'],
 
@@ -45,7 +45,7 @@ const workouts = {
 
       logType: 'strength',
 
-      description: 'Back, glutes, and legs get stronger for better power and stability. Do it on a lower-body day when you want to build strong hips and legs.',
+      description: 'Strengthens back, glutes, and legs for hip power and stability.',
 
       muscles: ['Glutes', 'Hamstrings', 'Lower Back'],
 
@@ -77,7 +77,7 @@ const workouts = {
 
       logType: 'strength',
 
-      description: 'This mainly strengthens your quadriceps, which help you push off, jump, and absorb force. Do it when you want to build front-thigh strength, usually near the start or middle of your leg workout.',
+      description: 'Builds quad strength for pushing off, jumping, and absorbing force.',
 
       muscles: ['Quads'],
 
@@ -111,7 +111,7 @@ const workouts = {
 
       logType: 'strength',
 
-      description: 'Calves are stronger for quick steps, jumping, and staying light on your feet. Do it after leg workouts or on badminton training days to help with court speed.',
+      description: 'Strengthens calves for quick steps and staying light on your feet.',
 
       muscles: ['Calves', 'Ankles', 'Feet'],
 
@@ -143,7 +143,7 @@ const workouts = {
 
       logType: 'strength',
 
-      description: 'Legs and core get stronger while keeping your body upright. Do it in lower-body workouts to build strength for better movement and balance.',
+      description: 'Builds leg and core strength while keeping your body upright.',
 
       muscles: ['Quads', 'Glutes', 'Core'],
 
@@ -175,7 +175,7 @@ const workouts = {
 
       logType: 'strength',
 
-      description: 'Builds explosive leg power for jumping, smashing, and quick bursts on court. Do it early in your leg workout when your legs are fresh.',
+      description: 'Builds explosive leg power for jumping and quick bursts on court.',
 
       muscles: ['Quads', 'Glutes', 'Calves'],
 
@@ -207,7 +207,7 @@ const workouts = {
 
       logType: 'strength',
 
-      description: 'Trains the side-to-side push you use for wide lunges and net returns. Do it on leg day to build the specific strength badminton needs beyond straight-ahead squats.',
+      description: 'Trains the side-to-side push used for wide lunges and net returns.',
 
       muscles: ['Quads', 'Glutes', 'Adductors'],
 
@@ -239,7 +239,7 @@ const workouts = {
 
       logType: 'strength',
 
-      description: 'Builds one-leg balance and hamstring strength for reaching wide shots without falling over. Do it on leg day when you want better stability under pressure.',
+      description: 'Builds one-leg balance and hamstring strength for reaching wide shots.',
 
       muscles: ['Hamstrings', 'Glutes', 'Core'],
 
@@ -271,7 +271,7 @@ const workouts = {
 
       logType: 'strength',
 
-      description: 'Shoulders get stronger for powerful smashes and clears. Do it onupper-body days so your shoulder can handle racket work better.',
+      description: 'Strengthens shoulders for powerful smashes and clears.',
 
       muscles: ['Shoulders', 'Triceps'],
 
@@ -301,9 +301,9 @@ const workouts = {
 
       subcategory: 'upper',
 
-      logType: 'strength',
+      logType: 'reps-sets',
 
-      description: 'Makes your chest, shoulders, and arms stronger for hitting and controlling the racket. Do it in upper-body workouts or as a warm-up when you want to build pushing strength.',
+      description: 'Strengthens chest, shoulders, and arms for controlling the racket.',
 
       muscles: ['Chest', 'Shoulders', 'Triceps', 'Core'],
 
@@ -335,7 +335,7 @@ const workouts = {
 
       logType: 'strength',
 
-      description: 'The back of your arms get stronger for faster and more stable racket swings. Do it on the upper-body day after your main lifts to support strong overhead shots.',
+      description: 'Strengthens the back of your arms for faster racket swings.',
 
       muscles: ['Triceps', 'Shoulders'],
 
@@ -367,7 +367,7 @@ const workouts = {
 
       logType: 'strength',
 
-      description: 'This trains the fast power you use when hitting hard shots. Do it early in a workout or before training when you want to feel explosive.',
+      description: 'Trains explosive power for hitting hard shots.',
 
       muscles: ['Shoulders', 'Arms'],
 
@@ -401,7 +401,7 @@ const workouts = {
 
       logType: 'plank',
 
-      description: 'Core stays tight so you can stay strong and balanced on court. Do it in core training or warm-ups to build stability.',
+      description: 'Keeps your core tight for balance and stability on court.',
 
       muscles: ['Core', 'Shoulders', 'Glutes'],
 
@@ -433,7 +433,7 @@ const workouts = {
 
       logType: 'strength',
 
-      description: 'This helps your body turn fast for smashes, clears, and drives. Do it on core day to build twisting strength for badminton movement.',
+      description: 'Builds twisting strength for smashes, clears, and drives.',
 
       muscles: ['Core', 'Obliques'],
 
@@ -467,7 +467,7 @@ const workouts = {
 
       logType: 'reps-sets',
 
-      description: 'Lower abs get stronger for better control when you move, jump, and recover. Do it in core workouts when you want to build stomach strength.',
+      description: 'Strengthens lower abs for control when you move and jump.',
 
       muscles: ['Lower Abs', 'Core', 'Hip Flexors'],
 
@@ -499,7 +499,7 @@ const workouts = {
 
       logType: 'reps-sets',
 
-      description: 'Trains your lower abs to stay switched on while your legs move, which is exactly what happens during lunges and recovery steps. Do it on core day as a controlled, non-weighted finisher.',
+      description: 'Trains lower abs to stay engaged during lunges and recovery steps.',
 
       muscles: ['Lower Abs', 'Core', 'Hip Flexors'],
 
@@ -531,7 +531,7 @@ const workouts = {
 
       logType: 'reps-sets',
 
-      description: 'Trains the rotating core strength behind smashes and cross-court drives. Do it on core day to build twisting power alongside straight-ahead ab work.',
+      description: 'Builds rotating core strength for smashes and cross-court drives.',
 
       muscles: ['Core', 'Obliques'],
 
@@ -563,7 +563,7 @@ const workouts = {
 
       logType: 'reps-sets',
 
-      description: 'Builds shoulder and core stability under movement, not just a static hold, closer to what your core actually does mid-rally. Do it on core day after your static plank work.',
+      description: 'Builds core and shoulder stability while moving, not just holding still.',
 
       muscles: ['Core', 'Shoulders', 'Triceps'],
 
@@ -593,13 +593,13 @@ const workouts = {
 
     {
 
-      name: 'Agility Ladder Session',
+      name: 'Agility Ladder',
 
       subcategory: 'agility',
 
       logType: 'footwork',
 
-      description: 'This helps your feet move fast and stay light. Do it in warm-upsor footwork practice to get quicker steps on court.',
+      description: 'Trains fast, light footwork for quicker steps on court.',
 
       muscles: ['Feet', 'Calves', 'Ankles'],
 
@@ -631,7 +631,7 @@ const workouts = {
 
       logType: 'footwork',
 
-      description: 'You bounce or tap lightly in the center, then as soon as a direction is called or shown, you do a quick split step and explode to that side.',
+      description: 'Trains quick reaction and explosive first-step movement.',
 
       muscles: ['Feet', 'Ankles', 'Calves', 'Hips', 'Core'],
 
@@ -665,7 +665,7 @@ const workouts = {
 
       logType: 'footwork',
 
-      description: 'Builds the habit of moving out, defending, and returning to baseagain and again.',
+      description: 'Builds the habit of moving out, defending, and recovering to base.',
 
       muscles: ['Feet', 'Ankles', 'Calves', 'Thighs'],
 
@@ -699,7 +699,7 @@ const workouts = {
 
       logType: 'plyometric',
 
-      description: 'Trains the explosive leg drive behind your jump smash. Do it early in a plyometric session when your legs are fully fresh.',
+      description: 'Trains explosive leg drive for your jump smash.',
 
       muscles: ['Quads', 'Glutes', 'Calves'],
 
@@ -725,15 +725,15 @@ const workouts = {
 
     {
 
-      name: 'Side Lunge Jump',
+      name: 'Jump Lunges',
 
       subcategory: 'plyometrics',
 
       logType: 'reps-sets',
 
-      description: 'The explosive version of a lateral lunge, training the quick push-off and landing control you need cutting side to side on court. Do it after Box Jumps while you are still fresh.',
+      description: 'Builds single-leg power and fast recovery for lunging in and out.',
 
-      muscles: ['Quads', 'Glutes', 'Adductors', 'Calves'],
+      muscles: ['Quads', 'Glutes', 'Hamstrings', 'Calves'],
 
       videoUrl: null,
 
@@ -741,15 +741,15 @@ const workouts = {
 
       steps: [
 
-        'Start standing with feet together.',
+        'Start in a lunge position with one foot forward and one back, both knees bent to about 90 degrees.',
 
-        'Push off one foot and jump sideways.',
+        'Swing your arms and drive up explosively through both legs.',
 
-        'Land softly on the opposite foot, bending your knee to absorb it.',
+        'While airborne, switch your legs so the back foot comes forward and the front foot goes back.',
 
-        'Immediately push off that foot and jump back the other way.',
+        'Land softly back into a lunge with knees bent to absorb the impact.',
 
-        'Keep alternating sides with control.',
+        'Immediately jump again, alternating legs each rep with control.',
 
       ],
 
@@ -767,7 +767,7 @@ const workouts = {
 
       logType: 'sets-duration',
 
-      description: 'Go hard for a short time, then rest or go easy, and repeat. Do this when you want to train your body to recover fast after tough rallies.',
+      description: 'Trains fast recovery after tough rallies with hard-easy bursts.',
 
       muscles: ['Heart', 'Lungs', 'Legs'],
 
@@ -799,7 +799,7 @@ const workouts = {
 
       logType: 'skipping',
 
-      description: 'Hold the rope, stay on your toes, and bounce lightly as the ropespins. Do this before training or on cardio days to improve stamina and keep your feet light.',
+      description: 'Builds stamina and keeps your feet light and quick.',
 
       muscles: ['Calves', 'Ankles', 'Core', 'Shoulders'],
 
@@ -831,7 +831,7 @@ const workouts = {
 
       logType: 'duration-distance',
 
-      description: 'Run, bike, or row at a pace where you can still talk. Do this onendurance days to build your base stamina and help you last longer in matches.',
+      description: 'Builds base stamina to help you last longer in matches.',
 
       muscles: ['Heart', 'Lungs', 'Legs'],
 
@@ -863,7 +863,7 @@ const workouts = {
 
       logType: 'sets-duration',
 
-      description: 'Builds badminton-style stamina because you sprint, stop, and go again like in a real match.',
+      description: 'Builds match-style stamina with sprint, stop, and go bursts.',
 
       muscles: ['Legs', 'Calves', 'Glutes', 'Core'],
 
@@ -901,7 +901,7 @@ const workouts = {
 
       logType: 'recovery',
 
-      description: 'After hard training or matches to help reduce muscle soreness and calm tired legs. It can help your body recover faster when you have been jumping, lunging, and hitting a lot.',
+      description: 'Reduces muscle soreness and helps tired legs recover faster.',
 
       muscles: ['Legs', 'Full Body'],
 
@@ -931,7 +931,7 @@ const workouts = {
 
       logType: 'recovery',
 
-      description: 'After practice or on rest days to loosen tight muscles and improve blood flow. It helps your legs, back, and shoulders feel less stiff after repeatedbadminton movement.',
+      description: 'Loosens tight muscles and improves blood flow after training.',
 
       muscles: ['Legs', 'Back', 'Shoulders'],
 
@@ -961,7 +961,7 @@ const workouts = {
 
       logType: 'recovery',
 
-      description: 'After training to help your body cool down and recover. Reduces stress, slows your heart rate, and helps your muscles relax.',
+      description: 'Calms your body, slows heart rate, and relaxes muscles.',
 
       muscles: ['Lungs', 'Core'],
 
@@ -991,7 +991,7 @@ const workouts = {
 
       logType: 'recovery',
 
-      description: 'After training to release tightness in your shoulders, arms, andback from racket swings and overhead shots. Keeps your upper body loose for the nextsession.',
+      description: 'Releases tightness in shoulders, arms, and back after training.',
 
       muscles: ['Shoulders', 'Arms', 'Back'],
 
@@ -1023,7 +1023,7 @@ const workouts = {
 
       logType: 'recovery',
 
-      description: 'After training to release tightness in your legs and hips from lunging, jumping, and fast court movement. Keeps your lower body flexible for the nextsession.',
+      description: 'Releases tightness in legs and hips after training.',
 
       muscles: ['Quads', 'Hamstrings', 'Calves', 'Hips'],
 

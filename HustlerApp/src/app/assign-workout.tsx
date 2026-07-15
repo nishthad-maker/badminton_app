@@ -1,10 +1,10 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, Platform, ActivityIndicator } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, Platform, ActivityIndicator } from 'react-native';
+import { Text } from '@/components/Text';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Colors } from '@/constants/theme';
+import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
 import { notifyWorkoutAssigned } from '../lib/notifications';
 import workouts from '../data/workouts';
@@ -21,12 +21,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   recovery: 'heart-pulse',
 };
 
-const CATEGORY_COLORS: Record<string, string> = {
-  strength: '#2ECC71',
-  footwork: '#3498DB',
-  endurance: '#E67E22',
-  recovery: '#9B59B6',
-};
+const catTheme = (cat: string) => CategoryTheme[cat as keyof typeof CategoryTheme] ?? { bg: Theme.cardTinted, fg: Theme.eyebrowGreen };
 
 const showAlert = (title: string, message: string) => {
   if (typeof window !== 'undefined') window.alert(`${title}\n\n${message}`);
@@ -210,13 +205,13 @@ export default function AssignWorkoutScreen() {
     : ALL_EXERCISES;
 
   return (
-    <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+    <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
         {/* Header */}
         <View style={styles.titleRow}>
           <TouchableOpacity onPress={goBack}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
+            <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>Assign Workout</Text>
         </View>
@@ -227,7 +222,7 @@ export default function AssignWorkoutScreen() {
           <View style={styles.playerSelectSection}>
             <Text style={styles.label}>Select Players</Text>
             {loadingPlayers ? (
-              <ActivityIndicator color={Colors.accent} />
+              <ActivityIndicator color={Theme.eyebrowGreen} />
             ) : connectedPlayers.length === 0 ? (
               <Text style={styles.noPlayersText}>No connected players found.</Text>
             ) : (
@@ -276,14 +271,14 @@ export default function AssignWorkoutScreen() {
             style={[styles.modeBtn, mode === 'create' && styles.modeBtnActive]}
             onPress={() => setMode('create')}
           >
-            <MaterialCommunityIcons name="pencil-outline" size={16} color={mode === 'create' ? '#fff' : Colors.textSecondary} />
+            <MaterialCommunityIcons name="pencil-outline" size={16} color={mode === 'create' ? '#fff' : Theme.textSecondary} />
             <Text style={[styles.modeBtnText, mode === 'create' && styles.modeBtnTextActive]}>Create your own</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.modeBtn, mode === 'library' && styles.modeBtnActive]}
             onPress={() => setMode('library')}
           >
-            <MaterialCommunityIcons name="book-open-outline" size={16} color={mode === 'library' ? '#fff' : Colors.textSecondary} />
+            <MaterialCommunityIcons name="book-open-outline" size={16} color={mode === 'library' ? '#fff' : Theme.textSecondary} />
             <Text style={[styles.modeBtnText, mode === 'library' && styles.modeBtnTextActive]}>Pick from library</Text>
           </TouchableOpacity>
         </View>
@@ -293,8 +288,9 @@ export default function AssignWorkoutScreen() {
           style={styles.weeklyPlanBtn}
           onPress={() => router.push({ pathname: '/assign-weekly-plan', params: { playerId: playerId as string, name: name as string } })}
         >
-          <MaterialCommunityIcons name="calendar-week" size={18} color={Colors.accent} />
-          <Text style={styles.weeklyPlanBtnText}>Assign a Weekly Training Plan instead →</Text>
+          <MaterialCommunityIcons name="calendar-week" size={18} color={Theme.eyebrowGreen} />
+          <Text style={styles.weeklyPlanBtnText}>Assign a Weekly Training Plan instead</Text>
+          <MaterialCommunityIcons name="chevron-right" size={19} color={Theme.eyebrowGreen} />
         </TouchableOpacity>
 
         {/* LIBRARY MODE */}
@@ -324,26 +320,29 @@ export default function AssignWorkoutScreen() {
             </ScrollView>
 
             {/* Exercise list */}
-            {filteredExercises.map((ex, i) => (
-              <TouchableOpacity
-                key={i}
-                style={styles.libraryCard}
-                onPress={() => pickFromLibrary(ex)}
-              >
-                <View style={[styles.libraryCatIcon, { backgroundColor: `${CATEGORY_COLORS[ex.category]}20` }]}>
-                  <MaterialCommunityIcons
-                    name={CATEGORY_ICONS[ex.category] as any}
-                    size={18}
-                    color={CATEGORY_COLORS[ex.category]}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.libraryExName}>{ex.name}</Text>
-                  <Text style={styles.libraryExCat}>{ex.category.charAt(0).toUpperCase() + ex.category.slice(1)}</Text>
-                </View>
-                <MaterialCommunityIcons name="chevron-right" size={18} color={Colors.textSecondary} />
-              </TouchableOpacity>
-            ))}
+            {filteredExercises.map((ex, i) => {
+              const cat = catTheme(ex.category);
+              return (
+                <TouchableOpacity
+                  key={i}
+                  style={styles.libraryCard}
+                  onPress={() => pickFromLibrary(ex)}
+                >
+                  <View style={[styles.libraryCatIcon, { backgroundColor: cat.bg }]}>
+                    <MaterialCommunityIcons
+                      name={CATEGORY_ICONS[ex.category] as any}
+                      size={18}
+                      color={cat.fg}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.libraryExName}>{ex.name}</Text>
+                    <Text style={styles.libraryExCat}>{ex.category.charAt(0).toUpperCase() + ex.category.slice(1)}</Text>
+                  </View>
+                  <MaterialCommunityIcons name="chevron-right" size={18} color={Theme.textMuted} />
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
@@ -353,10 +352,10 @@ export default function AssignWorkoutScreen() {
             {/* Show a "picked from library" chip if title was pre-filled */}
             {title && category ? (
               <View style={styles.prefilledBanner}>
-                <MaterialCommunityIcons name="check-circle-outline" size={16} color={Colors.accent} />
+                <MaterialCommunityIcons name="check-circle-outline" size={16} color={Theme.eyebrowGreen} />
                 <Text style={styles.prefilledText}>Pre-filled from library — edit as needed</Text>
                 <TouchableOpacity onPress={clearForm}>
-                  <MaterialCommunityIcons name="close-circle" size={18} color={Colors.textSecondary} />
+                  <MaterialCommunityIcons name="close-circle" size={18} color={Theme.textSecondary} />
                 </TouchableOpacity>
               </View>
             ) : null}
@@ -365,7 +364,7 @@ export default function AssignWorkoutScreen() {
             <TextInput
               style={styles.input}
               placeholder="e.g. Footwork ladder drills"
-              placeholderTextColor={Colors.textSecondary}
+              placeholderTextColor={Theme.textSecondary}
               value={title}
               onChangeText={setTitle}
             />
@@ -374,7 +373,7 @@ export default function AssignWorkoutScreen() {
             <TextInput
               style={styles.input}
               placeholder="e.g. Focus on form, use 10kg, try 3 sets"
-              placeholderTextColor={Colors.textSecondary}
+              placeholderTextColor={Theme.textSecondary}
               value={notes}
               onChangeText={setNotes}
               multiline
@@ -408,7 +407,7 @@ export default function AssignWorkoutScreen() {
             <Text style={styles.label}>Photo or video <Text style={styles.labelOptional}>(optional)</Text></Text>
             {uploading ? (
               <View style={styles.mediaBox}>
-                <ActivityIndicator color={Colors.accent} />
+                <ActivityIndicator color={Theme.eyebrowGreen} />
                 <Text style={styles.mediaHint}>Uploading...</Text>
               </View>
             ) : mediaUri ? (
@@ -416,9 +415,9 @@ export default function AssignWorkoutScreen() {
                 <MaterialCommunityIcons
                   name={mediaType === 'video' ? 'video-check' : 'image-check'}
                   size={22}
-                  color={Colors.accent}
+                  color={Theme.eyebrowGreen}
                 />
-                <Text style={styles.mediaSelectedText}>{mediaType === 'video' ? 'Video attached' : 'Photo attached'} ✓</Text>
+                <Text style={styles.mediaSelectedText}>{mediaType === 'video' ? 'Video attached' : 'Photo attached'}</Text>
                 <TouchableOpacity onPress={removeMedia}>
                   <MaterialCommunityIcons name="close-circle" size={20} color="#FF6B6B" />
                 </TouchableOpacity>
@@ -426,11 +425,11 @@ export default function AssignWorkoutScreen() {
             ) : (
               <View style={styles.mediaRow}>
                 <TouchableOpacity style={styles.mediaBtn} onPress={() => pickMedia('image')}>
-                  <MaterialCommunityIcons name="image-outline" size={20} color={Colors.accent} />
+                  <MaterialCommunityIcons name="image-outline" size={20} color={Theme.eyebrowGreen} />
                   <Text style={styles.mediaBtnText}>Photo</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.mediaBtn} onPress={() => pickMedia('video')}>
-                  <MaterialCommunityIcons name="video-outline" size={20} color={Colors.accent} />
+                  <MaterialCommunityIcons name="video-outline" size={20} color={Theme.eyebrowGreen} />
                   <Text style={styles.mediaBtnText}>Video</Text>
                 </TouchableOpacity>
               </View>
@@ -439,7 +438,7 @@ export default function AssignWorkoutScreen() {
             {/* Require proof toggle */}
             <TouchableOpacity style={styles.toggleRow} onPress={() => setRequiresProof(!requiresProof)} activeOpacity={0.7}>
               <View style={styles.toggleLeft}>
-                <MaterialCommunityIcons name="check-circle-outline" size={22} color={requiresProof ? Colors.accent : Colors.textSecondary} />
+                <MaterialCommunityIcons name="check-circle-outline" size={22} color={requiresProof ? Theme.eyebrowGreen : Theme.textSecondary} />
                 <View>
                   <Text style={[styles.toggleLabel, requiresProof && styles.toggleLabelActive]}>Require proof</Text>
                   <Text style={styles.toggleSub}>Player must upload a photo or video to mark this done</Text>
@@ -461,32 +460,32 @@ export default function AssignWorkoutScreen() {
         )}
 
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: Theme.background },
   scroll: { padding: 24, paddingTop: 60, paddingBottom: 60 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
-  title: { fontSize: 24, fontWeight: 'bold', color: Colors.textPrimary },
-  forWho: { fontSize: 13, color: Colors.accent, fontWeight: '600', marginBottom: 20 },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 24, color: Theme.textPrimary },
+  forWho: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600', marginBottom: 20 },
 
   weeklyPlanBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: Colors.accentMuted,
+    backgroundColor: Theme.cardTinted,
     borderRadius: 10,
     padding: 12,
     marginBottom: 20,
   },
-  weeklyPlanBtnText: { fontSize: 13, color: Colors.accent, fontWeight: '600', flex: 1 },
+  weeklyPlanBtnText: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600', flex: 1 },
 
   // Mode toggle
   modeToggle: {
     flexDirection: 'row',
-    backgroundColor: Colors.backgroundCard,
+    backgroundColor: Theme.cardWhite,
     borderRadius: 12,
     padding: 4,
     marginBottom: 24,
@@ -501,17 +500,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
   },
-  modeBtnActive: { backgroundColor: Colors.accent },
-  modeBtnText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
+  modeBtnActive: { backgroundColor: Theme.eyebrowGreen },
+  modeBtnText: { fontSize: 13, fontWeight: '600', color: Theme.textSecondary },
   modeBtnTextActive: { color: '#FFFFFF' },
 
   // Library
-  libraryHint: { fontSize: 12, color: Colors.textSecondary, marginBottom: 12 },
+  libraryHint: { fontSize: 13, color: Theme.textSecondary, marginBottom: 12 },
   libraryCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: Colors.backgroundCard,
+    backgroundColor: Theme.cardWhite,
     borderRadius: 12,
     padding: 14,
     marginBottom: 10,
@@ -523,45 +522,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  libraryExName: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
-  libraryExCat: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  libraryExName: { fontSize: 15, fontWeight: '600', color: Theme.textPrimary },
+  libraryExCat: { fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
 
   // Pre-filled banner
   prefilledBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: Colors.accentMuted,
+    backgroundColor: Theme.cardTinted,
     borderRadius: 10,
     padding: 10,
     marginBottom: 16,
   },
-  prefilledText: { flex: 1, fontSize: 12, color: Colors.accent, fontWeight: '600' },
+  prefilledText: { flex: 1, fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
 
   // Instructions preview
   instructionsPreview: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: Theme.cardWhite,
     borderRadius: 10,
     padding: 12,
     marginBottom: 16,
     borderLeftWidth: 2,
-    borderLeftColor: Colors.accent,
+    borderLeftColor: Theme.eyebrowGreen,
   },
-  instructionsPreviewLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: '600', marginBottom: 4 },
-  instructionsPreviewText: { fontSize: 12, color: Colors.textSecondary, lineHeight: 18 },
+  instructionsPreviewLabel: { fontSize: 12, color: Theme.textSecondary, fontWeight: '600', marginBottom: 4 },
+  instructionsPreviewText: { fontSize: 13, color: Theme.textSecondary, lineHeight: 18 },
 
   // Form
-  label: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8, fontWeight: '600' },
-  labelOptional: { fontWeight: '400', color: Colors.textSecondary, fontSize: 12 },
+  label: { fontSize: 13, color: Theme.textSecondary, marginBottom: 8, fontWeight: '600' },
+  labelOptional: { fontWeight: '400', color: Theme.textSecondary, fontSize: 13 },
   input: {
-    backgroundColor: Colors.backgroundCard,
+    backgroundColor: Theme.cardWhite,
     borderRadius: 10,
     padding: 14,
-    color: Colors.textPrimary,
-    fontSize: 14,
+    color: Theme.textPrimary,
+    fontSize: 15,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
     minHeight: 48,
   },
   catRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
@@ -569,12 +568,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: Colors.backgroundCard,
+    backgroundColor: Theme.cardWhite,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
-  catBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  catText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  catBtnActive: { backgroundColor: Theme.eyebrowGreen, borderColor: Theme.eyebrowGreen },
+  catText: { fontSize: 13, color: Theme.textSecondary, fontWeight: '600' },
   catTextActive: { color: '#FFFFFF' },
   mediaRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   mediaBtn: {
@@ -583,58 +582,58 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: Colors.accentMuted,
+    backgroundColor: Theme.cardTinted,
     borderRadius: 12,
     paddingVertical: 16,
     borderWidth: 1,
-    borderColor: Colors.accent,
+    borderColor: Theme.eyebrowGreen,
     borderStyle: 'dashed',
   },
-  mediaBtnText: { fontSize: 13, color: Colors.accent, fontWeight: '600' },
+  mediaBtnText: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
   mediaBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: Colors.accentMuted,
+    backgroundColor: Theme.cardTinted,
     borderRadius: 10,
     padding: 14,
     marginBottom: 16,
   },
-  mediaHint: { fontSize: 13, color: Colors.accent, fontWeight: '600' },
+  mediaHint: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
   mediaSelected: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: Colors.accentMuted,
+    backgroundColor: Theme.cardTinted,
     borderRadius: 10,
     padding: 14,
     marginBottom: 16,
   },
-  mediaSelectedText: { flex: 1, fontSize: 13, color: Colors.accent, fontWeight: '600' },
+  mediaSelectedText: { flex: 1, fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: Colors.backgroundCard,
+    backgroundColor: Theme.cardWhite,
     borderRadius: 12,
     padding: 14,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
   toggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  toggleLabel: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary, marginBottom: 2 },
-  toggleLabelActive: { color: Colors.accent },
-  toggleSub: { fontSize: 11, color: Colors.textSecondary, flexShrink: 1 },
+  toggleLabel: { fontSize: 14, fontWeight: '600', color: Theme.textSecondary, marginBottom: 2 },
+  toggleLabelActive: { color: Theme.eyebrowGreen },
+  toggleSub: { fontSize: 13, color: Theme.textSecondary, flexShrink: 1 },
   toggle: {
     width: 44,
     height: 26,
     borderRadius: 13,
-    backgroundColor: Colors.border,
+    backgroundColor: Theme.divider,
     justifyContent: 'center',
     paddingHorizontal: 3,
   },
-  toggleOn: { backgroundColor: Colors.accent },
+  toggleOn: { backgroundColor: Theme.eyebrowGreen },
   toggleThumb: {
     width: 20,
     height: 20,
@@ -644,31 +643,31 @@ const styles = StyleSheet.create({
   },
   toggleThumbOn: { alignSelf: 'flex-end' },
   sendBtn: {
-    backgroundColor: Colors.accent,
+    backgroundColor: Theme.limeAccent,
     borderRadius: 30,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 8,
   },
   sendBtnDisabled: { opacity: 0.6 },
-  sendBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
+  sendBtnText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 15 },
 
   // Multi-player selector
   playerSelectSection: { marginBottom: 20 },
-  noPlayersText: { fontSize: 13, color: Colors.textSecondary, fontStyle: 'italic' },
+  noPlayersText: { fontSize: 13, color: Theme.textSecondary, fontStyle: 'italic' },
   selectAllBtn: { alignSelf: 'flex-end', marginBottom: 8 },
-  selectAllText: { fontSize: 12, color: Colors.accent, fontWeight: '600' },
+  selectAllText: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
   playerSelectRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.backgroundCard, borderRadius: 10, padding: 12, marginBottom: 8,
+    backgroundColor: Theme.cardWhite, borderRadius: 10, padding: 12, marginBottom: 8,
     borderWidth: 1, borderColor: 'transparent',
   },
-  playerSelectRowActive: { borderColor: Colors.accent, backgroundColor: Colors.accentMuted },
-  playerSelectAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.accentMuted, alignItems: 'center', justifyContent: 'center' },
-  playerSelectAvatarText: { fontSize: 15, fontWeight: 'bold', color: Colors.accent },
-  playerSelectName: { flex: 1, fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
-  playerSelectNameActive: { color: Colors.accent },
-  playerCheckbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
-  playerCheckboxActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  selectedCount: { fontSize: 12, color: Colors.accent, fontWeight: '600', textAlign: 'center', marginTop: 4 },
+  playerSelectRowActive: { borderColor: Theme.eyebrowGreen, backgroundColor: Theme.cardTinted },
+  playerSelectAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: Theme.cardTinted, alignItems: 'center', justifyContent: 'center' },
+  playerSelectAvatarText: { fontSize: 15, fontWeight: 'bold', color: Theme.eyebrowGreen },
+  playerSelectName: { flex: 1, fontSize: 14, fontWeight: '600', color: Theme.textPrimary },
+  playerSelectNameActive: { color: Theme.eyebrowGreen },
+  playerCheckbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: Theme.divider, alignItems: 'center', justifyContent: 'center' },
+  playerCheckboxActive: { backgroundColor: Theme.eyebrowGreen, borderColor: Theme.eyebrowGreen },
+  selectedCount: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600', textAlign: 'center', marginTop: 4 },
 });

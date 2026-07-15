@@ -54,6 +54,22 @@ export const TOPIC_ICONS: Record<string, string> = {
   'Equipment': 'badminton',
 };
 
+// Same swatches used for workout categories elsewhere in the app, reused here
+// so each poster's avatar gets a distinct, stable color instead of one flat blue.
+export const AVATAR_COLORS = [
+  { bg: '#CFE0F9', fg: '#0C447C' },
+  { bg: '#E2EFAE', fg: '#3B6D11' },
+  { bg: '#FBDAB3', fg: '#854F0B' },
+  { bg: '#E3D9F5', fg: '#534AB7' },
+  { bg: '#F9C9DE', fg: '#C0135E' },
+];
+
+export const avatarColorFor = (id: string) => {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+};
+
 export const formatTimeAgo = (dateString: string): string => {
   const date = new Date(dateString);
   const now = new Date();

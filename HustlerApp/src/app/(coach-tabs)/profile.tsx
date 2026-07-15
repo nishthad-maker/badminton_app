@@ -1,10 +1,10 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { Text } from '@/components/Text';
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import { supabase } from '../../lib/supabase';
-import { Colors } from '@/constants/theme';
+import { Theme, Fonts } from '@/constants/theme';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 const showConfirm = (title: string, message: string, onConfirm: () => void) => {
@@ -104,7 +104,7 @@ export default function CoachProfileScreen() {
   const initials = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
 
   return (
-    <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+    <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
         {/* Avatar + name */}
@@ -116,13 +116,13 @@ export default function CoachProfileScreen() {
           <Text style={styles.email}>{user?.email}</Text>
           {profile?.club ? (
             <View style={styles.clubBadge}>
-              <MaterialCommunityIcons name="whistle-outline" size={12} color={Colors.accent} />
+              <MaterialCommunityIcons name="whistle-outline" size={12} color={Theme.eyebrowGreen} />
               <Text style={styles.clubText}>{profile.club}</Text>
             </View>
           ) : null}
           {memberSince ? (
             <View style={styles.memberBadge}>
-              <MaterialCommunityIcons name="calendar-check" size={12} color={Colors.accent} />
+              <MaterialCommunityIcons name="calendar-check" size={12} color={Theme.eyebrowGreen} />
               <Text style={styles.memberText}>Coaching since {memberSince}</Text>
             </View>
           ) : null}
@@ -143,7 +143,7 @@ export default function CoachProfileScreen() {
             <View style={styles.usernameRow}>
               <Text style={styles.usernameValue}>{profile.coach_username}</Text>
               <TouchableOpacity style={styles.copyBtn} onPress={copyUsername}>
-                <MaterialCommunityIcons name={copied ? 'check' : 'content-copy'} size={16} color={copied ? '#2ECC71' : Colors.accent} />
+                <MaterialCommunityIcons name={copied ? 'check' : 'content-copy'} size={16} color={copied ? '#2ECC71' : Theme.eyebrowGreen} />
                 <Text style={[styles.copyBtnText, copied && { color: '#2ECC71' }]}>{copied ? 'Copied' : 'Copy'}</Text>
               </TouchableOpacity>
             </View>
@@ -155,15 +155,15 @@ export default function CoachProfileScreen() {
         <Text style={styles.sectionTitle}>Account</Text>
         <View style={styles.optionsCard}>
           <TouchableOpacity style={styles.option} onPress={() => goTo('/edit-coach-profile')}>
-            <MaterialCommunityIcons name="account-edit-outline" size={20} color={Colors.accent} />
+            <MaterialCommunityIcons name="account-edit-outline" size={20} color={Theme.eyebrowGreen} />
             <Text style={styles.optionText}>Edit Profile</Text>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
+            <MaterialCommunityIcons name="chevron-right" size={20} color={Theme.textSecondary} />
           </TouchableOpacity>
           <View style={styles.divider} />
           <TouchableOpacity style={styles.option} onPress={handleSignOut}>
-            <MaterialCommunityIcons name="logout" size={20} color={Colors.textSecondary} />
+            <MaterialCommunityIcons name="logout" size={20} color={Theme.textSecondary} />
             <Text style={styles.optionText}>Sign Out</Text>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
+            <MaterialCommunityIcons name="chevron-right" size={20} color={Theme.textSecondary} />
           </TouchableOpacity>
         </View>
 
@@ -171,59 +171,59 @@ export default function CoachProfileScreen() {
         <Text style={styles.sectionTitle}>Danger Zone</Text>
         <View style={[styles.optionsCard, styles.dangerCard]}>
           <TouchableOpacity style={styles.option} onPress={handleDeleteAccount} disabled={deletingAccount}>
-            <MaterialCommunityIcons name="delete-forever-outline" size={20} color="#FF4444" />
+            <MaterialCommunityIcons name="delete-forever-outline" size={20} color="#E74C3C" />
             <View style={{ flex: 1 }}>
               <Text style={[styles.optionText, styles.dangerText]}>
                 {deletingAccount ? 'Deleting...' : 'Delete Account'}
               </Text>
               <Text style={styles.dangerSubText}>Permanently delete your account and all data</Text>
             </View>
-            <MaterialCommunityIcons name="chevron-right" size={20} color="#FF4444" />
+            <MaterialCommunityIcons name="chevron-right" size={20} color="#E74C3C" />
           </TouchableOpacity>
         </View>
 
         <Text style={styles.appVersion}>Hustler · Built for badminton coaches</Text>
 
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: Theme.background },
   scroll: { padding: 24, paddingTop: 60, paddingBottom: 120 },
 
   avatarSection: { alignItems: 'center', marginBottom: 24, gap: 6 },
-  avatar: { width: 88, height: 88, borderRadius: 44, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  avatar: { width: 88, height: 88, borderRadius: 44, backgroundColor: Theme.eyebrowGreen, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   avatarInitials: { fontSize: 32, fontWeight: 'bold', color: '#fff' },
-  name: { fontSize: 22, fontWeight: 'bold', color: Colors.textPrimary },
-  email: { fontSize: 13, color: Colors.textSecondary, marginBottom: 4 },
-  clubBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.accentMuted, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
-  clubText: { fontSize: 12, color: Colors.accent, fontWeight: '600' },
-  memberBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.accentMuted, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
-  memberText: { fontSize: 12, color: Colors.accent, fontWeight: '600' },
+  name: { fontFamily: Fonts.serifMedium, fontSize: 24, color: Theme.textPrimary },
+  email: { fontSize: 14, color: Theme.textSecondary, marginBottom: 4 },
+  clubBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Theme.cardTinted, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
+  clubText: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
+  memberBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Theme.cardTinted, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
+  memberText: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
 
-  statsRow: { flexDirection: 'row', backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 16, marginBottom: 20, alignItems: 'center' },
+  statsRow: { flexDirection: 'row', backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 16, marginBottom: 20, alignItems: 'center' },
   statCard: { flex: 1, alignItems: 'center', gap: 4 },
-  statNum: { fontSize: 24, fontWeight: 'bold', color: Colors.textPrimary },
-  statLabel: { fontSize: 11, color: Colors.textSecondary, textAlign: 'center' },
+  statNum: { fontSize: 24, fontWeight: 'bold', color: Theme.textPrimary },
+  statLabel: { fontSize: 13, color: Theme.textSecondary, textAlign: 'center' },
 
-  card: { backgroundColor: Colors.backgroundCard, borderRadius: 14, padding: 16, marginBottom: 20 },
-  cardLabel: { fontSize: 11, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1, marginBottom: 12 },
+  card: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 16, marginBottom: 20 },
+  cardLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 12 },
   usernameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  usernameValue: { fontSize: 18, fontWeight: 'bold', color: Colors.textPrimary },
-  copyBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.accentMuted, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
-  copyBtnText: { fontSize: 12, fontWeight: '600', color: Colors.accent },
-  usernameHint: { fontSize: 11, color: Colors.textSecondary, marginTop: 8 },
+  usernameValue: { fontSize: 18, fontWeight: 'bold', color: Theme.textPrimary },
+  copyBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Theme.cardTinted, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
+  copyBtnText: { fontSize: 13, fontWeight: '600', color: Theme.eyebrowGreen },
+  usernameHint: { fontSize: 13, color: Theme.textSecondary, marginTop: 8 },
 
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 10 },
-  optionsCard: { backgroundColor: Colors.backgroundCard, borderRadius: 14, overflow: 'hidden', marginBottom: 20 },
-  dangerCard: { borderWidth: 1, borderColor: 'rgba(255,68,68,0.3)' },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: Theme.textPrimary, marginBottom: 10 },
+  optionsCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, overflow: 'hidden', marginBottom: 20 },
+  dangerCard: { borderWidth: 1, borderColor: 'rgba(231,76,60,0.25)' },
   option: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
-  optionText: { flex: 1, fontSize: 15, color: Colors.textPrimary, fontWeight: '500' },
-  dangerText: { color: '#FF4444', fontWeight: '600' },
-  dangerSubText: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
-  divider: { height: 1, backgroundColor: Colors.border, marginHorizontal: 16 },
+  optionText: { flex: 1, fontSize: 15, color: Theme.textPrimary, fontWeight: '500' },
+  dangerText: { color: '#E74C3C', fontWeight: '600' },
+  dangerSubText: { fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
+  divider: { height: 1, backgroundColor: Theme.divider, marginHorizontal: 16 },
 
-  appVersion: { fontSize: 11, color: Colors.textSecondary, textAlign: 'center', marginTop: 8 },
+  appVersion: { fontSize: 13, color: Theme.textSecondary, textAlign: 'center', marginTop: 8 },
 });

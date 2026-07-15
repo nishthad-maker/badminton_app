@@ -1,26 +1,25 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, Pressable, ScrollView } from 'react-native';
+import { Text } from '@/components/Text';
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Colors } from '@/constants/theme';
+import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
 
 const CATEGORIES = [
-  { key: 'strength', title: 'Strength Training', sub: 'Legs, Core, Upper Body', icon: 'dumbbell', color: '#2ECC71', bg: 'rgba(46,204,113,0.15)' },
-  { key: 'footwork', title: 'Footwork Drills', sub: 'Speed, Agility, Court Movement', icon: 'badminton', color: '#3498DB', bg: 'rgba(52,152,219,0.15)' },
-  { key: 'endurance', title: 'Endurance', sub: 'Stamina, Rally Fitness, Interval', icon: 'lightning-bolt', color: '#E67E22', bg: 'rgba(230,126,34,0.15)' },
-  { key: 'recovery', title: 'Recovery', sub: 'Stretching, Foam Rolling, Breathing', icon: 'heart-pulse', color: '#9B59B6', bg: 'rgba(155,89,182,0.15)' },
+  { key: 'strength', title: 'Strength Training', sub: 'Legs, Core, Upper Body', icon: 'dumbbell' },
+  { key: 'footwork', title: 'Footwork Drills', sub: 'Speed, Agility, Court Movement', icon: 'badminton' },
+  { key: 'endurance', title: 'Endurance', sub: 'Stamina, Rally Fitness, Interval', icon: 'lightning-bolt' },
+  { key: 'recovery', title: 'Recovery', sub: 'Stretching, Foam Rolling, Breathing', icon: 'heart-pulse' },
 ];
 
 export default function TrainScreen() {
   const [customCounts, setCustomCounts] = useState<Record<string, number>>({});
-  const [unreadCount, setUnreadCount] = useState(0);
   const [routineCount, setRoutineCount] = useState(0);
+  const [hoveredCard, setHoveredCard] = useState<string | null>(null);
 
   useFocusEffect(useCallback(() => {
     loadCustomCounts();
-    loadUnread();
     loadRoutineCount();
   }, []));
 
@@ -33,15 +32,6 @@ export default function TrainScreen() {
       data.forEach((ex: any) => { counts[ex.category] = (counts[ex.category] || 0) + 1; });
       setCustomCounts(counts);
     }
-  };
-
-  const loadUnread = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) return;
-    const userId = session.user.id;
-    const { data: unreadAsgs } = await supabase.from('assignments').select('id').eq('player_id', userId).eq('seen', false);
-    const { data: unreadNotifs } = await supabase.from('notifications').select('id').eq('user_id', userId).eq('type', 'coach_feedback').eq('seen', false);
-    setUnreadCount((unreadAsgs ?? []).length + (unreadNotifs ?? []).length);
   };
 
   const loadRoutineCount = async () => {
@@ -69,109 +59,143 @@ export default function TrainScreen() {
   };
 
   return (
-    <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+    <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        <Text style={styles.title}>Train</Text>
+        <Text style={styles.eyebrow}>YOUR PRACTICE HUB</Text>
+        <Text style={styles.title}>Training Focus</Text>
 
         <View style={styles.cards}>
-          {CATEGORIES.map((cat) => (
-            <TouchableOpacity key={cat.key} style={styles.card} onPress={() => navigate(cat.key)}>
-              <View style={[styles.iconBox, { backgroundColor: cat.bg }]}>
-                <MaterialCommunityIcons name={cat.icon as any} size={24} color={cat.color} />
-              </View>
-              <View style={styles.cardText}>
-                <Text style={styles.cardTitle}>{cat.title}</Text>
-                <View style={styles.cardSubRow}>
-                  <Text style={styles.cardSub}>{cat.sub}</Text>
-                  {customCounts[cat.key] ? (
-                    <View style={styles.customBadge}>
-                      <Text style={styles.customBadgeText}>+{customCounts[cat.key]} custom</Text>
+          <View style={styles.categoryGroup}>
+            {CATEGORIES.map((cat, i) => {
+              const theme = CategoryTheme[cat.key as keyof typeof CategoryTheme];
+              const isFirst = i === 0;
+              const isLast = i === CATEGORIES.length - 1;
+              return (
+                <Pressable
+                  key={cat.key}
+                  style={[
+                    styles.card,
+                    { borderColor: theme.bg },
+                    isFirst && styles.cardFirst,
+                    isLast && styles.cardLast,
+                    !isFirst && !isLast && styles.cardMiddle,
+                    !isFirst && styles.cardJoined,
+                    hoveredCard === cat.key && { backgroundColor: theme.bg },
+                  ]}
+                  onPress={() => navigate(cat.key)}
+                  onHoverIn={() => setHoveredCard(cat.key)}
+                  onHoverOut={() => setHoveredCard(null)}
+                  onPressIn={() => setHoveredCard(cat.key)}
+                  onPressOut={() => setHoveredCard(null)}
+                >
+                  <View style={[styles.iconBox, { backgroundColor: theme.bg }]}>
+                    <MaterialCommunityIcons name={cat.icon as any} size={28} color={theme.fg} />
+                  </View>
+                  <View style={styles.cardText}>
+                    <Text style={styles.cardTitle}>{cat.title}</Text>
+                    <View style={styles.cardSubRow}>
+                      <Text style={styles.cardSub}>{cat.sub}</Text>
+                      {customCounts[cat.key] ? (
+                        <View style={[styles.customBadge, { backgroundColor: theme.bg }]}>
+                          <Text style={[styles.customBadgeText, { color: theme.fg }]}>+{customCounts[cat.key]} custom</Text>
+                        </View>
+                      ) : null}
                     </View>
-                  ) : null}
-                </View>
-              </View>
-              <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
-            </TouchableOpacity>
-          ))}
+                  </View>
+                  <MaterialCommunityIcons name="chevron-right" size={22} color={Theme.textMuted} />
+                </Pressable>
+              );
+            })}
+          </View>
 
-          <View style={styles.divider} />
-
-          {/* My Workouts */}
-          <TouchableOpacity style={[styles.card, styles.customCard]} onPress={goToCustomWorkouts}>
-            <View style={[styles.iconBox, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
-              <MaterialCommunityIcons name="plus-circle-outline" size={24} color={Colors.textPrimary} />
-            </View>
-            <View style={styles.cardText}>
-              <Text style={styles.cardTitle}>My Workouts</Text>
-              <Text style={styles.cardSub}>
-                {Object.values(customCounts).reduce((a, b) => a + b, 0) > 0
-                  ? `${Object.values(customCounts).reduce((a, b) => a + b, 0)} custom exercise${Object.values(customCounts).reduce((a, b) => a + b, 0) !== 1 ? 's' : ''}`
-                  : 'Your custom exercises'}
-              </Text>
-            </View>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
-          </TouchableOpacity>
+          <Text style={styles.sectionLabel}>My Training</Text>
 
           {/* My Routines */}
-          <TouchableOpacity style={[styles.card, styles.routineCard]} onPress={goToRoutines}>
-            <View style={[styles.iconBox, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
-              <MaterialCommunityIcons name="playlist-check" size={24} color={Colors.textPrimary} />
+          <TouchableOpacity style={styles.cardVertical} onPress={goToRoutines}>
+            <View style={[styles.iconCircle, { backgroundColor: '#E7E5E0' }]}>
+              <MaterialCommunityIcons name="playlist-check" size={26} color="#44403C" />
             </View>
-            <View style={styles.cardText}>
-              <Text style={styles.cardTitle}>My Routines</Text>
-              <Text style={styles.cardSub}>
-                {routineCount > 0
-                  ? `${routineCount} routine${routineCount !== 1 ? 's' : ''} saved`
-                  : 'Build your own workout routines'}
-              </Text>
+            <Text style={styles.cardTitleLg}>My Routines</Text>
+            <Text style={styles.cardDesc}>{routineCount} custom routine{routineCount !== 1 ? 's' : ''}</Text>
+            <View style={styles.cardLinkRow}>
+              <Text style={[styles.cardLinkText, { color: '#44403C' }]}>View routines</Text>
+              <MaterialCommunityIcons name="chevron-right" size={18} color="#44403C" />
             </View>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
           </TouchableOpacity>
 
-          {/* Coach */}
-          <TouchableOpacity style={[styles.card, styles.coachCard]} onPress={goToCoach}>
-            <View style={[styles.iconBox, { backgroundColor: Colors.accentMuted }]}>
-              <MaterialCommunityIcons name="whistle-outline" size={24} color={Colors.accent} />
-              {unreadCount > 0 && (
-                <View style={styles.iconBadge}>
-                  <Text style={styles.iconBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-                </View>
-              )}
+          {/* My Workouts */}
+          <TouchableOpacity style={styles.cardVertical} onPress={goToCustomWorkouts}>
+            <View style={[styles.iconCircle, { backgroundColor: '#E7E5E0' }]}>
+              <MaterialCommunityIcons name="plus" size={26} color="#44403C" />
             </View>
-            <View style={styles.cardText}>
-              <Text style={[styles.cardTitle, styles.coachCardTitle]}>Coach</Text>
-              <Text style={styles.cardSub}>
-                {unreadCount > 0
-                  ? `${unreadCount} new update${unreadCount !== 1 ? 's' : ''} from your coach`
-                  : 'Workouts and weekly plans from your coach'}
-              </Text>
+            <Text style={styles.cardTitleLg}>Create Exercise</Text>
+            <Text style={styles.cardDesc}>
+              {Object.values(customCounts).reduce((a, b) => a + b, 0) > 0
+                ? `${Object.values(customCounts).reduce((a, b) => a + b, 0)} custom exercise${Object.values(customCounts).reduce((a, b) => a + b, 0) !== 1 ? 's' : ''}`
+                : 'Build your own custom exercises.'}
+            </Text>
+            <View style={styles.cardLinkRow}>
+              <Text style={[styles.cardLinkText, { color: '#44403C' }]}>Add an exercise</Text>
+              <MaterialCommunityIcons name="chevron-right" size={18} color="#44403C" />
             </View>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.accent} />
+          </TouchableOpacity>
+
+          <View style={styles.sectionDivider} />
+
+          {/* Coach Plan — highlights workouts/routines assigned by the coach */}
+          <TouchableOpacity style={styles.coachPlanCard} onPress={goToCoach}>
+            <View style={styles.coachPlanHeader}>
+              <View style={styles.coachPlanIconCircle}>
+                <MaterialCommunityIcons name="clipboard-text-outline" size={26} color="#123C35" />
+              </View>
+              <Text style={styles.coachPlanEyebrow}>COACH PLAN</Text>
+            </View>
+            <Text style={styles.coachPlanTitle}>New workouts, ready to train</Text>
+            <Text style={styles.coachPlanDesc}>Your coach added new workouts and routines to your plan this week.</Text>
+            <View style={styles.coachPlanBtn}>
+              <Text style={styles.coachPlanBtnText}>View plan</Text>
+              <MaterialCommunityIcons name="chevron-right" size={19} color="#123C35" />
+            </View>
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scroll: { padding: 24, paddingTop: 60, paddingBottom: 120 },
-  title: { fontSize: 28, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 24 },
-  cards: { gap: 12 },
-  card: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14 },
-  customCard: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', borderStyle: 'dashed' },
-  routineCard: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', borderStyle: 'dashed' },
-  coachCard: { borderWidth: 1, borderColor: Colors.accent },
-  coachCardTitle: { color: Colors.accent },
-  iconBox: { width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  iconBadge: { position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: '#FF3B30', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3, borderWidth: 1.5, borderColor: Colors.backgroundTop },
-  iconBadgeText: { color: '#fff', fontSize: 9, fontWeight: 'bold' },
+  container: { flex: 1, backgroundColor: Theme.background },
+  scroll: { padding: 24, paddingTop: 60, paddingBottom: 170 },
+  eyebrow: { fontSize: 13, fontWeight: '500', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 6 },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 36, color: Theme.textPrimary, marginBottom: 28 },
+  cards: { gap: 14 },
+  categoryGroup: {},
+  card: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 20, flexDirection: 'row', alignItems: 'center', gap: 16, borderWidth: 1.5, borderColor: 'transparent' },
+  cardFirst: { borderTopLeftRadius: 16, borderTopRightRadius: 16, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
+  cardLast: { borderTopLeftRadius: 0, borderTopRightRadius: 0, borderBottomLeftRadius: 16, borderBottomRightRadius: 16 },
+  cardMiddle: { borderTopLeftRadius: 0, borderTopRightRadius: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
+  cardJoined: { marginTop: -1.5 },
+  iconBox: { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  cardVertical: { backgroundColor: Theme.cardWhite, borderRadius: 20, padding: 20, alignItems: 'flex-start' },
+  iconCircle: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  cardTitleLg: { fontSize: 19, fontWeight: '700', color: Theme.textPrimary, marginBottom: 4 },
+  cardDesc: { fontSize: 14, color: Theme.textSecondary, marginBottom: 14, lineHeight: 19 },
+  cardLinkRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  cardLinkText: { fontSize: 14, fontWeight: '700' },
+  sectionDivider: { height: 1, backgroundColor: Theme.divider, marginVertical: 6 },
+  coachPlanCard: { backgroundColor: '#123C35', borderRadius: 26, padding: 28, alignItems: 'flex-start' },
+  coachPlanHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16 },
+  coachPlanIconCircle: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#BEE6DA', alignItems: 'center', justifyContent: 'center' },
+  coachPlanEyebrow: { fontSize: 14, fontWeight: '700', color: '#BEE6DA', letterSpacing: 1.2 },
+  coachPlanTitle: { fontSize: 26, fontWeight: '700', color: '#FFFFFF', marginBottom: 12, lineHeight: 32 },
+  coachPlanDesc: { fontSize: 16, color: 'rgba(255,255,255,0.75)', lineHeight: 23, marginBottom: 22 },
+  coachPlanBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFFFFF', borderRadius: 28, paddingHorizontal: 24, paddingVertical: 14 },
+  coachPlanBtnText: { fontSize: 16, fontWeight: '700', color: '#123C35' },
   cardText: { flex: 1 },
-  cardTitle: { fontSize: 16, fontWeight: 'bold', color: Colors.textPrimary },
-  cardSubRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3, flexWrap: 'wrap' },
-  cardSub: { fontSize: 12, color: Colors.textSecondary },
-  customBadge: { backgroundColor: Colors.accentMuted, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 },
-  customBadgeText: { fontSize: 10, color: Colors.accent, fontWeight: '600' },
-  divider: { height: 1, backgroundColor: Colors.border },
+  cardTitle: { fontSize: 19, fontWeight: '600', color: Theme.textPrimary },
+  cardSubRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' },
+  cardSub: { fontSize: 15, color: Theme.textSecondary },
+  customBadge: { borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3 },
+  customBadgeText: { fontSize: 13, fontWeight: '600' },
+  sectionLabel: { fontFamily: Fonts.serifMedium, fontSize: 36, color: Theme.textPrimary, marginTop: 12, marginBottom: 4 },
 });

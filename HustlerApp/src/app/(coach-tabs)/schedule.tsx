@@ -1,9 +1,9 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert } from 'react-native';
+import { Text } from '@/components/Text';
 import { useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Colors } from '@/constants/theme';
+import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
 
 type Tournament = {
@@ -206,6 +206,12 @@ export default function CoachScheduleScreen() {
     setSelectedDate(dateStr);
   };
 
+  const goToToday = () => {
+    setViewYear(today.getFullYear());
+    setViewMonth(today.getMonth());
+    setSelectedDate(today.toISOString().split('T')[0]);
+  };
+
   const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (year: number, month: number) => {
     const d = new Date(year, month, 1).getDay();
@@ -294,9 +300,12 @@ export default function CoachScheduleScreen() {
   };
 
   return (
-    <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Schedule</Text>
+        <TouchableOpacity onPress={goToToday}>
+          <Text style={styles.todayBtn}>Today</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
@@ -326,32 +335,36 @@ export default function CoachScheduleScreen() {
               </View>
             )}
 
-            {/* Month nav */}
-            <View style={styles.monthNav}>
-              <TouchableOpacity onPress={prevMonth} style={styles.monthArrow}>
-                <MaterialCommunityIcons name="chevron-left" size={28} color={Colors.textPrimary} />
-              </TouchableOpacity>
-              <Text style={styles.monthTitle}>{MONTH_NAMES[viewMonth]} {viewYear}</Text>
-              <TouchableOpacity onPress={nextMonth} style={styles.monthArrow}>
-                <MaterialCommunityIcons name="chevron-right" size={28} color={Colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
+            <View style={styles.calendarCard}>
+              {/* Month nav */}
+              <View style={styles.monthNav}>
+                <TouchableOpacity onPress={prevMonth} style={styles.monthArrow}>
+                  <MaterialCommunityIcons name="chevron-left" size={28} color={Theme.textPrimary} />
+                </TouchableOpacity>
+                <Text style={styles.monthTitle}>{MONTH_NAMES[viewMonth]} {viewYear}</Text>
+                <TouchableOpacity onPress={nextMonth} style={styles.monthArrow}>
+                  <MaterialCommunityIcons name="chevron-right" size={28} color={Theme.textPrimary} />
+                </TouchableOpacity>
+              </View>
 
-            <View style={styles.dayHeaderRow}>
-              {DAY_HEADERS.map(d => (
-                <View key={d} style={styles.dayHeaderCell}><Text style={styles.dayHeaderText}>{d}</Text></View>
-              ))}
-            </View>
+              <View style={styles.dayHeaderRow}>
+                {DAY_HEADERS.map(d => (
+                  <View key={d} style={styles.dayHeaderCell}><Text style={styles.dayHeaderText}>{d}</Text></View>
+                ))}
+              </View>
 
-            <View style={styles.calendarGrid}>{renderCalendarGrid()}</View>
+              <View style={styles.calendarGrid}>{renderCalendarGrid()}</View>
 
-            <View style={styles.legendRow}>
-              {COACH_TYPES.map(t => (
-                <View key={t.key} style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: t.color }]} />
-                  <Text style={styles.legendLabel}>{t.label}</Text>
-                </View>
-              ))}
+              <View style={styles.calendarDivider} />
+
+              <View style={styles.legendRow}>
+                {COACH_TYPES.map(t => (
+                  <View key={t.key} style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: t.color }]} />
+                    <Text style={styles.legendLabel}>{t.label}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
 
             {/* Selected day panel */}
@@ -361,7 +374,7 @@ export default function CoachScheduleScreen() {
                   {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
                 </Text>
                 <TouchableOpacity style={styles.addBtn} onPress={openAddModal}>
-                  <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+                  <MaterialCommunityIcons name="plus" size={24} color={Theme.limeAccentDark} />
                 </TouchableOpacity>
               </View>
 
@@ -385,7 +398,7 @@ export default function CoachScheduleScreen() {
                       </View>
                       {item.time && (
                         <View style={styles.eventDetailRow}>
-                          <MaterialCommunityIcons name="clock-outline" size={12} color={Colors.textSecondary} />
+                          <MaterialCommunityIcons name="clock-outline" size={12} color={Theme.textSecondary} />
                           <Text style={styles.eventDetailText}>{item.time}</Text>
                         </View>
                       )}
@@ -414,7 +427,7 @@ export default function CoachScheduleScreen() {
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setShowModal(false)}>
-                <MaterialCommunityIcons name="close" size={24} color={Colors.textPrimary} />
+                <MaterialCommunityIcons name="close" size={24} color={Theme.textPrimary} />
               </TouchableOpacity>
             </View>
 
@@ -431,7 +444,7 @@ export default function CoachScheduleScreen() {
                       if (!t.multiPlayer) setFormPlayerIds(prev => prev.slice(0, 1));
                     }}
                   >
-                    <MaterialCommunityIcons name={t.icon as any} size={14} color={formType === t.key ? '#FFFFFF' : Colors.textSecondary} />
+                    <MaterialCommunityIcons name={t.icon as any} size={14} color={formType === t.key ? '#FFFFFF' : Theme.textSecondary} />
                     <Text style={[styles.typePillText, formType === t.key && styles.typePillTextActive]}>{t.label}</Text>
                   </TouchableOpacity>
                 ))}
@@ -467,7 +480,7 @@ export default function CoachScheduleScreen() {
                     : formType === 'group_lesson' ? 'e.g. Saturday group class'
                     : 'e.g. Club tournament weekend — reduce intensity'
                 }
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={Theme.textSecondary}
                 value={formTitle}
                 onChangeText={setFormTitle}
                 multiline={formType === 'other'}
@@ -480,7 +493,7 @@ export default function CoachScheduleScreen() {
                   <TextInput
                     style={styles.formInput}
                     placeholder="e.g. 4:00 PM"
-                    placeholderTextColor={Colors.textSecondary}
+                    placeholderTextColor={Theme.textSecondary}
                     value={formTime}
                     onChangeText={setFormTime}
                   />
@@ -494,76 +507,86 @@ export default function CoachScheduleScreen() {
           </View>
         </View>
       </Modal>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { paddingHorizontal: 24, paddingTop: 60, paddingBottom: 16 },
-  title: { fontSize: 28, fontWeight: 'bold', color: Colors.textPrimary },
+  container: { flex: 1, backgroundColor: Theme.background },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingTop: 60, paddingBottom: 16 },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 20, color: Theme.textPrimary },
+  todayBtn: { fontSize: 14, color: Theme.eyebrowGreen, fontWeight: '600' },
   scroll: { paddingHorizontal: 24, paddingBottom: 100 },
-  muted: { fontSize: 13, color: Colors.textSecondary, fontStyle: 'italic' },
+  muted: { fontSize: 15, color: Theme.textSecondary, fontStyle: 'italic' },
 
   section: { marginBottom: 20 },
-  sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1, marginBottom: 12 },
-  tourneyCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 12, marginBottom: 8 },
+  sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 12 },
+  tourneyCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Theme.cardWhite, borderRadius: 12, padding: 12, marginBottom: 8 },
   tourneyIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(231,76,60,0.12)', alignItems: 'center', justifyContent: 'center' },
-  tourneyName: { fontSize: 13, fontWeight: '600', color: Colors.textPrimary },
-  tourneyLocation: { fontSize: 11, color: Colors.textSecondary, marginTop: 1 },
-  tourneyDate: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
+  tourneyName: { fontSize: 14, fontWeight: '600', color: Theme.textPrimary },
+  tourneyLocation: { fontSize: 13, color: Theme.textSecondary, marginTop: 1 },
+  tourneyDate: { fontSize: 13, color: Theme.textSecondary, fontWeight: '600' },
 
+  calendarCard: {
+    backgroundColor: Theme.cardWhite,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Theme.divider,
+    padding: 20,
+    marginBottom: 16,
+  },
+  calendarDivider: { height: 1, backgroundColor: Theme.divider, marginVertical: 16 },
   monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   monthArrow: { padding: 4 },
-  monthTitle: { fontSize: 20, fontWeight: 'bold', color: Colors.textPrimary },
+  monthTitle: { fontSize: 24, fontWeight: 'bold', color: Theme.textPrimary },
   dayHeaderRow: { flexDirection: 'row', marginBottom: 8 },
   dayHeaderCell: { flex: 1, alignItems: 'center' },
-  dayHeaderText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
+  dayHeaderText: { fontSize: 14, fontWeight: '600', color: Theme.textSecondary },
   calendarGrid: { marginBottom: 16 },
   calendarRow: { flexDirection: 'row' },
-  dayCell: { flex: 1, alignItems: 'center', paddingVertical: 8, minHeight: 48 },
-  dayCellSelected: { backgroundColor: Colors.accent, borderRadius: 12 },
-  dayCellToday: { borderWidth: 1.5, borderColor: Colors.accent, borderRadius: 12 },
-  dayCellText: { fontSize: 14, color: Colors.textPrimary, fontWeight: '500' },
-  dayCellTextSelected: { color: '#FFFFFF', fontWeight: 'bold' },
-  dayCellTextToday: { color: Colors.accent, fontWeight: 'bold' },
-  dotRow: { flexDirection: 'row', gap: 3, marginTop: 4 },
-  eventDot: { width: 5, height: 5, borderRadius: 2.5 },
+  dayCell: { flex: 1, alignItems: 'center', paddingVertical: 10, minHeight: 58 },
+  dayCellSelected: { backgroundColor: Theme.limeAccent, borderRadius: 14 },
+  dayCellToday: { borderWidth: 1.5, borderColor: Theme.eyebrowGreen, borderRadius: 14 },
+  dayCellText: { fontSize: 18, color: Theme.textPrimary, fontWeight: '500' },
+  dayCellTextSelected: { color: Theme.limeAccentDark, fontWeight: 'bold' },
+  dayCellTextToday: { color: Theme.eyebrowGreen, fontWeight: 'bold' },
+  dotRow: { flexDirection: 'row', gap: 3, marginTop: 5 },
+  eventDot: { width: 6, height: 6, borderRadius: 3 },
 
-  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20, paddingHorizontal: 4 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendLabel: { fontSize: 11, color: Colors.textSecondary },
+  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, paddingHorizontal: 4 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendLabel: { fontSize: 15, color: Theme.textSecondary },
 
-  selectedDateCard: { backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 16, marginBottom: 20 },
-  selectedDateHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  selectedDateTitle: { fontSize: 15, fontWeight: 'bold', color: Colors.textPrimary },
-  addBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center' },
-  noEventsText: { fontSize: 13, color: Colors.textSecondary, fontStyle: 'italic', textAlign: 'center', paddingVertical: 12 },
-  eventCard: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 10, overflow: 'hidden', marginBottom: 8 },
+  selectedDateCard: { backgroundColor: Theme.cardWhite, borderRadius: 18, padding: 20, marginBottom: 20 },
+  selectedDateHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  selectedDateTitle: { fontSize: 18, fontWeight: 'bold', color: Theme.textPrimary },
+  addBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Theme.limeAccent, alignItems: 'center', justifyContent: 'center' },
+  noEventsText: { fontSize: 16, color: Theme.textSecondary, fontStyle: 'italic', textAlign: 'center', paddingVertical: 16 },
+  eventCard: { flexDirection: 'row', backgroundColor: Theme.background, borderRadius: 10, overflow: 'hidden', marginBottom: 8 },
   eventColorBar: { width: 4 },
   eventContent: { flex: 1, padding: 12, gap: 3 },
   eventTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   eventTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
-  eventTitle: { fontSize: 13, fontWeight: '600', color: Colors.textPrimary, flexShrink: 1 },
+  eventTitle: { fontSize: 14, fontWeight: '600', color: Theme.textPrimary, flexShrink: 1 },
   eventDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  eventDetailText: { fontSize: 11, color: Colors.textSecondary },
-  eventReadOnly: { fontSize: 10, color: Colors.textSecondary, fontStyle: 'italic', marginTop: 2 },
+  eventDetailText: { fontSize: 13, color: Theme.textSecondary },
+  eventReadOnly: { fontSize: 12, color: Theme.textSecondary, fontStyle: 'italic', marginTop: 2 },
 
   // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: Colors.backgroundBottom, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '85%' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: Theme.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '85%' },
   modalHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', color: Colors.textPrimary },
-  modalDate: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  formLabel: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8, fontWeight: '600', marginTop: 4 },
-  formInput: { backgroundColor: Colors.backgroundCard, borderRadius: 10, padding: 14, color: Colors.textPrimary, fontSize: 14, marginBottom: 8, borderWidth: 1, borderColor: Colors.border },
+  modalTitle: { fontFamily: Fonts.serifMedium, fontSize: 18, color: Theme.textPrimary },
+  modalDate: { fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
+  formLabel: { fontSize: 13, color: Theme.textSecondary, marginBottom: 8, fontWeight: '600', marginTop: 4 },
+  formInput: { backgroundColor: Theme.cardWhite, borderRadius: 10, padding: 14, color: Theme.textPrimary, fontSize: 15, marginBottom: 8, borderWidth: 1, borderColor: Theme.divider },
   formNotesInput: { minHeight: 80, textAlignVertical: 'top' },
   typePillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  typePill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.backgroundCard, borderWidth: 1, borderColor: Colors.border },
-  typePillActivePlayer: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  typePillText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
+  typePill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: Theme.cardWhite, borderWidth: 1, borderColor: Theme.divider },
+  typePillActivePlayer: { backgroundColor: Theme.eyebrowGreen, borderColor: Theme.eyebrowGreen },
+  typePillText: { fontSize: 13, color: Theme.textSecondary, fontWeight: '600' },
   typePillTextActive: { color: '#FFFFFF' },
-  saveBtn: { backgroundColor: Colors.accent, borderRadius: 30, paddingVertical: 14, alignItems: 'center', marginTop: 12, marginBottom: 24 },
-  saveBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
+  saveBtn: { backgroundColor: Theme.limeAccent, borderRadius: 30, paddingVertical: 14, alignItems: 'center', marginTop: 12, marginBottom: 24 },
+  saveBtnText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 15 },
 });

@@ -1,9 +1,9 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView } from 'react-native';
+import { Text } from '@/components/Text';
 import { router } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Colors } from '@/constants/theme';
+import { Theme, Fonts } from '@/constants/theme';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 const showAlert = (title: string, message: string) => {
@@ -63,12 +63,12 @@ export default function EditCoachProfileScreen() {
   };
 
   return (
-    <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+    <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
         <View style={styles.titleRow}>
           <TouchableOpacity onPress={goBack}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
+            <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>Edit Profile</Text>
         </View>
@@ -78,7 +78,7 @@ export default function EditCoachProfileScreen() {
           <TextInput
             style={styles.input}
             placeholder="Your full name"
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={Theme.textSecondary}
             value={fullName}
             onChangeText={setFullName}
             autoCapitalize="words"
@@ -88,7 +88,7 @@ export default function EditCoachProfileScreen() {
           <TextInput
             style={styles.input}
             placeholder="Which club do you coach at?"
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={Theme.textSecondary}
             value={club}
             onChangeText={setClub}
             autoCapitalize="words"
@@ -103,23 +103,23 @@ export default function EditCoachProfileScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: Theme.background },
   scroll: { flexGrow: 1, padding: 24, paddingTop: 60, paddingBottom: 60 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24 },
-  title: { fontSize: 24, fontWeight: 'bold', color: Colors.textPrimary },
-  card: { backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 24 },
-  label: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8, fontWeight: '600' },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 24, color: Theme.textPrimary },
+  card: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 24 },
+  label: { fontSize: 13, color: Theme.textSecondary, marginBottom: 8, fontWeight: '600' },
   input: {
-    backgroundColor: Colors.backgroundTop, borderRadius: 10, padding: 14,
-    color: Colors.textPrimary, fontSize: 14, marginBottom: 16,
-    borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Theme.background, borderRadius: 10, padding: 14,
+    color: Theme.textPrimary, fontSize: 15, marginBottom: 16,
+    borderWidth: 1, borderColor: Theme.divider,
   },
-  button: { backgroundColor: Colors.accent, borderRadius: 30, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
+  button: { backgroundColor: Theme.limeAccent, borderRadius: 30, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
+  buttonText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 15 },
 });

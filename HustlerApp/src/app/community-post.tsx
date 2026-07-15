@@ -1,10 +1,10 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView, Image, Platform, ActivityIndicator } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView, Image, Platform, ActivityIndicator } from 'react-native';
+import { Text } from '@/components/Text';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Colors } from '@/constants/theme';
+import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
 import { TOPICS, TOPIC_ICONS, containsBlockedWords } from '../lib/community';
 
@@ -149,10 +149,10 @@ export default function NewPostScreen() {
   };
 
   return (
-    <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.titleRow}>
         <TouchableOpacity onPress={goBack}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
+          <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>New Post</Text>
       </View>
@@ -169,7 +169,7 @@ export default function NewPostScreen() {
               <MaterialCommunityIcons
                 name={TOPIC_ICONS[t] as any}
                 size={14}
-                color={topic === t ? '#FFFFFF' : Colors.textSecondary}
+                color={topic === t ? '#FFFFFF' : Theme.textSecondary}
               />
               <Text style={[styles.topicOptionText, topic === t && styles.topicOptionTextActive]}>{t}</Text>
             </TouchableOpacity>
@@ -178,7 +178,7 @@ export default function NewPostScreen() {
 
         {topic === 'Recovery & Wellness' && (
           <View style={styles.disclaimer}>
-            <MaterialCommunityIcons name="information-outline" size={16} color={Colors.accent} />
+            <MaterialCommunityIcons name="information-outline" size={16} color={Theme.eyebrowGreen} />
             <Text style={styles.disclaimerText}>
               This space is for wellness routines, not medical advice. Please don't diagnose or treat injuries here.
             </Text>
@@ -187,7 +187,7 @@ export default function NewPostScreen() {
 
         {topic === 'Local Tournaments' && (
           <View style={styles.disclaimer}>
-            <MaterialCommunityIcons name="trophy" size={16} color={Colors.accent} />
+            <MaterialCommunityIcons name="trophy" size={16} color={Theme.eyebrowGreen} />
             <Text style={styles.disclaimerText}>
               Share tournaments in your area! Include the date, location, and skill level so others can find and join.
             </Text>
@@ -198,7 +198,7 @@ export default function NewPostScreen() {
         <TextInput
           style={styles.titleInput}
           placeholder={topic === 'Local Tournaments' ? "e.g. Saturday Doubles — Community Center" : "What's your post about?"}
-          placeholderTextColor={Colors.textSecondary}
+          placeholderTextColor={Theme.textSecondary}
           value={title}
           onChangeText={setTitle}
           maxLength={100}
@@ -210,7 +210,7 @@ export default function NewPostScreen() {
           placeholder={topic === 'Local Tournaments'
             ? "Date, time, location, skill level, entry fee, contact info..."
             : "Share your thoughts, tips, or questions..."}
-          placeholderTextColor={Colors.textSecondary}
+          placeholderTextColor={Theme.textSecondary}
           value={body}
           onChangeText={setBody}
           multiline
@@ -229,13 +229,13 @@ export default function NewPostScreen() {
           </View>
         ) : (
           <TouchableOpacity style={styles.addImageBtn} onPress={pickImage}>
-            <MaterialCommunityIcons name="camera-plus-outline" size={22} color={Colors.accent} />
+            <MaterialCommunityIcons name="camera-plus-outline" size={22} color="#534AB7" />
             <Text style={styles.addImageText}>Add Photo</Text>
           </TouchableOpacity>
         )}
 
         <View style={styles.anonNote}>
-          <MaterialCommunityIcons name="incognito" size={16} color={Colors.textSecondary} />
+          <MaterialCommunityIcons name="incognito" size={16} color={Theme.textSecondary} />
           <Text style={styles.anonNoteText}>Your post will appear anonymously with a random username.</Text>
         </View>
 
@@ -254,16 +254,16 @@ export default function NewPostScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, paddingTop: 60 },
+  container: { flex: 1, backgroundColor: Theme.background, padding: 24, paddingTop: 60 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
-  headerTitle: { fontSize: 24, fontWeight: 'bold', color: Colors.textPrimary },
+  headerTitle: { fontFamily: Fonts.serifMedium, fontSize: 22, color: Theme.textPrimary },
   content: { paddingBottom: 60 },
-  label: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8, fontWeight: '600' },
+  label: { fontSize: 13, color: Theme.textSecondary, marginBottom: 8, fontWeight: '600' },
   topicGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   topicOption: {
     flexDirection: 'row',
@@ -272,43 +272,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: Colors.backgroundCard,
+    backgroundColor: Theme.cardWhite,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
-  topicOptionActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  topicOptionText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
+  topicOptionActive: { backgroundColor: '#534AB7', borderColor: '#534AB7' },
+  topicOptionText: { fontSize: 13, color: Theme.textSecondary, fontWeight: '600' },
   topicOptionTextActive: { color: '#FFFFFF' },
   disclaimer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
-    backgroundColor: Colors.accentMuted,
+    backgroundColor: Theme.cardTinted,
     borderRadius: 10,
     padding: 12,
     marginBottom: 16,
   },
-  disclaimerText: { flex: 1, fontSize: 11, color: Colors.textSecondary, lineHeight: 16 },
+  disclaimerText: { flex: 1, fontSize: 13, color: Theme.textSecondary, lineHeight: 18 },
   titleInput: {
-    backgroundColor: Colors.backgroundCard,
+    backgroundColor: Theme.cardWhite,
     borderRadius: 10,
     padding: 14,
-    color: Colors.textPrimary,
-    fontSize: 14,
+    color: Theme.textPrimary,
+    fontSize: 15,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
   bodyInput: {
-    backgroundColor: Colors.backgroundCard,
+    backgroundColor: Theme.cardWhite,
     borderRadius: 10,
     padding: 14,
-    color: Colors.textPrimary,
-    fontSize: 14,
+    color: Theme.textPrimary,
+    fontSize: 15,
     minHeight: 160,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
   // Image styles
   addImageBtn: {
@@ -316,15 +316,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: Colors.backgroundCard,
+    backgroundColor: Theme.cardWhite,
     borderRadius: 12,
     paddingVertical: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
     borderStyle: 'dashed',
   },
-  addImageText: { fontSize: 13, color: Colors.accent, fontWeight: '600' },
+  addImageText: { fontSize: 13, color: '#534AB7', fontWeight: '600' },
   imagePreviewWrap: {
     marginBottom: 16,
     borderRadius: 12,
@@ -354,9 +354,9 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 20,
   },
-  anonNoteText: { fontSize: 11, color: Colors.textSecondary, flex: 1 },
+  anonNoteText: { fontSize: 13, color: Theme.textSecondary, flex: 1 },
   postBtn: {
-    backgroundColor: Colors.accent,
+    backgroundColor: '#534AB7',
     borderRadius: 30,
     paddingVertical: 14,
     alignItems: 'center',

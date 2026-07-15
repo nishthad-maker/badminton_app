@@ -1,10 +1,10 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Image, ScrollView } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, TextInput, Alert, Image, ScrollView } from 'react-native';
+import { Text } from '@/components/Text';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { supabase } from '../lib/supabase';
-import { Colors } from '@/constants/theme';
+import { Theme, Fonts } from '@/constants/theme';
 
 const showAlert = (title: string, message: string) => {
   if (typeof window !== 'undefined') {
@@ -131,17 +131,14 @@ export default function SignUpScreen() {
   };
 
   return (
-    <LinearGradient
-      colors={[Colors.backgroundTop, Colors.backgroundBottom]}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <Image
-          source={require('../../assets/images/logo.png')}
+          source={require('../../assets/images/logo-green.png')}
           style={styles.logo}
           resizeMode="contain"
         />
@@ -153,7 +150,7 @@ export default function SignUpScreen() {
           <TextInput
             style={styles.input}
             placeholder="Enter your name"
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={Theme.textSecondary}
             value={fullName}
             onChangeText={setFullName}
             autoCapitalize="words"
@@ -169,7 +166,7 @@ export default function SignUpScreen() {
               <MaterialCommunityIcons
                 name="badminton"
                 size={22}
-                color={role === 'player' ? '#FFFFFF' : Colors.textSecondary}
+                color={role === 'player' ? '#FFFFFF' : Theme.textSecondary}
               />
               <Text style={[styles.roleBtnText, role === 'player' && styles.roleBtnTextActive]}>Player</Text>
             </TouchableOpacity>
@@ -180,7 +177,7 @@ export default function SignUpScreen() {
               <MaterialCommunityIcons
                 name="whistle"
                 size={22}
-                color={role === 'coach' ? '#FFFFFF' : Colors.textSecondary}
+                color={role === 'coach' ? '#FFFFFF' : Theme.textSecondary}
               />
               <Text style={[styles.roleBtnText, role === 'coach' && styles.roleBtnTextActive]}>Coach</Text>
             </TouchableOpacity>
@@ -193,7 +190,7 @@ export default function SignUpScreen() {
           <TextInput
             style={styles.input}
             placeholder={role === 'coach' ? 'Which club do you coach at?' : 'Your club (if you have one)'}
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={Theme.textSecondary}
             value={club}
             onChangeText={setClub}
             autoCapitalize="words"
@@ -206,7 +203,7 @@ export default function SignUpScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. coach_priya"
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={Theme.textSecondary}
                 value={username}
                 onChangeText={(t) => setUsername(t.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
                 autoCapitalize="none"
@@ -222,7 +219,7 @@ export default function SignUpScreen() {
           <TextInput
             style={styles.input}
             placeholder="Enter your email"
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={Theme.textSecondary}
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -233,7 +230,7 @@ export default function SignUpScreen() {
           <TextInput
             style={styles.input}
             placeholder="Min 6 characters"
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={Theme.textSecondary}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -243,7 +240,7 @@ export default function SignUpScreen() {
           <TextInput
             style={styles.input}
             placeholder="Re-enter your password"
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={Theme.textSecondary}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             secureTextEntry
@@ -266,27 +263,27 @@ export default function SignUpScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: Theme.background },
   scroll: { flexGrow: 1, padding: 24, alignItems: 'center', justifyContent: 'center' },
   logo: { width: 160, height: 60, marginBottom: 32 },
-  card: { backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 24, width: '100%' },
-  title: { fontSize: 22, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 24 },
-  label: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8 },
-  optional: { fontSize: 12, color: Colors.textSecondary, fontStyle: 'italic' },
+  card: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 24, width: '100%' },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 22, color: Theme.textPrimary, marginBottom: 24 },
+  label: { fontSize: 13, color: Theme.textSecondary, marginBottom: 8 },
+  optional: { fontSize: 13, color: Theme.textSecondary, fontStyle: 'italic' },
   input: {
-    backgroundColor: Colors.backgroundTop,
+    backgroundColor: Theme.background,
     borderRadius: 10,
     padding: 14,
-    color: Colors.textPrimary,
-    fontSize: 14,
+    color: Theme.textPrimary,
+    fontSize: 15,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
   roleRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   roleBtn: {
@@ -297,16 +294,16 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: Colors.backgroundTop,
+    backgroundColor: Theme.background,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
-  roleBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  roleBtnText: { fontSize: 14, color: Colors.textSecondary, fontWeight: '600' },
+  roleBtnActive: { backgroundColor: Theme.eyebrowGreen, borderColor: Theme.eyebrowGreen },
+  roleBtnText: { fontSize: 14, color: Theme.textSecondary, fontWeight: '600' },
   roleBtnTextActive: { color: '#FFFFFF' },
-  usernameHint: { fontSize: 11, color: Colors.textSecondary, lineHeight: 16, marginTop: -8, marginBottom: 16 },
+  usernameHint: { fontSize: 13, color: Theme.textSecondary, lineHeight: 18, marginTop: -8, marginBottom: 16 },
   button: {
-    backgroundColor: Colors.accent,
+    backgroundColor: Theme.limeAccent,
     borderRadius: 30,
     paddingVertical: 14,
     alignItems: 'center',
@@ -314,7 +311,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
-  linkText: { color: Colors.textSecondary, fontSize: 13, textAlign: 'center' },
-  link: { color: Colors.accent, fontWeight: 'bold' },
+  buttonText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 15 },
+  linkText: { color: Theme.textSecondary, fontSize: 13, textAlign: 'center' },
+  link: { color: Theme.eyebrowGreen, fontWeight: 'bold' },
 });

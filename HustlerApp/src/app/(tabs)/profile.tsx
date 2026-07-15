@@ -1,9 +1,9 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { Text } from '@/components/Text';
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Colors } from '@/constants/theme';
+import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 const showConfirm = (title: string, message: string, onConfirm: () => void) => {
@@ -18,10 +18,17 @@ const showConfirm = (title: string, message: string, onConfirm: () => void) => {
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
-  strength: 'Strength 💪',
-  footwork: 'Footwork 🏸',
-  endurance: 'Endurance ⚡',
-  recovery: 'Recovery 💜',
+  strength: 'Strength',
+  footwork: 'Footwork',
+  endurance: 'Endurance',
+  recovery: 'Recovery',
+};
+
+const CATEGORY_ICONS: Record<string, string> = {
+  strength: 'dumbbell',
+  footwork: 'badminton',
+  endurance: 'lightning-bolt',
+  recovery: 'heart-pulse',
 };
 
 export default function ProfileScreen() {
@@ -30,7 +37,7 @@ export default function ProfileScreen() {
   const [totalSessions, setTotalSessions] = useState(0);
   const [streak, setStreak] = useState(0);
   const [memberSince, setMemberSince] = useState('');
-  const [topCategory, setTopCategory] = useState('');
+  const [topCategoryKey, setTopCategoryKey] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
 
   useFocusEffect(useCallback(() => { loadProfile(); }, []));
@@ -53,12 +60,20 @@ export default function ProfileScreen() {
 
     setTotalSessions(countUniqueSessions(data));
 
+    // Training days grow the streak, planned rest days hold it steady, a missed
+    // training day breaks it. Mirrors the Home tab's streak logic — keep in sync.
     const dates = [...new Set(data.map((s: any) => new Date(s.created_at).toDateString()))];
+    const { data: restEvents } = await supabase
+      .from('calendar_events').select('event_date').eq('user_id', session.user.id).eq('event_type', 'rest');
+    const restDates = new Set((restEvents ?? []).map((e: any) => new Date(e.event_date + 'T00:00:00').toDateString()));
     let currentStreak = 0;
     for (let i = 0; i < 365; i++) {
       const d = new Date(); d.setDate(d.getDate() - i);
-      if (dates.includes(d.toDateString())) currentStreak++;
-      else if (i > 0) break;
+      const dStr = d.toDateString();
+      if (dates.includes(dStr)) currentStreak++;
+      else if (restDates.has(dStr)) continue;
+      else if (i === 0) continue;
+      else break;
     }
     setStreak(currentStreak);
 
@@ -68,7 +83,7 @@ export default function ProfileScreen() {
       byCat[s.category].add(new Date(s.created_at).toDateString());
     });
     const top = Object.entries(byCat).sort((a, b) => b[1].size - a[1].size)[0];
-    if (top) setTopCategory(CATEGORY_LABELS[top[0]] ?? top[0]);
+    if (top) setTopCategoryKey(top[0]);
   };
 
   const handleSignOut = async () => {
@@ -130,9 +145,10 @@ export default function ProfileScreen() {
 
   const displayName = profile?.full_name || user?.user_metadata?.full_name || 'Athlete';
   const initials = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
+  const topCatTheme = topCategoryKey ? CategoryTheme[topCategoryKey as keyof typeof CategoryTheme] : null;
 
   return (
-    <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+    <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
         {/* Avatar + name */}
@@ -144,7 +160,7 @@ export default function ProfileScreen() {
           <Text style={styles.email}>{user?.email}</Text>
           {memberSince ? (
             <View style={styles.memberBadge}>
-              <MaterialCommunityIcons name="calendar-check" size={12} color={Colors.accent} />
+              <MaterialCommunityIcons name="calendar-check" size={15} color={Theme.eyebrowGreen} />
               <Text style={styles.memberText}>Member since {memberSince}</Text>
             </View>
           ) : null}
@@ -159,7 +175,7 @@ export default function ProfileScreen() {
           <View style={styles.statDivider} />
           <View style={styles.statCard}>
             <Text style={styles.statNum}>{streak}</Text>
-            <Text style={styles.statLabel}>Day Streak 🔥</Text>
+            <Text style={styles.statLabel}>Day Streak</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statCard}>
@@ -178,8 +194,6 @@ export default function ProfileScreen() {
                 { label: 'Gender', value: profile.gender },
                 { label: 'Skill Level', value: profile.skill_level },
                 { label: 'Event', value: profile.event },
-                { label: 'Goal', value: profile.training_goal },
-                { label: 'Weekly Goal', value: profile.weekly_goal ? `${profile.weekly_goal} days` : null },
               ].filter(i => i.value).map(item => (
                 <View key={item.label} style={styles.infoItem}>
                   <Text style={styles.infoLabel}>{item.label}</Text>
@@ -191,21 +205,38 @@ export default function ProfileScreen() {
         ) : null}
 
         {/* Most trained */}
-        {topCategory ? (
+        {topCategoryKey ? (
           <View style={styles.card}>
             <Text style={styles.cardLabel}>MOST TRAINED</Text>
-            <Text style={styles.topCat}>{topCategory}</Text>
-            <Text style={styles.topCatDesc}>Keep it up — consistency is key!</Text>
+            <View style={styles.topCatRow}>
+              <View style={[styles.topCatIcon, { backgroundColor: topCatTheme?.bg }]}>
+                <MaterialCommunityIcons name={CATEGORY_ICONS[topCategoryKey] as any} size={26} color={topCatTheme?.fg} />
+              </View>
+              <View>
+                <Text style={styles.topCat}>{CATEGORY_LABELS[topCategoryKey] ?? topCategoryKey}</Text>
+                <Text style={styles.topCatDesc}>Keep it up — consistency is key!</Text>
+              </View>
+            </View>
           </View>
         ) : null}
+
+        {/* Journal */}
+        <Text style={styles.sectionTitle}>Journal</Text>
+        <View style={styles.optionsCard}>
+          <TouchableOpacity style={styles.option} onPress={() => goTo('/journal-history')}>
+            <MaterialCommunityIcons name="notebook-edit-outline" size={24} color={Theme.eyebrowGreen} />
+            <Text style={styles.optionText}>Journal History</Text>
+            <MaterialCommunityIcons name="chevron-right" size={24} color={Theme.textMuted} />
+          </TouchableOpacity>
+        </View>
 
         {/* Coaching */}
         <Text style={styles.sectionTitle}>Coaching</Text>
         <View style={styles.optionsCard}>
           <TouchableOpacity style={styles.option} onPress={() => goTo('/my-coaches')}>
-            <MaterialCommunityIcons name="whistle-outline" size={20} color={Colors.accent} />
+            <MaterialCommunityIcons name="whistle-outline" size={24} color={Theme.eyebrowGreen} />
             <Text style={styles.optionText}>My Coaches</Text>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
+            <MaterialCommunityIcons name="chevron-right" size={24} color={Theme.textMuted} />
           </TouchableOpacity>
         </View>
 
@@ -213,15 +244,15 @@ export default function ProfileScreen() {
         <Text style={styles.sectionTitle}>Account</Text>
         <View style={styles.optionsCard}>
           <TouchableOpacity style={styles.option} onPress={() => goTo('/edit-profile')}>
-            <MaterialCommunityIcons name="account-edit-outline" size={20} color={Colors.accent} />
+            <MaterialCommunityIcons name="account-edit-outline" size={24} color={Theme.eyebrowGreen} />
             <Text style={styles.optionText}>Edit Profile</Text>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
+            <MaterialCommunityIcons name="chevron-right" size={24} color={Theme.textMuted} />
           </TouchableOpacity>
           <View style={styles.divider} />
           <TouchableOpacity style={styles.option} onPress={handleSignOut}>
-            <MaterialCommunityIcons name="logout" size={20} color={Colors.textSecondary} />
+            <MaterialCommunityIcons name="logout" size={24} color={Theme.textSecondary} />
             <Text style={styles.optionText}>Sign Out</Text>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
+            <MaterialCommunityIcons name="chevron-right" size={24} color={Theme.textMuted} />
           </TouchableOpacity>
         </View>
 
@@ -233,62 +264,64 @@ export default function ProfileScreen() {
             onPress={handleDeleteAccount}
             disabled={deletingAccount}
           >
-            <MaterialCommunityIcons name="delete-forever-outline" size={20} color="#FF4444" />
+            <MaterialCommunityIcons name="delete-forever-outline" size={24} color="#E74C3C" />
             <View style={{ flex: 1 }}>
               <Text style={[styles.optionText, styles.dangerText]}>
                 {deletingAccount ? 'Deleting...' : 'Delete Account'}
               </Text>
               <Text style={styles.dangerSubText}>Permanently delete your account and all data</Text>
             </View>
-            <MaterialCommunityIcons name="chevron-right" size={20} color="#FF4444" />
+            <MaterialCommunityIcons name="chevron-right" size={24} color="#E74C3C" />
           </TouchableOpacity>
         </View>
 
         <Text style={styles.appVersion}>Hustler · Built for badminton athletes</Text>
 
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scroll: { padding: 24, paddingTop: 60, paddingBottom: 120 },
+  container: { flex: 1, backgroundColor: Theme.background },
+  scroll: { padding: 24, paddingTop: 60, paddingBottom: 130 },
 
   // Avatar
-  avatarSection: { alignItems: 'center', marginBottom: 28 },
-  avatar: { width: 88, height: 88, borderRadius: 44, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
-  avatarInitials: { fontSize: 32, fontWeight: 'bold', color: '#fff' },
-  name: { fontSize: 22, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 4 },
-  email: { fontSize: 13, color: Colors.textSecondary, marginBottom: 10 },
-  memberBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.accentMuted, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
-  memberText: { fontSize: 12, color: Colors.accent, fontWeight: '600' },
+  avatarSection: { alignItems: 'center', marginBottom: 32 },
+  avatar: { width: 108, height: 108, borderRadius: 54, backgroundColor: '#854F0B', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  avatarInitials: { fontSize: 40, fontWeight: 'bold', color: '#fff' },
+  name: { fontFamily: Fonts.serifMedium, fontSize: 30, color: Theme.textPrimary, marginBottom: 6 },
+  email: { fontSize: 16, color: Theme.textSecondary, marginBottom: 12 },
+  memberBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Theme.cardTinted, borderRadius: 22, paddingHorizontal: 15, paddingVertical: 7 },
+  memberText: { fontSize: 15, color: Theme.eyebrowGreen, fontWeight: '600' },
 
   // Stats
-  statsRow: { flexDirection: 'row', backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 16, marginBottom: 20, alignItems: 'center' },
-  statCard: { flex: 1, alignItems: 'center', gap: 4 },
-  statNum: { fontSize: 24, fontWeight: 'bold', color: Colors.textPrimary },
-  statLabel: { fontSize: 11, color: Colors.textSecondary, textAlign: 'center' },
-  statDivider: { width: 1, height: 40, backgroundColor: Colors.border },
+  statsRow: { flexDirection: 'row', backgroundColor: Theme.cardWhite, borderRadius: 18, padding: 20, marginBottom: 24, alignItems: 'center' },
+  statCard: { flex: 1, alignItems: 'center', gap: 6 },
+  statNum: { fontSize: 30, fontWeight: 'bold', color: Theme.textPrimary },
+  statLabel: { fontSize: 14, color: Theme.textSecondary, textAlign: 'center' },
+  statDivider: { width: 1, height: 48, backgroundColor: Theme.divider },
 
   // Cards
-  card: { backgroundColor: Colors.backgroundCard, borderRadius: 14, padding: 16, marginBottom: 20 },
-  cardLabel: { fontSize: 11, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1, marginBottom: 12 },
-  infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
+  card: { backgroundColor: Theme.cardWhite, borderRadius: 18, padding: 20, marginBottom: 24 },
+  cardLabel: { fontSize: 13, fontWeight: 'bold', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 15 },
+  infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 18 },
   infoItem: { width: '45%' },
-  infoLabel: { fontSize: 11, color: Colors.textSecondary, marginBottom: 2 },
-  infoValue: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
-  topCat: { fontSize: 20, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 4 },
-  topCatDesc: { fontSize: 13, color: Colors.textSecondary },
+  infoLabel: { fontSize: 15, color: Theme.textSecondary, marginBottom: 4 },
+  infoValue: { fontSize: 17, fontWeight: '600', color: Theme.textPrimary },
+  topCatRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  topCatIcon: { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  topCat: { fontSize: 21, fontWeight: 'bold', color: Theme.textPrimary, marginBottom: 3 },
+  topCatDesc: { fontSize: 15, color: Theme.textSecondary },
 
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 10 },
-  optionsCard: { backgroundColor: Colors.backgroundCard, borderRadius: 14, overflow: 'hidden', marginBottom: 20 },
-  dangerCard: { borderWidth: 1, borderColor: 'rgba(255,68,68,0.3)' },
-  option: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
-  optionText: { flex: 1, fontSize: 15, color: Colors.textPrimary, fontWeight: '500' },
-  dangerText: { color: '#FF4444', fontWeight: '600' },
-  dangerSubText: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
-  divider: { height: 1, backgroundColor: Colors.border, marginHorizontal: 16 },
+  sectionTitle: { fontSize: 19, fontWeight: 'bold', color: Theme.textPrimary, marginBottom: 12 },
+  optionsCard: { backgroundColor: Theme.cardWhite, borderRadius: 18, overflow: 'hidden', marginBottom: 24 },
+  dangerCard: { borderWidth: 1, borderColor: 'rgba(231,76,60,0.25)' },
+  option: { flexDirection: 'row', alignItems: 'center', padding: 19, gap: 14 },
+  optionText: { flex: 1, fontSize: 17, color: Theme.textPrimary, fontWeight: '500' },
+  dangerText: { color: '#E74C3C', fontWeight: '600' },
+  dangerSubText: { fontSize: 14, color: Theme.textSecondary, marginTop: 3 },
+  divider: { height: 1, backgroundColor: Theme.divider, marginHorizontal: 19 },
 
-  appVersion: { fontSize: 11, color: Colors.textSecondary, textAlign: 'center', marginTop: 8 },
+  appVersion: { fontSize: 14, color: Theme.textSecondary, textAlign: 'center', marginTop: 10 },
 });

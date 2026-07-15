@@ -1,11 +1,11 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView, Image } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView, Image } from 'react-native';
+import { Text } from '@/components/Text';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Colors } from '@/constants/theme';
+import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
-import { containsBlockedWords, formatTimeAgo, getOrCreateUsername, TOPIC_ICONS } from '../lib/community';
+import { containsBlockedWords, formatTimeAgo, getOrCreateUsername, TOPIC_ICONS, avatarColorFor } from '../lib/community';
 
 const showAlert = (title: string, message: string) => {
   if (typeof window !== 'undefined') {
@@ -144,7 +144,7 @@ export default function ThreadScreen() {
     }
 
     setPosting(true);
-    await getOrCreateUsername(user.id);
+    const myUsername = await getOrCreateUsername(user.id);
 
     const { data: inserted } = await supabase.from('post_replies').insert({
       post_id: postId,
@@ -156,7 +156,7 @@ export default function ThreadScreen() {
 
     if (inserted && inserted[0]) {
       setReplies([...replies, inserted[0]]);
-      setUsernames({ ...usernames, [user.id]: usernames[user.id] });
+      setUsernames({ ...usernames, [user.id]: myUsername });
       setPost({ ...post, reply_count: (post.reply_count ?? 0) + 1 });
     }
     setReplyText('');
@@ -241,88 +241,88 @@ export default function ThreadScreen() {
 
   if (loading) {
     return (
-      <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+      <View style={styles.container}>
         <Text style={styles.emptyText}>Loading...</Text>
-      </LinearGradient>
+      </View>
     );
   }
 
   if (!post) {
     return (
-      <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+      <View style={styles.container}>
         <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
+          <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.emptyText}>Post not found.</Text>
-      </LinearGradient>
+      </View>
     );
   }
 
   const postReported = reportedPostIds.has(postId as string);
 
   return (
-    <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+    <View style={styles.container}>
       <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-        <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
+        <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
       </TouchableOpacity>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.topicTag}>
-          <MaterialCommunityIcons name={TOPIC_ICONS[post.topic] as any} size={12} color={Colors.accent} />
-          <Text style={styles.topicTagText}>{post.topic}</Text>
-        </View>
-
-        <View style={styles.postHeader}>
-          <View style={styles.avatarCircle}>
-            <MaterialCommunityIcons name="account" size={18} color={Colors.accent} />
+        <View style={styles.postCard}>
+          <View style={styles.topicTag}>
+            <MaterialCommunityIcons name={TOPIC_ICONS[post.topic] as any} size={16} color="#534AB7" />
+            <Text style={styles.topicTagText}>{post.topic}</Text>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.postAuthor}>{usernames[post.user_id] ?? 'Player'}</Text>
-            <Text style={styles.postTime}>{formatTimeAgo(post.created_at)}</Text>
+
+          <View style={styles.postHeader}>
+            <View style={[styles.avatarCircle, { backgroundColor: avatarColorFor(post.user_id).bg }]}>
+              <MaterialCommunityIcons name="account" size={22} color={avatarColorFor(post.user_id).fg} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.postAuthor}>{usernames[post.user_id] ?? 'Player'}</Text>
+              <Text style={styles.postTime}>{formatTimeAgo(post.created_at)}</Text>
+            </View>
+            {user?.id === post.user_id ? (
+              <TouchableOpacity onPress={deletePost}>
+                <MaterialCommunityIcons name="trash-can-outline" size={21} color="#E74C3C" />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity onPress={reportPost} disabled={postReported}>
+                <MaterialCommunityIcons
+                  name={postReported ? 'flag' : 'flag-outline'}
+                  size={21}
+                  color={postReported ? Theme.textMuted : Theme.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
           </View>
-          {user?.id === post.user_id ? (
-            <TouchableOpacity onPress={deletePost}>
-              <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity onPress={reportPost} disabled={postReported}>
-              <MaterialCommunityIcons
-                name={postReported ? 'flag' : 'flag-outline'}
-                size={18}
-                color={postReported ? '#888888' : Colors.textSecondary}
-              />
-            </TouchableOpacity>
-          )}
-        </View>
 
-        <Text style={styles.postTitle}>{post.title}</Text>
-        <Text style={styles.postBody}>{post.body}</Text>
+          <Text style={styles.postTitle}>{post.title}</Text>
+          <Text style={styles.postBody}>{post.body}</Text>
 
-        {/* Post image */}
-        {post.image_url && (
-          <Image
-            source={{ uri: post.image_url }}
-            style={styles.postImage}
-            resizeMode="cover"
-          />
-        )}
-
-        <View style={styles.postActions}>
-          <TouchableOpacity style={styles.actionBtn} onPress={toggleLike}>
-            <MaterialCommunityIcons
-              name={liked ? 'heart' : 'heart-outline'}
-              size={18}
-              color={liked ? '#FF6B6B' : Colors.textSecondary}
+          {/* Post image */}
+          {post.image_url && (
+            <Image
+              source={{ uri: post.image_url }}
+              style={styles.postImage}
+              resizeMode="cover"
             />
-            <Text style={styles.actionText}>{post.likes_count ?? 0}</Text>
-          </TouchableOpacity>
-          <View style={styles.actionBtn}>
-            <MaterialCommunityIcons name="comment-outline" size={18} color={Colors.textSecondary} />
-            <Text style={styles.actionText}>{replies.length}</Text>
+          )}
+
+          <View style={styles.postActions}>
+            <TouchableOpacity style={styles.actionBtn} onPress={toggleLike}>
+              <MaterialCommunityIcons
+                name={liked ? 'heart' : 'heart-outline'}
+                size={18}
+                color={liked ? '#E74C3C' : Theme.textSecondary}
+              />
+              <Text style={styles.actionText}>{post.likes_count ?? 0}</Text>
+            </TouchableOpacity>
+            <View style={styles.actionBtn}>
+              <MaterialCommunityIcons name="comment-outline" size={18} color={Theme.textSecondary} />
+              <Text style={styles.actionText}>{replies.length}</Text>
+            </View>
           </View>
         </View>
-
-        <View style={styles.divider} />
 
         <Text style={styles.repliesLabel}>REPLIES ({replies.length})</Text>
 
@@ -334,21 +334,21 @@ export default function ThreadScreen() {
             return (
               <View key={reply.id} style={styles.replyCard}>
                 <View style={styles.replyHeader}>
-                  <View style={styles.avatarCircleSmall}>
-                    <MaterialCommunityIcons name="account" size={14} color={Colors.accent} />
+                  <View style={[styles.avatarCircleSmall, { backgroundColor: avatarColorFor(reply.user_id).bg }]}>
+                    <MaterialCommunityIcons name="account" size={18} color={avatarColorFor(reply.user_id).fg} />
                   </View>
                   <Text style={styles.replyAuthor}>{usernames[reply.user_id] ?? 'Player'}</Text>
                   <Text style={styles.replyTime}>{formatTimeAgo(reply.created_at)}</Text>
                   {user?.id === reply.user_id ? (
                     <TouchableOpacity onPress={() => deleteReply(reply.id)}>
-                      <MaterialCommunityIcons name="trash-can-outline" size={16} color="#FF6B6B" />
+                      <MaterialCommunityIcons name="trash-can-outline" size={19} color="#E74C3C" />
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity onPress={() => reportReply(reply)} disabled={replyReported}>
                       <MaterialCommunityIcons
                         name={replyReported ? 'flag' : 'flag-outline'}
-                        size={16}
-                        color={replyReported ? '#888888' : Colors.textSecondary}
+                        size={19}
+                        color={replyReported ? Theme.textMuted : Theme.textSecondary}
                       />
                     </TouchableOpacity>
                   )}
@@ -365,7 +365,7 @@ export default function ThreadScreen() {
           <TextInput
             style={styles.replyInput}
             placeholder="Write a reply..."
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={Theme.textSecondary}
             value={replyText}
             onChangeText={setReplyText}
             multiline
@@ -379,64 +379,69 @@ export default function ThreadScreen() {
           </TouchableOpacity>
         </View>
       )}
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, paddingTop: 60 },
-  backBtn: { marginBottom: 16, alignSelf: 'flex-start' },
-  content: { paddingBottom: 100 },
+  container: { flex: 1, backgroundColor: Theme.background, padding: 24, paddingTop: 60 },
+  backBtn: { marginBottom: 20, alignSelf: 'flex-start' },
+  content: { paddingBottom: 110 },
+  postCard: {
+    backgroundColor: Theme.cardWhite,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 22,
+  },
   topicTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
     alignSelf: 'flex-start',
-    backgroundColor: Colors.accentMuted,
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginBottom: 12,
+    backgroundColor: '#E3D9F5',
+    borderRadius: 22,
+    paddingHorizontal: 13,
+    paddingVertical: 6,
+    marginBottom: 16,
   },
-  topicTagText: { fontSize: 11, color: Colors.accent, fontWeight: '600' },
-  postHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
+  topicTagText: { fontSize: 15, color: '#534AB7', fontWeight: '600' },
+  postHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 },
   avatarCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.accentMuted,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: Theme.cardTinted,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarCircleSmall: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: Colors.accentMuted,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Theme.cardTinted,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  postAuthor: { fontSize: 13, fontWeight: '600', color: Colors.accent },
-  postTime: { fontSize: 11, color: Colors.textSecondary, marginTop: 1 },
-  postTitle: { fontSize: 20, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 10 },
-  postBody: { fontSize: 14, color: Colors.textSecondary, lineHeight: 22, marginBottom: 16 },
+  postAuthor: { fontSize: 16, fontWeight: '600', color: Theme.eyebrowGreen },
+  postTime: { fontSize: 15, color: Theme.textSecondary, marginTop: 2 },
+  postTitle: { fontFamily: Fonts.sansBold, fontSize: 19, color: Theme.textPrimary, marginBottom: 10, lineHeight: 25 },
+  postBody: { fontSize: 15, color: Theme.textSecondary, lineHeight: 21, marginBottom: 16 },
   postImage: {
     width: '100%',
-    height: 220,
-    borderRadius: 12,
-    marginBottom: 16,
+    height: 240,
+    borderRadius: 14,
+    marginBottom: 18,
   },
-  postActions: { flexDirection: 'row', gap: 20, marginBottom: 16 },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  actionText: { fontSize: 13, color: Colors.textSecondary },
-  divider: { height: 1, backgroundColor: Colors.border, marginBottom: 16 },
-  repliesLabel: { fontSize: 11, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1, marginBottom: 12 },
-  emptyReplies: { fontSize: 13, color: Colors.textSecondary, fontStyle: 'italic' },
-  replyCard: { backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 14, marginBottom: 10 },
-  replyHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  replyAuthor: { fontSize: 12, fontWeight: '600', color: Colors.accent, flex: 1 },
-  replyTime: { fontSize: 10, color: Colors.textSecondary },
-  replyBody: { fontSize: 13, color: Colors.textPrimary, lineHeight: 19 },
+  postActions: { flexDirection: 'row', gap: 24 },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  actionText: { fontSize: 14, color: Theme.textSecondary },
+  repliesLabel: { fontSize: 13, fontWeight: 'bold', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 14 },
+  emptyReplies: { fontSize: 17, color: Theme.textSecondary, fontStyle: 'italic' },
+  replyCard: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 18, marginBottom: 12 },
+  replyHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  replyAuthor: { fontSize: 15, fontWeight: '600', color: Theme.eyebrowGreen, flex: 1 },
+  replyTime: { fontSize: 14, color: Theme.textSecondary },
+  replyBody: { fontSize: 16, color: Theme.textPrimary, lineHeight: 22 },
   replyInputRow: {
     position: 'absolute',
     bottom: 0,
@@ -444,31 +449,31 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 10,
-    padding: 16,
-    paddingBottom: 24,
-    backgroundColor: Colors.backgroundTop,
+    gap: 12,
+    padding: 18,
+    paddingBottom: 26,
+    backgroundColor: Theme.background,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: Theme.divider,
   },
   replyInput: {
     flex: 1,
-    backgroundColor: Colors.backgroundCard,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    color: Colors.textPrimary,
-    fontSize: 13,
-    maxHeight: 80,
+    backgroundColor: Theme.cardWhite,
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    color: Theme.textPrimary,
+    fontSize: 16,
+    maxHeight: 90,
   },
   sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.accent,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#534AB7',
     alignItems: 'center',
     justifyContent: 'center',
   },
   sendBtnDisabled: { opacity: 0.6 },
-  emptyText: { fontSize: 14, color: Colors.textSecondary, fontStyle: 'italic', textAlign: 'center', marginTop: 40 },
+  emptyText: { fontSize: 15, color: Theme.textSecondary, fontStyle: 'italic', textAlign: 'center', marginTop: 40 },
 });

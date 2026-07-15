@@ -1,9 +1,9 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Image } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, TextInput, Alert, Image } from 'react-native';
+import { Text } from '@/components/Text';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Colors } from '@/constants/theme';
+import { Theme, Fonts } from '@/constants/theme';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -49,12 +49,9 @@ export default function LoginScreen() {
   };
 
   return (
-    <LinearGradient
-      colors={[Colors.backgroundTop, Colors.backgroundBottom]}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <Image
-        source={require('../../assets/images/logo.png')}
+        source={require('../../assets/images/logo-green.png')}
         style={styles.logo}
         resizeMode="contain"
       />
@@ -66,7 +63,7 @@ export default function LoginScreen() {
         <TextInput
           style={styles.input}
           placeholder="Enter your email"
-          placeholderTextColor={Colors.textSecondary}
+          placeholderTextColor={Theme.textSecondary}
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
@@ -77,7 +74,7 @@ export default function LoginScreen() {
         <TextInput
           style={styles.input}
           placeholder="Enter your password"
-          placeholderTextColor={Colors.textSecondary}
+          placeholderTextColor={Theme.textSecondary}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
@@ -99,47 +96,48 @@ export default function LoginScreen() {
           <Text style={styles.linkText}>Don't have an account? <Text style={styles.link}>Sign Up</Text></Text>
         </TouchableOpacity>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Theme.background,
     padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
   logo: { width: 160, height: 60, marginBottom: 32 },
-  card: { backgroundColor: Colors.backgroundCard, borderRadius: 16, padding: 24, width: '100%' },
-  title: { fontSize: 22, fontWeight: 'bold', color: Colors.textPrimary, marginBottom: 24 },
-  label: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8 },
+  card: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 24, width: '100%' },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 22, color: Theme.textPrimary, marginBottom: 24 },
+  label: { fontSize: 13, color: Theme.textSecondary, marginBottom: 8 },
   input: {
-    backgroundColor: Colors.backgroundTop,
+    backgroundColor: Theme.background,
     borderRadius: 10,
     padding: 14,
-    color: Colors.textPrimary,
-    fontSize: 14,
+    color: Theme.textPrimary,
+    fontSize: 15,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Theme.divider,
   },
   forgotText: {
-    color: Colors.textSecondary,
+    color: Theme.textSecondary,
     fontSize: 13,
     textAlign: 'left',
     textDecorationLine: 'underline',
     marginBottom: 16,
   },
   button: {
-    backgroundColor: Colors.accent,
+    backgroundColor: Theme.limeAccent,
     borderRadius: 30,
     paddingVertical: 14,
     alignItems: 'center',
     marginBottom: 16,
   },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
-  linkText: { color: Colors.textSecondary, fontSize: 13, textAlign: 'center' },
-  link: { color: Colors.accent, fontWeight: 'bold' },
+  buttonText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 15 },
+  linkText: { color: Theme.textSecondary, fontSize: 13, textAlign: 'center' },
+  link: { color: Theme.eyebrowGreen, fontWeight: 'bold' },
 });

@@ -1,6 +1,7 @@
-import { View, Text, TouchableOpacity, Image, Linking, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, Image, Linking, StyleSheet } from 'react-native';
+import { Text } from '@/components/Text';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Colors } from '@/constants/theme';
+import { Theme } from '@/constants/theme';
 
 export function MessageBubble({
   isMine,
@@ -9,6 +10,8 @@ export function MessageBubble({
   mediaUrl,
   mediaType,
   timeLabel,
+  onDelete,
+  deletable = true,
 }: {
   isMine: boolean;
   senderLabel?: string;
@@ -16,6 +19,8 @@ export function MessageBubble({
   mediaUrl?: string | null;
   mediaType?: 'photo' | 'video' | null;
   timeLabel: string;
+  onDelete?: () => void;
+  deletable?: boolean;
 }) {
   return (
     <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
@@ -23,7 +28,7 @@ export function MessageBubble({
       {mediaUrl ? (
         mediaType === 'video' ? (
           <TouchableOpacity style={styles.video} onPress={() => Linking.openURL(mediaUrl)}>
-            <MaterialCommunityIcons name="play-circle-outline" size={26} color={isMine ? '#fff' : Colors.accent} />
+            <MaterialCommunityIcons name="play-circle-outline" size={26} color={isMine ? '#fff' : Theme.todayBlue} />
             <Text style={[styles.videoText, isMine ? styles.textMine : styles.textOther]}>Tap to watch</Text>
           </TouchableOpacity>
         ) : (
@@ -34,23 +39,31 @@ export function MessageBubble({
       ) : (
         <Text style={[styles.text, isMine ? styles.textMine : styles.textOther]}>{message}</Text>
       )}
-      <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>{timeLabel}</Text>
+      <View style={styles.footer}>
+        {isMine && onDelete && deletable ? (
+          <TouchableOpacity onPress={onDelete} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+            <MaterialCommunityIcons name="trash-can-outline" size={13} color="rgba(255,255,255,0.7)" />
+          </TouchableOpacity>
+        ) : null}
+        <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>{timeLabel}</Text>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   bubble: { maxWidth: '80%', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
-  bubbleMine: { backgroundColor: Colors.accent, alignSelf: 'flex-end', borderBottomRightRadius: 4 },
-  bubbleOther: { backgroundColor: 'rgba(255,255,255,0.08)', alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
-  sender: { fontSize: 10, color: Colors.accent, fontWeight: '700', marginBottom: 2 },
+  bubbleMine: { backgroundColor: Theme.eyebrowGreen, alignSelf: 'flex-end', borderBottomRightRadius: 4 },
+  bubbleOther: { backgroundColor: '#E1F3EE', borderWidth: 1, borderColor: '#BEE6DA', alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
+  sender: { fontSize: 11, color: Theme.todayBlue, fontWeight: '700', marginBottom: 2 },
   text: { fontSize: 13, lineHeight: 18 },
   textMine: { color: '#FFFFFF' },
-  textOther: { color: Colors.textPrimary },
-  time: { fontSize: 10 },
-  timeMine: { color: 'rgba(255,255,255,0.6)', textAlign: 'right' },
-  timeOther: { color: Colors.textSecondary },
-  thumb: { width: 180, height: 130, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.2)' },
+  textOther: { color: Theme.textPrimary },
+  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  time: { fontSize: 11 },
+  timeMine: { color: 'rgba(255,255,255,0.7)', textAlign: 'right' },
+  timeOther: { color: Theme.textSecondary },
+  thumb: { width: 180, height: 130, borderRadius: 10, backgroundColor: Theme.background },
   video: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   videoText: { fontSize: 13, fontWeight: '600' },
 });

@@ -1,9 +1,9 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { Text } from '@/components/Text';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Colors } from '@/constants/theme';
+import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
 import { notifyWeeklyPlan } from '../lib/notifications';
 import workouts from '../data/workouts';
@@ -12,12 +12,11 @@ const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const CATEGORIES = ['strength', 'footwork', 'endurance', 'recovery'];
 
-const CATEGORY_COLORS: Record<string, string> = {
-  strength: '#2ECC71', footwork: '#3498DB', endurance: '#E67E22', recovery: '#9B59B6',
-};
 const CATEGORY_ICONS: Record<string, string> = {
   strength: 'dumbbell', footwork: 'badminton', endurance: 'lightning-bolt', recovery: 'heart-pulse',
 };
+
+const catTheme = (cat: string) => CategoryTheme[cat as keyof typeof CategoryTheme] ?? { bg: Theme.cardTinted, fg: Theme.eyebrowGreen };
 
 const showAlert = (title: string, message: string) => {
   if (typeof window !== 'undefined') window.alert(`${title}\n\n${message}`);
@@ -96,13 +95,13 @@ export default function AssignWeeklyPlanScreen() {
   };
 
   return (
-    <LinearGradient colors={[Colors.backgroundTop, Colors.backgroundBottom]} style={styles.container}>
+    <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={goBack}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.accent} />
+            <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Weekly Plan</Text>
@@ -159,7 +158,7 @@ export default function AssignWeeklyPlanScreen() {
                 ) : (
                   <View style={styles.dayExList}>
                     {dayExs.slice(0, 3).map((ex: any, ei: number) => (
-                      <View key={ei} style={[styles.dayExDot, { backgroundColor: CATEGORY_COLORS[ex.category] ?? Colors.accent }]} />
+                      <View key={ei} style={[styles.dayExDot, { backgroundColor: catTheme(ex.category).fg }]} />
                     ))}
                     {dayExs.length > 3 && <Text style={styles.dayExMore}>+{dayExs.length - 3}</Text>}
                   </View>
@@ -191,16 +190,17 @@ export default function AssignWeeklyPlanScreen() {
 
             {filtered.map((ex, i) => {
               const sel = isSelected(activeDay, ex.name);
+              const cat = catTheme(ex.category);
               return (
-                <TouchableOpacity key={i} style={[styles.exCard, sel && styles.exCardSelected]} onPress={() => toggleExercise(activeDay, ex)}>
-                  <View style={[styles.exIcon, { backgroundColor: `${CATEGORY_COLORS[ex.category]}20` }]}>
-                    <MaterialCommunityIcons name={CATEGORY_ICONS[ex.category] as any} size={18} color={CATEGORY_COLORS[ex.category]} />
+                <TouchableOpacity key={i} style={[styles.exCard, sel && { borderColor: cat.fg, backgroundColor: cat.bg }]} onPress={() => toggleExercise(activeDay, ex)}>
+                  <View style={[styles.exIcon, { backgroundColor: cat.bg }]}>
+                    <MaterialCommunityIcons name={CATEGORY_ICONS[ex.category] as any} size={18} color={cat.fg} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.exName, sel && styles.exNameSelected]}>{ex.name}</Text>
+                    <Text style={[styles.exName, sel && { color: cat.fg }]}>{ex.name}</Text>
                     <Text style={styles.exCat}>{ex.category.charAt(0).toUpperCase() + ex.category.slice(1)}</Text>
                   </View>
-                  <View style={[styles.checkbox, sel && styles.checkboxSelected]}>
+                  <View style={[styles.checkbox, sel && { backgroundColor: cat.fg, borderColor: cat.fg }]}>
                     {sel && <MaterialCommunityIcons name="check" size={14} color="#fff" />}
                   </View>
                 </TouchableOpacity>
@@ -211,7 +211,7 @@ export default function AssignWeeklyPlanScreen() {
 
         {!activeDay && totalExercises === 0 && (
           <View style={styles.emptyHint}>
-            <MaterialCommunityIcons name="calendar-edit" size={40} color={Colors.textSecondary} />
+            <MaterialCommunityIcons name="calendar-edit" size={40} color={Theme.textMuted} />
             <Text style={styles.emptyHintText}>Tap a day above to start adding exercises</Text>
           </View>
         )}
@@ -228,62 +228,59 @@ export default function AssignWeeklyPlanScreen() {
         </TouchableOpacity>
 
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: Theme.background },
   scroll: { padding: 24, paddingTop: 60, paddingBottom: 80 },
   header: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 24 },
-  title: { fontSize: 24, fontWeight: 'bold', color: Colors.textPrimary },
-  forWho: { fontSize: 13, color: Colors.accent, fontWeight: '600', marginTop: 2 },
-  summaryChip: { backgroundColor: Colors.accentMuted, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, alignSelf: 'flex-start' },
-  summaryChipText: { fontSize: 12, color: Colors.accent, fontWeight: '700' },
-  sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Colors.accent, letterSpacing: 1, marginBottom: 12 },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 24, color: Theme.textPrimary },
+  forWho: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600', marginTop: 2 },
+  summaryChip: { backgroundColor: Theme.cardTinted, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, alignSelf: 'flex-start' },
+  summaryChipText: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '700' },
+  sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 12 },
 
   // Day pills
-  dayPill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.backgroundCard, borderWidth: 1, borderColor: Colors.border, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dayPillActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  dayPillHasContent: { borderColor: Colors.accent },
-  dayPillText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  dayPill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: Theme.cardWhite, borderWidth: 1, borderColor: Theme.divider, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dayPillActive: { backgroundColor: Theme.eyebrowGreen, borderColor: Theme.eyebrowGreen },
+  dayPillHasContent: { borderColor: Theme.eyebrowGreen },
+  dayPillText: { fontSize: 13, color: Theme.textSecondary, fontWeight: '600' },
   dayPillTextActive: { color: '#fff' },
-  dayPillTextHasContent: { color: Colors.accent },
-  dayCount: { backgroundColor: Colors.accent, borderRadius: 10, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  dayPillTextHasContent: { color: Theme.eyebrowGreen },
+  dayCount: { backgroundColor: Theme.eyebrowGreen, borderRadius: 10, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   dayCountActive: { backgroundColor: 'rgba(255,255,255,0.3)' },
-  dayCountText: { fontSize: 10, color: '#fff', fontWeight: 'bold' },
+  dayCountText: { fontSize: 11, color: '#fff', fontWeight: 'bold' },
   dayCountTextActive: { color: '#fff' },
 
   // Week overview grid
   weekOverview: { flexDirection: 'row', gap: 6 },
-  dayOverviewCard: { flex: 1, backgroundColor: Colors.backgroundCard, borderRadius: 10, padding: 8, alignItems: 'center', gap: 6, borderWidth: 1, borderColor: 'transparent' },
-  dayOverviewCardActive: { borderColor: Colors.accent },
-  dayOverviewLabel: { fontSize: 10, fontWeight: 'bold', color: Colors.textSecondary },
+  dayOverviewCard: { flex: 1, backgroundColor: Theme.cardWhite, borderRadius: 10, padding: 8, alignItems: 'center', gap: 6, borderWidth: 1, borderColor: 'transparent' },
+  dayOverviewCardActive: { borderColor: Theme.eyebrowGreen },
+  dayOverviewLabel: { fontSize: 12, fontWeight: 'bold', color: Theme.textSecondary },
   restDay: { height: 24, justifyContent: 'center' },
-  restDayText: { fontSize: 9, color: Colors.textSecondary },
+  restDayText: { fontSize: 12, color: Theme.textSecondary },
   dayExList: { flexDirection: 'column', gap: 3, alignItems: 'center' },
   dayExDot: { width: 8, height: 8, borderRadius: 4 },
-  dayExMore: { fontSize: 9, color: Colors.textSecondary },
-  dayExCount: { fontSize: 11, fontWeight: 'bold', color: Colors.textPrimary },
+  dayExMore: { fontSize: 12, color: Theme.textSecondary },
+  dayExCount: { fontSize: 12, fontWeight: 'bold', color: Theme.textPrimary },
 
   // Exercise picker
-  filterPill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.backgroundCard, borderWidth: 1, borderColor: Colors.border },
-  filterPillActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  filterPillText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  filterPill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: Theme.cardWhite, borderWidth: 1, borderColor: Theme.divider },
+  filterPillActive: { backgroundColor: Theme.eyebrowGreen, borderColor: Theme.eyebrowGreen },
+  filterPillText: { fontSize: 13, color: Theme.textSecondary, fontWeight: '600' },
   filterPillTextActive: { color: '#fff' },
-  exCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.backgroundCard, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: 'transparent' },
-  exCardSelected: { borderColor: Colors.accent, backgroundColor: Colors.accentMuted },
+  exCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Theme.cardWhite, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: 'transparent' },
   exIcon: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  exName: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
-  exNameSelected: { color: Colors.accent },
-  exCat: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
-  checkboxSelected: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  exName: { fontSize: 15, fontWeight: '600', color: Theme.textPrimary },
+  exCat: { fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
+  checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: Theme.divider, alignItems: 'center', justifyContent: 'center' },
 
   emptyHint: { alignItems: 'center', paddingTop: 40, gap: 12 },
-  emptyHintText: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center' },
+  emptyHintText: { fontSize: 15, color: Theme.textSecondary, textAlign: 'center' },
 
-  sendBtn: { backgroundColor: Colors.accent, borderRadius: 30, paddingVertical: 16, alignItems: 'center', marginTop: 24 },
+  sendBtn: { backgroundColor: Theme.limeAccent, borderRadius: 30, paddingVertical: 16, alignItems: 'center', marginTop: 24 },
   sendBtnDisabled: { opacity: 0.5 },
-  sendBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
+  sendBtnText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 15 },
 });
