@@ -5,13 +5,13 @@ export const showAlert = (title: string, message: string) => {
   else Alert.alert(title, message);
 };
 
-export const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+export const showConfirm = (title: string, message: string, onConfirm: () => void, confirmLabel = 'Delete') => {
   if (typeof window !== 'undefined') {
     if (window.confirm(`${title}\n\n${message}`)) onConfirm();
   } else {
     Alert.alert(title, message, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: onConfirm },
+      { text: confirmLabel, style: confirmLabel === 'Delete' ? 'destructive' : 'default', onPress: onConfirm },
     ]);
   }
 };

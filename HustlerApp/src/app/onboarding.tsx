@@ -1,5 +1,7 @@
-import { View, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
+import { Icon } from '@/components/icons/Icon';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
@@ -74,8 +76,13 @@ export default function OnboardingScreen() {
     </View>
   );
 
+  const skip = () => router.replace('/(tabs)' as any);
+
   return (
     <View style={styles.container}>
+      <TouchableOpacity style={styles.skipBtn} onPress={skip} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+        <Icon name="close-circle-outline" size={30} color={Theme.textSecondary} />
+      </TouchableOpacity>
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
@@ -85,7 +92,7 @@ export default function OnboardingScreen() {
           <Text style={styles.eyebrow}>WELCOME</Text>
           <Text style={styles.title}>Let's get to know you</Text>
           <Text style={styles.subtitle}>
-            This helps us personalize your training plan and recommendations.
+            This helps us personalize your training plan and recommendations, or skip for now and explore the app first.
           </Text>
 
           <Text style={styles.label}>Age</Text>
@@ -119,6 +126,7 @@ export default function OnboardingScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Theme.background },
+  skipBtn: { position: 'absolute', top: 56, right: 20, zIndex: 1 },
   scroll: { flexGrow: 1, padding: 24, alignItems: 'center', justifyContent: 'center', paddingTop: 60, paddingBottom: 60 },
   card: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 24, width: '100%' },
   eyebrow: { fontSize: 11, fontWeight: '500', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 4 },

@@ -1,8 +1,9 @@
-import { View, StyleSheet, TouchableOpacity, TextInput, Alert, Image } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { supabase } from '../lib/supabase';
 import { Theme, Fonts } from '@/constants/theme';
 
@@ -66,12 +67,12 @@ export default function ForgotPasswordScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => router.back()}>
-              <Text style={styles.backText}>Back to Sign In</Text>
+              <Text style={styles.backText}>Back to Log In</Text>
             </TouchableOpacity>
           </>
         ) : (
           <>
-            <MaterialCommunityIcons name="email-check-outline" size={44} color={Theme.eyebrowGreen} style={styles.successIcon} />
+            <Icon name="email-check-outline" size={44} color={Theme.eyebrowGreen} style={styles.successIcon} />
             <Text style={styles.title}>Check your email</Text>
             <Text style={styles.subtitle}>
               We sent a password reset link to {email}. Check your inbox and follow the instructions.
@@ -81,7 +82,7 @@ export default function ForgotPasswordScreen() {
               style={styles.button}
               onPress={() => router.replace('/login' as any)}
             >
-              <Text style={styles.buttonText}>Back to Sign In</Text>
+              <Text style={styles.buttonText}>Back to Log In</Text>
             </TouchableOpacity>
           </>
         )}

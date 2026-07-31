@@ -1,12 +1,13 @@
-import { View, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView, Image, Platform, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ScrollView, Image, Platform, ActivityIndicator } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
-import { TOPICS, TOPIC_ICONS, containsBlockedWords } from '../lib/community';
+import { TOPICS, containsBlockedWords } from '../lib/community';
 
 const CLOUDINARY_CLOUD = 'pyqqwrax';
 const CLOUDINARY_PRESET = 'hustler_videos';
@@ -103,7 +104,7 @@ export default function NewPostScreen() {
 
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) {
-      showAlert('Not signed in', 'Please sign in to post.');
+      showAlert('Not logged in', 'Please log in to post.');
       return;
     }
 
@@ -152,7 +153,7 @@ export default function NewPostScreen() {
     <View style={styles.container}>
       <View style={styles.titleRow}>
         <TouchableOpacity onPress={goBack}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+          <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>New Post</Text>
       </View>
@@ -166,11 +167,6 @@ export default function NewPostScreen() {
               style={[styles.topicOption, topic === t && styles.topicOptionActive]}
               onPress={() => setTopic(t)}
             >
-              <MaterialCommunityIcons
-                name={TOPIC_ICONS[t] as any}
-                size={14}
-                color={topic === t ? '#FFFFFF' : Theme.textSecondary}
-              />
               <Text style={[styles.topicOptionText, topic === t && styles.topicOptionTextActive]}>{t}</Text>
             </TouchableOpacity>
           ))}
@@ -178,7 +174,7 @@ export default function NewPostScreen() {
 
         {topic === 'Recovery & Wellness' && (
           <View style={styles.disclaimer}>
-            <MaterialCommunityIcons name="information-outline" size={16} color={Theme.eyebrowGreen} />
+            <Icon name="information-outline" size={16} color={Theme.eyebrowGreen} />
             <Text style={styles.disclaimerText}>
               This space is for wellness routines, not medical advice. Please don't diagnose or treat injuries here.
             </Text>
@@ -187,7 +183,7 @@ export default function NewPostScreen() {
 
         {topic === 'Local Tournaments' && (
           <View style={styles.disclaimer}>
-            <MaterialCommunityIcons name="trophy" size={16} color={Theme.eyebrowGreen} />
+            <Icon name="trophy" size={16} color={Theme.eyebrowGreen} />
             <Text style={styles.disclaimerText}>
               Share tournaments in your area! Include the date, location, and skill level so others can find and join.
             </Text>
@@ -224,18 +220,18 @@ export default function NewPostScreen() {
           <View style={styles.imagePreviewWrap}>
             <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="cover" />
             <TouchableOpacity style={styles.removeImageBtn} onPress={removeImage}>
-              <MaterialCommunityIcons name="close-circle" size={24} color="#FF6B6B" />
+              <Icon name="close-circle" size={24} color="#FF6B6B" />
             </TouchableOpacity>
           </View>
         ) : (
           <TouchableOpacity style={styles.addImageBtn} onPress={pickImage}>
-            <MaterialCommunityIcons name="camera-plus-outline" size={22} color="#534AB7" />
+            <Icon name="camera-plus-outline" size={22} color="#534AB7" />
             <Text style={styles.addImageText}>Add Photo</Text>
           </TouchableOpacity>
         )}
 
         <View style={styles.anonNote}>
-          <MaterialCommunityIcons name="incognito" size={16} color={Theme.textSecondary} />
+          <Icon name="incognito" size={16} color={Theme.textSecondary} />
           <Text style={styles.anonNoteText}>Your post will appear anonymously with a random username.</Text>
         </View>
 

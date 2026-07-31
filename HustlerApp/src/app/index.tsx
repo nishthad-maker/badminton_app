@@ -13,12 +13,16 @@ export default function HomeScreen() {
       if (session) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('is_coach')
+          .select('is_coach, role')
           .eq('id', session.user.id)
           .single();
 
         if (profile?.is_coach) {
           router.replace('/(coach-tabs)/players' as any);
+        } else if (profile?.role === 'club') {
+          router.replace('/(club-admin)/dashboard' as any);
+        } else if (profile?.role === 'parent') {
+          router.replace('/(parent-tabs)/home' as any);
         } else {
           router.replace('/(tabs)' as any);
         }

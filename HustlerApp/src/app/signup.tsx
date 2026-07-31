@@ -1,8 +1,9 @@
-import { View, StyleSheet, TouchableOpacity, TextInput, Alert, Image, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, Image, ScrollView } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { supabase } from '../lib/supabase';
 import { Theme, Fonts } from '@/constants/theme';
 
@@ -14,17 +15,28 @@ const showAlert = (title: string, message: string) => {
   }
 };
 
-type Role = 'player' | 'coach';
+type Role = 'player' | 'coach' | 'club' | 'parent';
 
 export default function SignUpScreen() {
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState<Role>('player');
-  const [club, setClub] = useState('');
   const [username, setUsername] = useState('');
+  const [clubName, setClubName] = useState('');
+  const [clubLocation, setClubLocation] = useState('');
+  const [coachClub, setCoachClub] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Typing "None" (any casing) is the one thing that reveals the username
+  // field — leaving the club field blank doesn't, so there's no ambiguous
+  // "haven't decided yet" state where a username silently gets requested
+  // before they've said either way. Anything else typed reads as a real
+  // club name; they'll connect to it with a code after logging in (see the
+  // gate on the Players tab).
+  const typedNone = coachClub.trim().toLowerCase() === 'none';
+  const isClubCoach = role === 'coach' && coachClub.trim() !== '' && !typedNone;
 
   const handleSignUp = async () => {
     if (!fullName || !email || !password || !confirmPassword) {
@@ -37,16 +49,24 @@ export default function SignUpScreen() {
       return;
     }
 
-    // Coach-specific requirements
+    // Coach-specific requirements — a coach who names a real club connects
+    // via that club's roster instead of the username system, so they never
+    // need (or get) a coach_username at all.
     if (role === 'coach') {
-      if (!club.trim()) {
-        showAlert('Missing club', 'Please enter the club you coach at.');
+      if (!coachClub.trim()) {
+        showAlert('Missing club', 'Type your club\'s name, or "None" if you\'re not with one.');
         return;
       }
-      if (!/^[a-z0-9_]{3,20}$/.test(username)) {
+      if (!isClubCoach && !/^[a-z0-9_]{3,20}$/.test(username)) {
         showAlert('Invalid username', 'Your coach username should be 3–20 characters: lowercase letters, numbers, or underscores.');
         return;
       }
+    }
+
+    // Club-specific requirements
+    if (role === 'club' && !clubName.trim()) {
+      showAlert('Missing club name', 'Please enter your club name.');
+      return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -67,8 +87,10 @@ export default function SignUpScreen() {
 
     setLoading(true);
 
-    // For coaches, make sure the username isn't already taken before we create anything.
-    if (role === 'coach') {
+    // For independent coaches, make sure the username isn't already taken
+    // before we create anything — club coaches skip this entirely, they
+    // never get a username.
+    if (role === 'coach' && !isClubCoach) {
       const { data: taken } = await supabase
         .from('profiles')
         .select('id')
@@ -98,9 +120,9 @@ export default function SignUpScreen() {
         id: data.user.id,
         full_name: fullName,
         is_coach: role === 'coach',
-        club: club.trim() || null,
+        role,
       };
-      if (role === 'coach') {
+      if (role === 'coach' && !isClubCoach) {
         profilePayload.coach_username = username;
       }
 
@@ -118,16 +140,39 @@ export default function SignUpScreen() {
         }
         return;
       }
+
+      // Club accounts get their club created right away, using the same
+      // owner-bootstrap order as club-setup.tsx (clubs -> club_coaches ->
+      // club_settings). If any step here fails, don't block account
+      // creation over it — they can always finish via the "Complete Setup"
+      // prompt shown on first login into the club-admin section.
+      if (role === 'club') {
+        const { data: club, error: clubError } = await supabase
+          .from('clubs')
+          .insert({ owner_id: data.user.id, name: clubName.trim(), location: clubLocation.trim() || null })
+          .select()
+          .single();
+
+        if (!clubError && club) {
+          const { error: coachError } = await supabase
+            .from('club_coaches')
+            .insert({ club_id: club.id, coach_id: data.user.id, role: 'owner' });
+          if (!coachError) {
+            await supabase.from('club_settings').insert({ club_id: club.id });
+          }
+        }
+      }
     }
 
+    // Sign back out so the user lands on the login screen in a clean,
+    // logged-out state rather than already being authenticated there.
+    await supabase.auth.signOut();
     setLoading(false);
-
-    // Coaches go to their roster home; players go to the normal tabs.
-    if (role === 'coach') {
-      router.replace('/(coach-tabs)/players' as any);
-    } else {
-      router.replace('/(tabs)' as any);
-    }
+    showAlert(
+      'Account created',
+      isClubCoach ? 'Please log in — then enter your club\'s coach code to connect.' : 'Please log in to continue.'
+    );
+    router.replace('/login' as any);
   };
 
   return (
@@ -163,7 +208,7 @@ export default function SignUpScreen() {
               style={[styles.roleBtn, role === 'player' && styles.roleBtnActive]}
               onPress={() => setRole('player')}
             >
-              <MaterialCommunityIcons
+              <Icon
                 name="badminton"
                 size={22}
                 color={role === 'player' ? '#FFFFFF' : Theme.textSecondary}
@@ -174,7 +219,7 @@ export default function SignUpScreen() {
               style={[styles.roleBtn, role === 'coach' && styles.roleBtnActive]}
               onPress={() => setRole('coach')}
             >
-              <MaterialCommunityIcons
+              <Icon
                 name="whistle"
                 size={22}
                 color={role === 'coach' ? '#FFFFFF' : Theme.textSecondary}
@@ -182,22 +227,84 @@ export default function SignUpScreen() {
               <Text style={[styles.roleBtnText, role === 'coach' && styles.roleBtnTextActive]}>Coach</Text>
             </TouchableOpacity>
           </View>
+          <View style={styles.roleRow}>
+            <TouchableOpacity
+              style={[styles.roleBtn, role === 'club' && styles.roleBtnActive]}
+              onPress={() => setRole('club')}
+            >
+              <Icon
+                name="account-badge"
+                size={22}
+                color={role === 'club' ? '#FFFFFF' : Theme.textSecondary}
+              />
+              <Text style={[styles.roleBtnText, role === 'club' && styles.roleBtnTextActive]}>Club</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.roleBtn, role === 'parent' && styles.roleBtnActive]}
+              onPress={() => setRole('parent')}
+            >
+              <Icon
+                name="account-group"
+                size={22}
+                color={role === 'parent' ? '#FFFFFF' : Theme.textSecondary}
+              />
+              <Text style={[styles.roleBtnText, role === 'parent' && styles.roleBtnTextActive]}>Parent</Text>
+            </TouchableOpacity>
+          </View>
 
-          {/* Club — required for coaches, optional for players */}
-          <Text style={styles.label}>
-            Club {role === 'player' ? <Text style={styles.optional}>(optional)</Text> : null}
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder={role === 'coach' ? 'Which club do you coach at?' : 'Your club (if you have one)'}
-            placeholderTextColor={Theme.textSecondary}
-            value={club}
-            onChangeText={setClub}
-            autoCapitalize="words"
-          />
+          {/* Club name + location */}
+          {role === 'club' && (
+            <>
+              <Text style={styles.label}>Club Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Ace Badminton Club"
+                placeholderTextColor={Theme.textSecondary}
+                value={clubName}
+                onChangeText={setClubName}
+                autoCapitalize="words"
+              />
 
-          {/* Coach username */}
+              <Text style={styles.label}>
+                Location <Text style={styles.optional}>(optional)</Text>
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Toronto, ON"
+                placeholderTextColor={Theme.textSecondary}
+                value={clubLocation}
+                onChangeText={setClubLocation}
+                autoCapitalize="words"
+              />
+              <Text style={styles.usernameHint}>
+                Coaches and parents will see this to know which physical club this is.
+              </Text>
+            </>
+          )}
+
+          {/* Coach club affiliation */}
           {role === 'coach' && (
+            <>
+              <Text style={styles.label}>Which club are you with?</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Club name, or type None"
+                placeholderTextColor={Theme.textSecondary}
+                value={coachClub}
+                onChangeText={setCoachClub}
+                autoCapitalize="words"
+              />
+              <Text style={styles.usernameHint}>
+                {isClubCoach
+                  ? "You'll enter your club's coach code to connect after logging in — no username needed."
+                  : "Type \"None\" if you coach independently, outside of a club."}
+              </Text>
+            </>
+          )}
+
+          {/* Coach username — only once "None" is actually typed, not while
+              the club field is still blank */}
+          {role === 'coach' && typedNone && (
             <>
               <Text style={styles.label}>Coach Username</Text>
               <TextInput
@@ -258,7 +365,7 @@ export default function SignUpScreen() {
 
           <TouchableOpacity onPress={() => router.push('/login' as any)}>
             <Text style={styles.linkText}>
-              Already have an account? <Text style={styles.link}>Sign In</Text>
+              Already have an account? <Text style={styles.link}>Log In</Text>
             </Text>
           </TouchableOpacity>
         </View>

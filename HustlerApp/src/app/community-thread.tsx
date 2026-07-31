@@ -1,11 +1,12 @@
-import { View, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView, Image } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ScrollView, Image } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
-import { containsBlockedWords, formatTimeAgo, getOrCreateUsername, TOPIC_ICONS, avatarColorFor } from '../lib/community';
+import { containsBlockedWords, formatTimeAgo, getOrCreateUsername, avatarColorFor } from '../lib/community';
 
 const showAlert = (title: string, message: string) => {
   if (typeof window !== 'undefined') {
@@ -115,7 +116,7 @@ export default function ThreadScreen() {
 
   const toggleLike = async () => {
     if (!user) {
-      showAlert('Sign in required', 'Please sign in to like posts.');
+      showAlert('Log in required', 'Please log in to like posts.');
       return;
     }
     // We only touch the post_likes table. A database trigger keeps
@@ -135,7 +136,7 @@ export default function ThreadScreen() {
   const submitReply = async () => {
     if (!replyText.trim()) return;
     if (!user) {
-      showAlert('Sign in required', 'Please sign in to reply.');
+      showAlert('Log in required', 'Please log in to reply.');
       return;
     }
     if (containsBlockedWords(replyText)) {
@@ -251,7 +252,7 @@ export default function ThreadScreen() {
     return (
       <View style={styles.container}>
         <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+          <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.emptyText}>Post not found.</Text>
       </View>
@@ -263,19 +264,18 @@ export default function ThreadScreen() {
   return (
     <View style={styles.container}>
       <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-        <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+        <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
       </TouchableOpacity>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.postCard}>
           <View style={styles.topicTag}>
-            <MaterialCommunityIcons name={TOPIC_ICONS[post.topic] as any} size={16} color="#534AB7" />
             <Text style={styles.topicTagText}>{post.topic}</Text>
           </View>
 
           <View style={styles.postHeader}>
             <View style={[styles.avatarCircle, { backgroundColor: avatarColorFor(post.user_id).bg }]}>
-              <MaterialCommunityIcons name="account" size={22} color={avatarColorFor(post.user_id).fg} />
+              <Icon name="account" size={22} color={avatarColorFor(post.user_id).fg} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.postAuthor}>{usernames[post.user_id] ?? 'Player'}</Text>
@@ -283,11 +283,11 @@ export default function ThreadScreen() {
             </View>
             {user?.id === post.user_id ? (
               <TouchableOpacity onPress={deletePost}>
-                <MaterialCommunityIcons name="trash-can-outline" size={21} color="#E74C3C" />
+                <Icon name="trash-can-outline" size={21} color="#E74C3C" />
               </TouchableOpacity>
             ) : (
               <TouchableOpacity onPress={reportPost} disabled={postReported}>
-                <MaterialCommunityIcons
+                <Icon
                   name={postReported ? 'flag' : 'flag-outline'}
                   size={21}
                   color={postReported ? Theme.textMuted : Theme.textSecondary}
@@ -310,7 +310,7 @@ export default function ThreadScreen() {
 
           <View style={styles.postActions}>
             <TouchableOpacity style={styles.actionBtn} onPress={toggleLike}>
-              <MaterialCommunityIcons
+              <Icon
                 name={liked ? 'heart' : 'heart-outline'}
                 size={18}
                 color={liked ? '#E74C3C' : Theme.textSecondary}
@@ -318,7 +318,7 @@ export default function ThreadScreen() {
               <Text style={styles.actionText}>{post.likes_count ?? 0}</Text>
             </TouchableOpacity>
             <View style={styles.actionBtn}>
-              <MaterialCommunityIcons name="comment-outline" size={18} color={Theme.textSecondary} />
+              <Icon name="comment-outline" size={18} color={Theme.textSecondary} />
               <Text style={styles.actionText}>{replies.length}</Text>
             </View>
           </View>
@@ -335,17 +335,17 @@ export default function ThreadScreen() {
               <View key={reply.id} style={styles.replyCard}>
                 <View style={styles.replyHeader}>
                   <View style={[styles.avatarCircleSmall, { backgroundColor: avatarColorFor(reply.user_id).bg }]}>
-                    <MaterialCommunityIcons name="account" size={18} color={avatarColorFor(reply.user_id).fg} />
+                    <Icon name="account" size={18} color={avatarColorFor(reply.user_id).fg} />
                   </View>
                   <Text style={styles.replyAuthor}>{usernames[reply.user_id] ?? 'Player'}</Text>
                   <Text style={styles.replyTime}>{formatTimeAgo(reply.created_at)}</Text>
                   {user?.id === reply.user_id ? (
                     <TouchableOpacity onPress={() => deleteReply(reply.id)}>
-                      <MaterialCommunityIcons name="trash-can-outline" size={19} color="#E74C3C" />
+                      <Icon name="trash-can-outline" size={19} color="#E74C3C" />
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity onPress={() => reportReply(reply)} disabled={replyReported}>
-                      <MaterialCommunityIcons
+                      <Icon
                         name={replyReported ? 'flag' : 'flag-outline'}
                         size={19}
                         color={replyReported ? Theme.textMuted : Theme.textSecondary}
@@ -375,7 +375,7 @@ export default function ThreadScreen() {
             onPress={submitReply}
             disabled={posting}
           >
-            <MaterialCommunityIcons name="send" size={18} color="#FFFFFF" />
+            <Icon name="send" size={18} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       )}

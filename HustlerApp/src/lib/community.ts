@@ -46,14 +46,6 @@ export const getOrCreateUsername = async (userId: string): Promise<string> => {
 
 export const TOPICS = ['General Discussion', 'Training Tips', 'Recovery & Wellness', 'Equipment'];
 
-export const TOPIC_ICONS: Record<string, string> = {
-  'General Discussion': 'forum',
-  'Local Tournaments': 'trophy',
-  'Training Tips': 'dumbbell',
-  'Recovery & Wellness': 'heart-pulse',
-  'Equipment': 'badminton',
-};
-
 // Same swatches used for workout categories elsewhere in the app, reused here
 // so each poster's avatar gets a distinct, stable color instead of one flat blue.
 export const AVATAR_COLORS = [

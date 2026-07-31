@@ -1,6 +1,6 @@
 import { View, TouchableOpacity, Image, Linking, StyleSheet } from 'react-native';
 import { Text } from '@/components/Text';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme } from '@/constants/theme';
 
 export function MessageBubble({
@@ -28,7 +28,7 @@ export function MessageBubble({
       {mediaUrl ? (
         mediaType === 'video' ? (
           <TouchableOpacity style={styles.video} onPress={() => Linking.openURL(mediaUrl)}>
-            <MaterialCommunityIcons name="play-circle-outline" size={26} color={isMine ? '#fff' : Theme.todayBlue} />
+            <Icon name="play-circle-outline" size={26} color={isMine ? '#fff' : Theme.todayBlue} />
             <Text style={[styles.videoText, isMine ? styles.textMine : styles.textOther]}>Tap to watch</Text>
           </TouchableOpacity>
         ) : (
@@ -42,7 +42,7 @@ export function MessageBubble({
       <View style={styles.footer}>
         {isMine && onDelete && deletable ? (
           <TouchableOpacity onPress={onDelete} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-            <MaterialCommunityIcons name="trash-can-outline" size={13} color="rgba(255,255,255,0.7)" />
+            <Icon name="trash-can-outline" size={13} color="rgba(255,255,255,0.7)" />
           </TouchableOpacity>
         ) : null}
         <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>{timeLabel}</Text>

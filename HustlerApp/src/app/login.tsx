@@ -1,16 +1,20 @@
-import { View, StyleSheet, TouchableOpacity, TextInput, Alert, Image } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Theme, Fonts } from '@/constants/theme';
+import { showConfirm } from '../lib/ui';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [noAccountFound, setNoAccountFound] = useState(false);
 
   const handleLogin = async () => {
+    setNoAccountFound(false);
     if (!email || !password) {
       Alert.alert('Missing fields', 'Please enter email and password.');
       return;
@@ -19,8 +23,23 @@ export default function LoginScreen() {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
+      // Supabase Auth returns the same generic error whether the email has
+      // no account at all or the password is just wrong (deliberately, to
+      // avoid account enumeration) — check separately so a no-account user
+      // gets pointed at Sign Up instead of a confusing "wrong password".
+      const { data: hasAccount } = await supabase.rpc('email_has_account', { input_email: email.trim() });
       setLoading(false);
-      Alert.alert('Login failed', error.message);
+      if (!hasAccount) {
+        setNoAccountFound(true);
+        showConfirm(
+          'No account found',
+          "We couldn't find an account for that email. Please create an account.",
+          () => router.push('/signup' as any),
+          'Create Account'
+        );
+      } else {
+        Alert.alert('Login failed', error.message);
+      }
       return;
     }
 
@@ -28,7 +47,7 @@ export default function LoginScreen() {
     if (data.user) {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('age, is_coach')
+        .select('age, is_coach, role')
         .eq('id', data.user.id)
         .single();
 
@@ -37,6 +56,10 @@ export default function LoginScreen() {
       if (profile?.is_coach) {
         // Coaches skip player onboarding and go to their roster home.
         router.replace('/(coach-tabs)/players' as any);
+      } else if (profile?.role === 'club') {
+        router.replace('/(club-admin)/dashboard' as any);
+      } else if (profile?.role === 'parent') {
+        router.replace('/(parent-tabs)/home' as any);
       } else if (!profile?.age) {
         router.replace('/onboarding' as any);
       } else {
@@ -58,6 +81,14 @@ export default function LoginScreen() {
 
       <View style={styles.card}>
         <Text style={styles.title}>Login</Text>
+
+        {noAccountFound && (
+          <TouchableOpacity style={styles.noAccountBanner} onPress={() => router.push('/signup' as any)}>
+            <Text style={styles.noAccountBannerText}>
+              No account found for that email. <Text style={styles.noAccountBannerLink}>Please create an account</Text>
+            </Text>
+          </TouchableOpacity>
+        )}
 
         <Text style={styles.label}>Email</Text>
         <TextInput
@@ -89,7 +120,7 @@ export default function LoginScreen() {
           onPress={handleLogin}
           disabled={loading}
         >
-          <Text style={styles.buttonText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
+          <Text style={styles.buttonText}>{loading ? 'Logging in...' : 'Log In'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => router.push('/signup' as any)}>
@@ -111,6 +142,9 @@ const styles = StyleSheet.create({
   logo: { width: 160, height: 60, marginBottom: 32 },
   card: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 24, width: '100%' },
   title: { fontFamily: Fonts.serifMedium, fontSize: 22, color: Theme.textPrimary, marginBottom: 24 },
+  noAccountBanner: { backgroundColor: Theme.cardTinted, borderRadius: 10, padding: 14, marginBottom: 16 },
+  noAccountBannerText: { color: Theme.textPrimary, fontSize: 14, lineHeight: 20 },
+  noAccountBannerLink: { color: Theme.eyebrowGreen, fontWeight: 'bold' },
   label: { fontSize: 13, color: Theme.textSecondary, marginBottom: 8 },
   input: {
     backgroundColor: Theme.background,
