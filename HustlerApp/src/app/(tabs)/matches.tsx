@@ -1,8 +1,9 @@
-import { View, StyleSheet, TouchableOpacity, ScrollView, TextInput, RefreshControl } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
 
@@ -67,18 +68,18 @@ export default function MatchesScreen() {
         <Text style={styles.subtitle}>Log the moments that shape your next court session.</Text>
         <View style={styles.headerBtns}>
           <TouchableOpacity style={styles.quickBtn} onPress={() => router.push({ pathname: '/log-match', params: { quick: '1' } })}>
-            <MaterialCommunityIcons name="tune" size={19} color="#0C447C" />
+            <Icon name="tune" size={19} color="#0C447C" />
             <Text style={styles.quickBtnText}>Quick log</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.logBtn} onPress={() => router.push('/log-match')}>
-            <MaterialCommunityIcons name="plus" size={21} color="#FFFFFF" />
+            <Icon name="plus" size={21} color="#FFFFFF" />
             <Text style={styles.logBtnText}>Log a match</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       <View style={styles.searchRow}>
-        <MaterialCommunityIcons name="magnify" size={21} color="#0C447C" />
+        <Icon name="magnify" size={21} color="#0C447C" />
         <TextInput
           style={styles.searchInput}
           placeholder="Search opponents..."
@@ -95,13 +96,13 @@ export default function MatchesScreen() {
       >
         <TouchableOpacity style={styles.analysisCard} onPress={() => router.push('/game-analysis')}>
           <View style={styles.analysisIconBox}>
-            <MaterialCommunityIcons name="chart-timeline-variant" size={28} color="#44403C" />
+            <Icon name="chart-timeline-variant" size={28} color="#44403C" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.analysisTitle}>Game analysis</Text>
             <Text style={styles.analysisDesc}>See patterns across your matches as you log more games.</Text>
           </View>
-          <MaterialCommunityIcons name="chevron-right" size={24} color={Theme.textMuted} />
+          <Icon name="chevron-right" size={24} color={Theme.textMuted} />
         </TouchableOpacity>
 
         <View style={styles.sectionHeaderRow}>
@@ -113,7 +114,7 @@ export default function MatchesScreen() {
           <Text style={styles.muted}>Loading...</Text>
         ) : groupedMatches.length === 0 && recentMatches.length === 0 ? (
           <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="clipboard-text-outline" size={56} color={Theme.textMuted} />
+            <Icon name="clipboard-text-outline" size={56} color={Theme.textMuted} />
             <Text style={styles.emptyTitle}>No opponents logged yet</Text>
             <Text style={styles.emptyDesc}>Log a match after you play to start building your scouting book.</Text>
           </View>
@@ -127,19 +128,17 @@ export default function MatchesScreen() {
                 <View style={styles.cardNameRow}>
                   <Text style={styles.cardName}>{g.opponent_name ?? 'Opponent'}</Text>
                   {g.latestType && (
-                    <View style={styles.typeTag}>
-                      <Text style={styles.typeTagText}>{g.latestType === 'singles' ? 'Singles' : 'Doubles'}</Text>
+                    <View style={[styles.typeTag, g.latestType === 'singles' ? styles.typeTagSingles : styles.typeTagDoubles]}>
+                      <Text style={[styles.typeTagText, g.latestType === 'singles' ? styles.typeTagTextSingles : styles.typeTagTextDoubles]}>
+                        {g.latestType === 'singles' ? 'Singles' : 'Doubles'}
+                      </Text>
                     </View>
                   )}
                 </View>
                 {g.count > 1 && <Text style={styles.cardMeta}>{g.count} matches logged</Text>}
               </View>
               {g.latestResult && g.latestResult !== 'unsure' && (
-                <View style={[styles.resultBadge, g.latestResult === 'win' ? styles.resultWon : styles.resultLost]}>
-                  <Text style={[styles.resultBadgeText, g.latestResult === 'win' ? styles.resultWonText : styles.resultLostText]}>
-                    {g.latestResult === 'win' ? 'Won' : 'Lost'}
-                  </Text>
-                </View>
+                <View style={[styles.resultDot, g.latestResult === 'win' ? styles.resultDotWon : styles.resultDotLost]} />
               )}
             </TouchableOpacity>
           ))
@@ -177,14 +176,15 @@ const styles = StyleSheet.create({
   cardNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardName: { fontSize: 18, fontWeight: '600', color: Theme.textPrimary },
   cardMeta: { fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
-  typeTag: { backgroundColor: '#E7E5E0', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  typeTagText: { fontSize: 12, fontWeight: '600', color: '#44403C' },
-  resultBadge: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 7 },
-  resultWon: { backgroundColor: Theme.limeAccent },
-  resultLost: { backgroundColor: 'rgba(255,107,107,0.15)' },
-  resultBadgeText: { fontSize: 14, fontWeight: '700' },
-  resultWonText: { color: Theme.eyebrowGreen },
-  resultLostText: { color: '#E14444' },
+  typeTag: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  typeTagSingles: { backgroundColor: Theme.cardTinted },
+  typeTagDoubles: { backgroundColor: '#E2EFAE' },
+  typeTagText: { fontSize: 12, fontWeight: '600' },
+  typeTagTextSingles: { color: '#0C447C' },
+  typeTagTextDoubles: { color: '#3B6D11' },
+  resultDot: { width: 12, height: 12, borderRadius: 6 },
+  resultDotWon: { backgroundColor: '#3BB273' },
+  resultDotLost: { backgroundColor: '#E14444' },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: 12 },
   emptyTitle: { fontSize: 20, fontWeight: 'bold', color: Theme.textPrimary },
   emptyDesc: { fontSize: 16, color: Theme.textSecondary, textAlign: 'center', lineHeight: 22, paddingHorizontal: 20 },

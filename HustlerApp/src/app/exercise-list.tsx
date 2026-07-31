@@ -2,7 +2,7 @@ import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Text } from '@/components/Text';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useState, useEffect } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import workouts from '../data/workouts';
 import { supabase } from '../lib/supabase';
 import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
@@ -16,7 +16,7 @@ const CATEGORY_TITLES: Record<string, string> = {
 
 const FILTERS: Record<string, string[]> = {
   strength: ['All', 'Lower', 'Upper', 'Core'],
-  footwork: ['All', 'Agility', 'Plyometrics', 'Drills'],
+  footwork: [],
   endurance: [],
   recovery: [],
 };
@@ -86,7 +86,7 @@ export default function ExerciseListScreen() {
     <View style={styles.container}>
       <View style={styles.titleRow}>
         <TouchableOpacity onPress={goBack}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+          <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
         </TouchableOpacity>
         <View>
           <Text style={styles.eyebrow}>TRAINING</Text>
@@ -146,7 +146,7 @@ export default function ExerciseListScreen() {
                     </View>
                   )}
                 </View>
-                <MaterialCommunityIcons name="chevron-right" size={24} color={Theme.textMuted} />
+                <Icon name="chevron-right" size={24} color={Theme.textMuted} />
               </View>
               <Text style={styles.cardDesc}>{exercise.description}</Text>
               {exercise.muscles && exercise.muscles.length > 0 && (

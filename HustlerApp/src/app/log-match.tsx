@@ -1,9 +1,10 @@
-import { View, StyleSheet, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Switch } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Switch } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
 import { Audio } from 'expo-av';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
 import { uploadToCloudinary } from '../lib/cloudinary';
@@ -11,6 +12,7 @@ import { notifyMatchShared } from '../lib/notifications';
 import { showAlert } from '../lib/ui';
 import { STRENGTH_CATEGORIES, WEAKNESS_CATEGORIES } from '@/constants/matchTags';
 import { TagChipSelector } from '@/components/TagChipSelector';
+import { getShareableCoaches, ShareableCoach } from '../lib/coachSharing';
 
 type Result = 'win' | 'loss' | 'unsure';
 type MatchType = 'singles' | 'doubles';
@@ -62,8 +64,9 @@ export default function LogMatchScreen() {
   const [weaknessesText, setWeaknessesText] = useState('');
   const [nextTimeText, setNextTimeText] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
-  const [sharedWithCoach, setSharedWithCoach] = useState(false);
-  const [wasShared, setWasShared] = useState(false);
+  const [shareableCoaches, setShareableCoaches] = useState<ShareableCoach[]>([]);
+  const [selectedCoachIds, setSelectedCoachIds] = useState<string[]>([]);
+  const [previousSharedIds, setPreviousSharedIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   const [isRecording, setIsRecording] = useState(false);
@@ -83,6 +86,7 @@ export default function LogMatchScreen() {
       if (prof?.full_name) setMyName(prof.full_name);
       const { data: opps } = await supabase.from('opponents').select('id, name, wins, losses').eq('player_id', session.user.id);
       setAllOpponents(opps ?? []);
+      getShareableCoaches(session.user.id).then(setShareableCoaches);
 
       if (editingLogId) {
         const { data: existing } = await supabase.from('opponent_logs').select('*').eq('id', editingLogId).single();
@@ -99,8 +103,9 @@ export default function LogMatchScreen() {
           setVideoUrl(existing.video_url ?? '');
           setVoiceNoteUrl(existing.voice_note_url ?? null);
           setVoiceNoteDuration(existing.voice_note_duration_seconds ?? 0);
-          setSharedWithCoach(existing.shared_with_coach ?? false);
-          setWasShared(existing.shared_with_coach ?? false);
+          const sharedIds: string[] = existing.shared_with_coach_ids ?? [];
+          setSelectedCoachIds(sharedIds);
+          setPreviousSharedIds(sharedIds);
         }
       }
       setLoading(false);
@@ -205,7 +210,8 @@ export default function LogMatchScreen() {
       video_url: videoUrl.trim() || null,
       voice_note_url: finalVoiceUrl,
       voice_note_duration_seconds: finalVoiceUrl ? finalVoiceDuration : null,
-      shared_with_coach: sharedWithCoach,
+      shared_with_coach: selectedCoachIds.length > 0,
+      shared_with_coach_ids: selectedCoachIds,
       updated_at: new Date().toISOString(),
     };
 
@@ -236,11 +242,9 @@ export default function LogMatchScreen() {
       }
     }
 
-    if (sharedWithCoach && !wasShared) {
-      const { data: conns } = await supabase.from('coach_connections').select('coach_id').eq('player_id', myId).eq('status', 'accepted');
-      for (const c of conns ?? []) {
-        await notifyMatchShared(c.coach_id, myName, opponentName.trim() || 'an opponent');
-      }
+    const newlyShared = selectedCoachIds.filter((id) => !previousSharedIds.includes(id));
+    for (const coachId of newlyShared) {
+      await notifyMatchShared(coachId, myName, opponentName.trim() || 'an opponent');
     }
 
     setSaving(false);
@@ -300,7 +304,7 @@ export default function LogMatchScreen() {
           style={[styles.resultChip, result === opt.key && styles.resultChipActive]}
           onPress={() => setResult(opt.key)}
         >
-          <MaterialCommunityIcons name={opt.icon as any} size={16} color={result === opt.key ? '#FFFFFF' : Theme.textSecondary} />
+          <Icon name={opt.icon as any} size={16} color={result === opt.key ? '#FFFFFF' : Theme.textSecondary} />
           <Text style={[styles.resultChipText, result === opt.key && styles.resultChipTextActive]}>{opt.label}</Text>
         </TouchableOpacity>
       ))}
@@ -315,7 +319,7 @@ export default function LogMatchScreen() {
           style={[styles.resultChip, matchType === opt.key && styles.resultChipActive]}
           onPress={() => setMatchType(opt.key)}
         >
-          <MaterialCommunityIcons name={opt.icon as any} size={16} color={matchType === opt.key ? '#FFFFFF' : Theme.textSecondary} />
+          <Icon name={opt.icon as any} size={16} color={matchType === opt.key ? '#FFFFFF' : Theme.textSecondary} />
           <Text style={[styles.resultChipText, matchType === opt.key && styles.resultChipTextActive]}>{opt.label}</Text>
         </TouchableOpacity>
       ))}
@@ -327,18 +331,18 @@ export default function LogMatchScreen() {
       <Text style={styles.label}>Voice note (optional)</Text>
       {voiceNoteUri || voiceNoteUrl ? (
         <View style={styles.voiceSavedRow}>
-          <MaterialCommunityIcons name="microphone-outline" size={18} color={Theme.eyebrowGreen} />
+          <Icon name="microphone-outline" size={18} color={Theme.eyebrowGreen} />
           <Text style={styles.voiceSavedText}>{voiceNoteUri ? `Recorded · ${voiceNoteDuration}s` : `Voice note saved${voiceNoteDuration ? ` · ${voiceNoteDuration}s` : ''}`}</Text>
-          <TouchableOpacity onPress={discardVoiceNote}><MaterialCommunityIcons name="close" size={18} color={Theme.textSecondary} /></TouchableOpacity>
+          <TouchableOpacity onPress={discardVoiceNote}><Icon name="close" size={18} color={Theme.textSecondary} /></TouchableOpacity>
         </View>
       ) : isRecording ? (
         <TouchableOpacity style={styles.recordBtnActive} onPress={stopRecording}>
-          <MaterialCommunityIcons name="stop-circle-outline" size={20} color="#FFFFFF" />
+          <Icon name="stop-circle-outline" size={20} color="#FFFFFF" />
           <Text style={styles.recordBtnText}>Stop · {recordingDuration}s</Text>
         </TouchableOpacity>
       ) : (
         <TouchableOpacity style={styles.recordBtn} onPress={startRecording}>
-          <MaterialCommunityIcons name="microphone-outline" size={20} color={Theme.eyebrowGreen} />
+          <Icon name="microphone-outline" size={20} color={Theme.eyebrowGreen} />
           <Text style={styles.recordBtnTextIdle}>Record a voice note</Text>
         </TouchableOpacity>
       )}
@@ -390,7 +394,7 @@ export default function LogMatchScreen() {
             <View style={styles.suggestionList}>
               {nameSuggestions.map(o => (
                 <TouchableOpacity key={o.id} style={styles.suggestionRow} onPress={() => selectSuggestion(o)}>
-                  <MaterialCommunityIcons name="history" size={14} color={Theme.textSecondary} />
+                  <Icon name="history" size={14} color={Theme.textSecondary} />
                   <Text style={styles.suggestionText}>{o.name}</Text>
                   <Text style={styles.suggestionHint}>Rematch</Text>
                 </TouchableOpacity>
@@ -454,15 +458,45 @@ export default function LogMatchScreen() {
           {strengthsTags.length > 0 && <Text style={styles.summaryLine}>Strengths: {strengthsTags.join(', ')}</Text>}
           {weaknessesTags.length > 0 && <Text style={styles.summaryLine}>Weaknesses: {weaknessesTags.join(', ')}</Text>}
         </View>
-        <View style={styles.shareRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.shareLabel}>Share this log with your coach</Text>
-            <View style={styles.shareHintRow}>
-              <MaterialCommunityIcons name="lock-outline" size={12} color={Theme.textSecondary} />
-              <Text style={styles.shareHint}>Off by default — only you can see it until you share.</Text>
+        <View style={styles.shareBlock}>
+          <View style={styles.shareRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.shareLabel}>Share this log with your coach</Text>
+              <View style={styles.shareHintRow}>
+                <Icon name="lock-outline" size={12} color={Theme.textSecondary} />
+                <Text style={styles.shareHint}>
+                  {selectedCoachIds.length > 0
+                    ? `Shared with ${selectedCoachIds.length} coach${selectedCoachIds.length > 1 ? 'es' : ''}.`
+                    : 'Off by default — only you can see it until you share.'}
+                </Text>
+              </View>
             </View>
+            <Switch
+              value={selectedCoachIds.length > 0}
+              onValueChange={(v) => setSelectedCoachIds(v ? shareableCoaches.map((c) => c.id) : [])}
+              trackColor={{ false: Theme.divider, true: Theme.eyebrowGreen }}
+              thumbColor="#FFFFFF"
+              disabled={shareableCoaches.length === 0}
+            />
           </View>
-          <Switch value={sharedWithCoach} onValueChange={setSharedWithCoach} trackColor={{ false: Theme.divider, true: Theme.eyebrowGreen }} thumbColor="#FFFFFF" />
+          {shareableCoaches.length === 0 ? (
+            <Text style={styles.shareHint}>You don't have a coach to share with yet.</Text>
+          ) : selectedCoachIds.length > 0 && shareableCoaches.length > 1 && (
+            <View style={styles.coachChipRow}>
+              {shareableCoaches.map((c) => {
+                const active = selectedCoachIds.includes(c.id);
+                return (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={[styles.coachChip, active && styles.coachChipActive]}
+                    onPress={() => setSelectedCoachIds((prev) => prev.includes(c.id) ? prev.filter((id) => id !== c.id) : [...prev, c.id])}
+                  >
+                    <Text style={[styles.coachChipText, active && styles.coachChipTextActive]}>{c.full_name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
         </View>
       </>
     );
@@ -473,7 +507,7 @@ export default function LogMatchScreen() {
       <View style={styles.content}>
         <View style={styles.titleRow}>
           <TouchableOpacity onPress={goBack}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+            <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>{editingLogId ? 'Edit Match' : isQuickLog ? 'Quick Log' : 'Log a Match'}</Text>
         </View>
@@ -565,10 +599,16 @@ const styles = StyleSheet.create({
   summaryCard: { backgroundColor: Theme.background, borderRadius: 12, padding: 14, gap: 6, marginBottom: 20 },
   summaryOpponent: { fontSize: 16, fontWeight: 'bold', color: Theme.textPrimary },
   summaryLine: { fontSize: 14, color: Theme.textSecondary },
+  shareBlock: { gap: 10 },
   shareRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   shareLabel: { fontSize: 14, fontWeight: '600', color: Theme.textPrimary },
   shareHintRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   shareHint: { fontSize: 13, color: Theme.textSecondary },
+  coachChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  coachChip: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: Theme.divider, backgroundColor: Theme.background },
+  coachChipActive: { backgroundColor: Theme.eyebrowGreen, borderColor: Theme.eyebrowGreen },
+  coachChipText: { fontSize: 13, fontWeight: '600', color: Theme.textPrimary },
+  coachChipTextActive: { color: '#FFFFFF' },
   footer: { paddingTop: 16 },
   primaryBtn: { backgroundColor: Theme.limeAccent, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   primaryBtnDisabled: { opacity: 0.5 },

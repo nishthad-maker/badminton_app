@@ -2,9 +2,46 @@ import { View, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-nat
 import { Text } from '@/components/Text';
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
+import { DAY_LABELS, cancelRoutineReminders } from '../../lib/routineReminders';
+
+const SCHEDULE_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+const formatTime12h = (t: string) => {
+  const [h, m] = t.split(':').map(Number);
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+
+// Just the next time this routine is actually coming up, not the whole
+// week's schedule — "Today 6:00 AM" / "Tomorrow 6:30 AM" / "Wed 5:00 AM"
+// instead of a long comma list that runs off the card.
+const nextOccurrence = (times: Record<string, string>): string | null => {
+  const scheduledDays = SCHEDULE_DAYS.filter(d => times[d]);
+  if (!scheduledDays.length) return null;
+
+  const now = new Date();
+  const todayIdx = now.getDay() === 0 ? 6 : now.getDay() - 1; // Monday-first
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+  for (let offset = 0; offset < 7; offset++) {
+    const day = SCHEDULE_DAYS[(todayIdx + offset) % 7];
+    if (!times[day]) continue;
+    if (offset === 0) {
+      const [h, m] = times[day].split(':').map(Number);
+      if (h * 60 + m <= nowMinutes) continue; // already passed today
+    }
+    const label = offset === 0 ? 'Today' : offset === 1 ? 'Tomorrow' : DAY_LABELS[day];
+    return `${label} ${formatTime12h(times[day])}`;
+  }
+
+  // Only scheduled day is today and its time already passed — the next
+  // occurrence is the same day next week.
+  const day = scheduledDays[0];
+  return `${DAY_LABELS[day]} ${formatTime12h(times[day])}`;
+};
 
 const showConfirm = (title: string, message: string, onConfirm: () => void) => {
   if (typeof window !== 'undefined') {
@@ -38,6 +75,8 @@ export default function RoutinesScreen() {
 
   const deleteRoutine = (id: string, name: string) => {
     showConfirm('Delete Routine', `Delete "${name}"? This can't be undone.`, async () => {
+      const notificationIds = routines.find(r => r.id === id)?.notification_ids ?? [];
+      await cancelRoutineReminders(notificationIds);
       await supabase.from('routines').delete().eq('id', id);
       setRoutines(prev => prev.filter(r => r.id !== id));
     });
@@ -51,7 +90,7 @@ export default function RoutinesScreen() {
           style={styles.addBtn}
           onPress={() => router.push('/create-routine' as any)}
         >
-          <MaterialCommunityIcons name="plus" size={22} color="#44403C" />
+          <Icon name="plus" size={22} color="#44403C" />
         </TouchableOpacity>
       </View>
 
@@ -60,14 +99,14 @@ export default function RoutinesScreen() {
           <Text style={styles.muted}>Loading...</Text>
         ) : routines.length === 0 ? (
           <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="dumbbell" size={48} color={Theme.textMuted} />
+            <Icon name="dumbbell" size={48} color={Theme.textMuted} />
             <Text style={styles.emptyTitle}>No routines yet</Text>
             <Text style={styles.emptyDesc}>Tap the + button to create your first routine.</Text>
             <TouchableOpacity
               style={styles.createBtn}
               onPress={() => router.push('/create-routine' as any)}
             >
-              <MaterialCommunityIcons name="plus" size={18} color="#44403C" />
+              <Icon name="plus" size={18} color="#44403C" />
               <Text style={styles.createBtnText}>Create Routine</Text>
             </TouchableOpacity>
           </View>
@@ -89,12 +128,20 @@ export default function RoutinesScreen() {
                       <View key={i} style={[styles.catDot, { backgroundColor: (CategoryTheme[cat as keyof typeof CategoryTheme] ?? { fg: Theme.eyebrowGreen }).fg }]} />
                     ))}
                   </View>
-                  <View>
-                    <Text style={styles.routineName}>{r.name}</Text>
-                    <Text style={styles.routineSub}>
+                  <View style={styles.routineTextCol}>
+                    <Text style={styles.routineName} numberOfLines={1}>{r.name}</Text>
+                    <Text style={styles.routineSub} numberOfLines={1}>
                       {exercises.length} exercise{exercises.length !== 1 ? 's' : ''}
                       {exercises.length > 0 ? ` · ${exercises.map((e: any) => e.name).slice(0, 2).join(', ')}${exercises.length > 2 ? '...' : ''}` : ''}
                     </Text>
+                    {r.scheduled_times && nextOccurrence(r.scheduled_times) && (
+                      <View style={styles.scheduleBadge}>
+                        <Icon name="clock-outline" size={12} color={Theme.eyebrowGreen} />
+                        <Text style={styles.scheduleBadgeText} numberOfLines={1}>
+                          {nextOccurrence(r.scheduled_times)}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 </View>
                 <View style={styles.routineRight}>
@@ -103,9 +150,9 @@ export default function RoutinesScreen() {
                     onPress={() => deleteRoutine(r.id, r.name)}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
-                    <MaterialCommunityIcons name="trash-can-outline" size={18} color="#E74C3C" />
+                    <Icon name="trash-can-outline" size={18} color="#E74C3C" />
                   </TouchableOpacity>
-                  <MaterialCommunityIcons name="chevron-right" size={20} color={Theme.textMuted} />
+                  <Icon name="chevron-right" size={20} color={Theme.textMuted} />
                 </View>
               </TouchableOpacity>
             );
@@ -129,11 +176,14 @@ const styles = StyleSheet.create({
   createBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#E7E5E0', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24, marginTop: 8 },
   createBtnText: { color: '#44403C', fontWeight: 'bold', fontSize: 14 },
   routineCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 16, marginBottom: 12 },
-  routineLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
+  routineLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1, minWidth: 0 },
   catDots: { flexDirection: 'column', gap: 4 },
   catDot: { width: 8, height: 8, borderRadius: 4 },
+  routineTextCol: { flex: 1, minWidth: 0 },
   routineName: { fontSize: 16, fontWeight: '700', color: Theme.textPrimary, marginBottom: 3 },
   routineSub: { fontSize: 13, color: Theme.textSecondary },
+  scheduleBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  scheduleBadgeText: { flex: 1, fontSize: 12, color: Theme.eyebrowGreen, fontWeight: '600' },
   routineRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   deleteBtn: { padding: 4 },
 });

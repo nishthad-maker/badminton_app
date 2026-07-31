@@ -2,13 +2,15 @@ import { View, StyleSheet, TouchableOpacity, Pressable, ScrollView } from 'react
 import { Text } from '@/components/Text';
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
+import { getPlayerClubMembership } from '../../lib/club';
+import { getClubCoachesForPlayer } from '../../lib/playerClub';
 
 const CATEGORIES = [
   { key: 'strength', title: 'Strength Training', sub: 'Legs, Core, Upper Body', icon: 'dumbbell' },
-  { key: 'footwork', title: 'Footwork Drills', sub: 'Speed, Agility, Court Movement', icon: 'badminton' },
+  { key: 'footwork', title: 'Footwork Drills', sub: 'Speed, Agility, Court Movement', icon: 'footprints' },
   { key: 'endurance', title: 'Endurance', sub: 'Stamina, Rally Fitness, Interval', icon: 'lightning-bolt' },
   { key: 'recovery', title: 'Recovery', sub: 'Stretching, Foam Rolling, Breathing', icon: 'heart-pulse' },
 ];
@@ -18,10 +20,42 @@ export default function TrainScreen() {
   const [routineCount, setRoutineCount] = useState(0);
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
 
+  // Coach Plan card's club/coach connection tag — a lightweight lookup
+  // (just the club name + priority coach), not the full membership detail
+  // that used to live on this tab (that's now on Profile's "My Club").
+  const [clubTag, setClubTag] = useState<{ clubName: string; coachName: string | null } | null>(null);
+  // Whether a coach has actually assigned anything yet (a workout or a
+  // weekly plan) — starts true so the card doesn't flash an empty state
+  // before this resolves; the "New workouts" copy below only ever refers to
+  // something a coach really did, never a default placeholder.
+  const [hasAssignedPlan, setHasAssignedPlan] = useState(true);
+
   useFocusEffect(useCallback(() => {
     loadCustomCounts();
     loadRoutineCount();
+    loadClubTag();
+    loadPlanStatus();
   }, []));
+
+  const loadPlanStatus = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+    const [{ count: asgCount }, { count: planCount }] = await Promise.all([
+      supabase.from('assignments').select('id', { count: 'exact', head: true }).eq('player_id', session.user.id),
+      supabase.from('weekly_plans').select('id', { count: 'exact', head: true }).eq('player_id', session.user.id),
+    ]);
+    setHasAssignedPlan((asgCount ?? 0) > 0 || (planCount ?? 0) > 0);
+  };
+
+  const loadClubTag = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+    const active = await getPlayerClubMembership(session.user.id);
+    if (!active) { setClubTag(null); return; }
+    const coaches = await getClubCoachesForPlayer(session.user.id, active.clubId);
+    const priority = coaches.find((c) => c.isPriority) ?? coaches[0] ?? null;
+    setClubTag({ clubName: active.clubName, coachName: priority?.full_name ?? null });
+  };
 
   const loadCustomCounts = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -89,7 +123,7 @@ export default function TrainScreen() {
                   onPressOut={() => setHoveredCard(null)}
                 >
                   <View style={[styles.iconBox, { backgroundColor: theme.bg }]}>
-                    <MaterialCommunityIcons name={cat.icon as any} size={28} color={theme.fg} />
+                    <Icon name={cat.icon as any} size={28} color={theme.fg} />
                   </View>
                   <View style={styles.cardText}>
                     <Text style={styles.cardTitle}>{cat.title}</Text>
@@ -102,7 +136,7 @@ export default function TrainScreen() {
                       ) : null}
                     </View>
                   </View>
-                  <MaterialCommunityIcons name="chevron-right" size={22} color={Theme.textMuted} />
+                  <Icon name="chevron-right" size={22} color={Theme.textMuted} />
                 </Pressable>
               );
             })}
@@ -113,20 +147,20 @@ export default function TrainScreen() {
           {/* My Routines */}
           <TouchableOpacity style={styles.cardVertical} onPress={goToRoutines}>
             <View style={[styles.iconCircle, { backgroundColor: '#E7E5E0' }]}>
-              <MaterialCommunityIcons name="playlist-check" size={26} color="#44403C" />
+              <Icon name="playlist-check" size={26} color="#44403C" />
             </View>
             <Text style={styles.cardTitleLg}>My Routines</Text>
             <Text style={styles.cardDesc}>{routineCount} custom routine{routineCount !== 1 ? 's' : ''}</Text>
             <View style={styles.cardLinkRow}>
               <Text style={[styles.cardLinkText, { color: '#44403C' }]}>View routines</Text>
-              <MaterialCommunityIcons name="chevron-right" size={18} color="#44403C" />
+              <Icon name="chevron-right" size={18} color="#44403C" />
             </View>
           </TouchableOpacity>
 
           {/* My Workouts */}
           <TouchableOpacity style={styles.cardVertical} onPress={goToCustomWorkouts}>
             <View style={[styles.iconCircle, { backgroundColor: '#E7E5E0' }]}>
-              <MaterialCommunityIcons name="plus" size={26} color="#44403C" />
+              <Icon name="plus" size={26} color="#44403C" />
             </View>
             <Text style={styles.cardTitleLg}>Create Exercise</Text>
             <Text style={styles.cardDesc}>
@@ -136,7 +170,7 @@ export default function TrainScreen() {
             </Text>
             <View style={styles.cardLinkRow}>
               <Text style={[styles.cardLinkText, { color: '#44403C' }]}>Add an exercise</Text>
-              <MaterialCommunityIcons name="chevron-right" size={18} color="#44403C" />
+              <Icon name="chevron-right" size={18} color="#44403C" />
             </View>
           </TouchableOpacity>
 
@@ -146,15 +180,31 @@ export default function TrainScreen() {
           <TouchableOpacity style={styles.coachPlanCard} onPress={goToCoach}>
             <View style={styles.coachPlanHeader}>
               <View style={styles.coachPlanIconCircle}>
-                <MaterialCommunityIcons name="clipboard-text-outline" size={26} color="#123C35" />
+                <Icon name="clipboard-text-outline" size={26} color="#123C35" />
               </View>
               <Text style={styles.coachPlanEyebrow}>COACH PLAN</Text>
             </View>
-            <Text style={styles.coachPlanTitle}>New workouts, ready to train</Text>
-            <Text style={styles.coachPlanDesc}>Your coach added new workouts and routines to your plan this week.</Text>
+            {clubTag && (
+              <View style={styles.coachPlanTag}>
+                <Icon name="account-badge" size={13} color="#BEE6DA" />
+                <Text style={styles.coachPlanTagText}>
+                  {clubTag.coachName ? `${clubTag.coachName} · ` : ''}{clubTag.clubName}
+                </Text>
+              </View>
+            )}
+            <Text style={styles.coachPlanTitle}>
+              {hasAssignedPlan ? 'New workouts, ready to train' : clubTag ? 'Nothing assigned yet' : 'No coach plan yet'}
+            </Text>
+            <Text style={styles.coachPlanDesc}>
+              {hasAssignedPlan
+                ? 'Your coach added new workouts and routines to your plan this week.'
+                : clubTag
+                  ? "Your coach hasn't assigned any workouts or a plan yet — check back soon."
+                  : 'Connect with a coach to get workouts and a weekly plan built for you.'}
+            </Text>
             <View style={styles.coachPlanBtn}>
               <Text style={styles.coachPlanBtnText}>View plan</Text>
-              <MaterialCommunityIcons name="chevron-right" size={19} color="#123C35" />
+              <Icon name="chevron-right" size={19} color="#123C35" />
             </View>
           </TouchableOpacity>
         </View>
@@ -191,6 +241,8 @@ const styles = StyleSheet.create({
   coachPlanDesc: { fontSize: 16, color: 'rgba(255,255,255,0.75)', lineHeight: 23, marginBottom: 22 },
   coachPlanBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFFFFF', borderRadius: 28, paddingHorizontal: 24, paddingVertical: 14 },
   coachPlanBtnText: { fontSize: 16, fontWeight: '700', color: '#123C35' },
+  coachPlanTag: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  coachPlanTagText: { fontSize: 13, fontWeight: '600', color: '#BEE6DA' },
   cardText: { flex: 1 },
   cardTitle: { fontSize: 19, fontWeight: '600', color: Theme.textPrimary },
   cardSubRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' },

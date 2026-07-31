@@ -4,6 +4,7 @@
 
 export type LogType =
   | 'strength'       // weight, reps, sets
+  | 'strength-time'   // weight, sets, time per set (e.g. battle ropes)
   | 'reps-sets'       // reps, sets (bodyweight, no weight)
   | 'plyometric'      // reps, sets, height  <-- NEW
   | 'plank'           // duration
@@ -22,6 +23,10 @@ export const LOG_TYPE_FIELDS: Record<LogType, LogFieldConfig> = {
   strength: {
     fields: ['weight', 'reps', 'sets'],
     units: { weight: 'lb' }, // switch to 'kg' if that's your default
+  },
+  'strength-time': {
+    fields: ['weight', 'sets', 'duration'],
+    units: { weight: 'lb', duration: 'sec' },
   },
   'reps-sets': {
     fields: ['reps', 'sets'],

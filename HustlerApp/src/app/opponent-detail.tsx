@@ -1,15 +1,17 @@
-import { View, StyleSheet, TouchableOpacity, ScrollView, TextInput, ActivityIndicator, Switch, Alert, Linking } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Switch, Alert, Linking } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { Audio } from 'expo-av';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
 import { notifyMatchShared, notifyPlayerMessage } from '../lib/notifications';
 import { showAlert } from '../lib/ui';
 import { MessageBubble } from '@/components/MessageBubble';
+import { getShareableCoaches, ShareableCoach } from '../lib/coachSharing';
 
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 const fmtTime = (d: string) => new Date(d).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
@@ -49,6 +51,7 @@ export default function OpponentDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [myId, setMyId] = useState<string | null>(null);
   const [myName, setMyName] = useState('Your player');
+  const [shareableCoaches, setShareableCoaches] = useState<ShareableCoach[]>([]);
 
   const [playingId, setPlayingId] = useState<string | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
@@ -68,6 +71,7 @@ export default function OpponentDetailScreen() {
       setMyId(me);
       const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', me).single();
       if (prof?.full_name) setMyName(prof.full_name);
+      getShareableCoaches(me).then(setShareableCoaches);
     }
 
     const { data: opp } = await supabase.from('opponents').select('*').eq('id', opponentId).single();
@@ -135,15 +139,19 @@ export default function OpponentDetailScreen() {
     });
   };
 
-  const toggleShare = async (log: any, next: boolean) => {
-    setLogs(prev => prev.map(l => l.id === log.id ? { ...l, shared_with_coach: next } : l));
-    await supabase.from('opponent_logs').update({ shared_with_coach: next, updated_at: new Date().toISOString() }).eq('id', log.id);
-    if (next && myId) {
-      const { data: conns } = await supabase.from('coach_connections').select('coach_id').eq('player_id', myId).eq('status', 'accepted');
-      for (const c of conns ?? []) {
-        await notifyMatchShared(c.coach_id, myName, opponentName);
-      }
-    }
+  const toggleShare = async (log: any, nextIds: string[]) => {
+    const prevIds: string[] = log.shared_with_coach_ids ?? [];
+    setLogs(prev => prev.map(l => l.id === log.id ? { ...l, shared_with_coach: nextIds.length > 0, shared_with_coach_ids: nextIds } : l));
+    await supabase.from('opponent_logs')
+      .update({ shared_with_coach: nextIds.length > 0, shared_with_coach_ids: nextIds, updated_at: new Date().toISOString() })
+      .eq('id', log.id);
+    const newlyShared = nextIds.filter((id) => !prevIds.includes(id));
+    for (const coachId of newlyShared) { await notifyMatchShared(coachId, myName, opponentName); }
+  };
+
+  const toggleCoachForLog = (log: any, coachId: string) => {
+    const current: string[] = log.shared_with_coach_ids ?? [];
+    toggleShare(log, current.includes(coachId) ? current.filter((id) => id !== coachId) : [...current, coachId]);
   };
 
   const toggleChat = (id: string) => setExpandedChats(prev => ({ ...prev, [id]: !prev[id] }));
@@ -159,8 +167,7 @@ export default function OpponentDetailScreen() {
     setMsgInputs(prev => ({ ...prev, [log.id]: '' }));
     setLogs(prev => prev.map(l => l.id === log.id ? { ...l, messages: [...l.messages, inserted] } : l));
 
-    const { data: conns } = await supabase.from('coach_connections').select('coach_id').eq('player_id', myId).eq('status', 'accepted');
-    for (const c of conns ?? []) { await notifyPlayerMessage(c.coach_id, myName, msg); }
+    for (const coachId of (log.shared_with_coach_ids ?? [])) { await notifyPlayerMessage(coachId, myName, msg); }
   };
 
   const topTags = topTagCounts(logs);
@@ -170,7 +177,7 @@ export default function OpponentDetailScreen() {
       <View style={styles.content}>
         <View style={styles.titleRow}>
           <TouchableOpacity onPress={goBack}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+            <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>{opponentName}</Text>
         </View>
@@ -186,7 +193,7 @@ export default function OpponentDetailScreen() {
                 <View style={styles.chipRow}>
                   {topTags.map(t => (
                     <View key={t.tag} style={[styles.chip, t.source === 'weakness' ? styles.chipWeakness : styles.chipStrength]}>
-                      <Text style={styles.chipText}>{t.tag}</Text>
+                      <Text style={[styles.chipText, t.source === 'weakness' ? styles.chipWeaknessText : styles.chipStrengthText]}>{t.tag}</Text>
                     </View>
                   ))}
                 </View>
@@ -197,14 +204,14 @@ export default function OpponentDetailScreen() {
               style={styles.logAgainBtn}
               onPress={() => router.push({ pathname: '/log-match', params: { opponentId: opponentId as string, name: opponentName } })}
             >
-              <MaterialCommunityIcons name="plus" size={18} color={Theme.limeAccentDark} />
+              <Icon name="plus" size={18} color={Theme.limeAccentDark} />
               <Text style={styles.logAgainText}>Log another match vs {opponentName}</Text>
             </TouchableOpacity>
 
             <Text style={styles.sectionLabel}>HISTORY ({logs.length})</Text>
             {logs.length === 0 ? (
               <View style={styles.emptyState}>
-                <MaterialCommunityIcons name="clipboard-text-outline" size={40} color={Theme.textSecondary} />
+                <Icon name="clipboard-text-outline" size={40} color={Theme.textSecondary} />
                 <Text style={styles.emptyDesc}>No logs yet.</Text>
               </View>
             ) : (
@@ -215,47 +222,37 @@ export default function OpponentDetailScreen() {
                     <View style={styles.logTopRowRight}>
                       {log.is_quick_log && <View style={styles.quickBadge}><Text style={styles.quickBadgeText}>Quick log</Text></View>}
                       <TouchableOpacity onPress={() => editLog(log)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <MaterialCommunityIcons name="pencil-outline" size={18} color={Theme.textSecondary} />
+                        <Icon name="pencil-outline" size={18} color={Theme.textSecondary} />
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => deleteLog(log)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />
+                        <Icon name="trash-can-outline" size={18} color="#FF6B6B" />
                       </TouchableOpacity>
                     </View>
                   </View>
 
-                  <View style={styles.scoreResultRow}>
-                    {log.score && <Text style={styles.logScore}>{log.score}</Text>}
-                    {log.result && log.result !== 'unsure' && (
-                      <View style={[styles.resultBadge, { backgroundColor: log.result === 'win' ? 'rgba(46,204,113,0.15)' : 'rgba(255,107,107,0.15)' }]}>
-                        <MaterialCommunityIcons name={log.result === 'win' ? 'trophy-outline' : 'close-circle-outline'} size={13} color={log.result === 'win' ? Theme.eyebrowGreen : '#FF6B6B'} />
-                        <Text style={[styles.resultBadgeText, { color: log.result === 'win' ? Theme.eyebrowGreen : '#FF6B6B' }]}>
-                          {log.result === 'win' ? 'Win' : 'Loss'}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
+                  {(log.score || (log.result && log.result !== 'unsure')) && (
+                    <View style={styles.scoreResultRow}>
+                      {log.score && <Text style={styles.logScore}>{log.score}</Text>}
+                      {log.result && log.result !== 'unsure' && (
+                        <View style={[styles.resultDot, { backgroundColor: log.result === 'win' ? '#2ECC71' : '#FF6B6B' }]} />
+                      )}
+                    </View>
+                  )}
 
-                  {(log.strengths_tags?.length > 0 || log.strengths_text) && (
+                  {(log.strengths_tags?.length > 0 || log.strengths_text || log.weaknesses_tags?.length > 0 || log.weaknesses_text) && (
                     <View style={styles.logSection}>
-                      <Text style={styles.logSectionLabel}>STRENGTHS</Text>
                       {log.strengths_tags?.length > 0 && (
                         <View style={styles.chipRow}>
                           {log.strengths_tags.map((t: string) => (
-                            <View key={`s-${t}`} style={[styles.chip, styles.chipStrength]}><Text style={styles.chipText}>{t}</Text></View>
+                            <View key={`s-${t}`} style={[styles.chip, styles.chipStrength]}><Text style={[styles.chipText, styles.chipStrengthText]}>{t}</Text></View>
                           ))}
                         </View>
                       )}
                       {log.strengths_text && <Text style={styles.logNote}>{log.strengths_text}</Text>}
-                    </View>
-                  )}
-
-                  {(log.weaknesses_tags?.length > 0 || log.weaknesses_text) && (
-                    <View style={styles.logSection}>
-                      <Text style={styles.logSectionLabel}>WEAKNESSES</Text>
                       {log.weaknesses_tags?.length > 0 && (
                         <View style={styles.chipRow}>
                           {log.weaknesses_tags.map((t: string) => (
-                            <View key={`w-${t}`} style={[styles.chip, styles.chipWeakness]}><Text style={styles.chipText}>{t}</Text></View>
+                            <View key={`w-${t}`} style={[styles.chip, styles.chipWeakness]}><Text style={[styles.chipText, styles.chipWeaknessText]}>{t}</Text></View>
                           ))}
                         </View>
                       )}
@@ -264,21 +261,21 @@ export default function OpponentDetailScreen() {
                   )}
 
                   {log.next_time_text && (
-                    <View style={styles.logSection}>
-                      <Text style={styles.logSectionLabel}>NEXT TIME</Text>
+                    <View style={styles.nextTimeRow}>
+                      <Icon name="lightbulb-outline" size={14} color={Theme.textSecondary} />
                       <Text style={styles.logNote}>{log.next_time_text}</Text>
                     </View>
                   )}
 
                   {log.video_url && (
                     <TouchableOpacity style={styles.voiceRow} onPress={() => Linking.openURL(log.video_url)}>
-                      <MaterialCommunityIcons name="link-variant" size={20} color={Theme.eyebrowGreen} />
+                      <Icon name="link-variant" size={20} color={Theme.eyebrowGreen} />
                       <Text style={styles.voiceText}>Watch match video</Text>
                     </TouchableOpacity>
                   )}
                   {log.voice_note_url && (
                     <TouchableOpacity style={styles.voiceRow} onPress={() => playVoiceNote(log)}>
-                      <MaterialCommunityIcons name={playingId === log.id ? 'pause-circle' : 'play-circle'} size={22} color={Theme.eyebrowGreen} />
+                      <Icon name={playingId === log.id ? 'pause-circle' : 'play-circle'} size={22} color={Theme.eyebrowGreen} />
                       <Text style={styles.voiceText}>Voice note{log.voice_note_duration_seconds ? ` · ${log.voice_note_duration_seconds}s` : ''}</Text>
                     </TouchableOpacity>
                   )}
@@ -286,19 +283,37 @@ export default function OpponentDetailScreen() {
                   <View style={styles.shareRow}>
                     <Text style={styles.shareLabel}>Share with coach</Text>
                     <Switch
-                      value={log.shared_with_coach}
-                      onValueChange={(v) => toggleShare(log, v)}
+                      value={(log.shared_with_coach_ids ?? []).length > 0}
+                      onValueChange={(v) => toggleShare(log, v ? shareableCoaches.map((c) => c.id) : [])}
                       trackColor={{ false: Theme.divider, true: Theme.eyebrowGreen }}
                       thumbColor="#FFFFFF"
+                      disabled={shareableCoaches.length === 0}
                     />
                   </View>
+
+                  {(log.shared_with_coach_ids ?? []).length > 0 && shareableCoaches.length > 1 && (
+                    <View style={styles.coachChipRow}>
+                      {shareableCoaches.map((c) => {
+                        const active = (log.shared_with_coach_ids ?? []).includes(c.id);
+                        return (
+                          <TouchableOpacity
+                            key={c.id}
+                            style={[styles.coachChip, active && styles.coachChipActive]}
+                            onPress={() => toggleCoachForLog(log, c.id)}
+                          >
+                            <Text style={[styles.coachChipText, active && styles.coachChipTextActive]}>{c.full_name}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
 
                   {log.shared_with_coach && (
                     <View style={styles.chatSection}>
                       <TouchableOpacity style={styles.chatToggle} onPress={() => toggleChat(log.id)}>
-                        <MaterialCommunityIcons name="message-outline" size={15} color={Theme.eyebrowGreen} />
+                        <Icon name="message-outline" size={15} color={Theme.eyebrowGreen} />
                         <Text style={styles.chatToggleText}>{log.messages.length > 0 ? `Coach feedback (${log.messages.length})` : 'No feedback yet'}</Text>
-                        <MaterialCommunityIcons name={expandedChats[log.id] ? 'chevron-up' : 'chevron-down'} size={16} color={Theme.textSecondary} />
+                        <Icon name={expandedChats[log.id] ? 'chevron-up' : 'chevron-down'} size={16} color={Theme.textSecondary} />
                       </TouchableOpacity>
                       {expandedChats[log.id] && (
                         <>
@@ -331,7 +346,7 @@ export default function OpponentDetailScreen() {
                               onPress={() => sendMessage(log)}
                               disabled={!msgInputs[log.id]?.trim() || sendingMsg[log.id]}
                             >
-                              {sendingMsg[log.id] ? <ActivityIndicator size="small" color={Theme.limeAccentDark} /> : <MaterialCommunityIcons name="send" size={16} color={Theme.limeAccentDark} />}
+                              {sendingMsg[log.id] ? <ActivityIndicator size="small" color={Theme.limeAccentDark} /> : <Icon name="send" size={16} color={Theme.limeAccentDark} />}
                             </TouchableOpacity>
                           </View>
                         </>
@@ -360,28 +375,35 @@ const styles = StyleSheet.create({
   logAgainBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Theme.limeAccent, borderRadius: 12, paddingVertical: 14, marginBottom: 20 },
   logAgainText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 14 },
   sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 12 },
-  logCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 14, marginBottom: 12, gap: 10 },
+  logCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 14, marginBottom: 10, gap: 8 },
   logTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   logTopRowRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  logDate: { fontSize: 13, color: Theme.textSecondary },
+  logDate: { fontSize: 12, color: Theme.textMuted },
   quickBadge: { backgroundColor: Theme.background, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   quickBadgeText: { fontSize: 12, color: Theme.textSecondary, fontWeight: '600' },
   scoreResultRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   logScore: { fontSize: 16, fontWeight: '600', color: Theme.textPrimary },
-  resultBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
-  resultBadgeText: { fontSize: 13, fontWeight: '700' },
-  logSection: { gap: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: Theme.divider },
+  resultDot: { width: 14, height: 14, borderRadius: 7 },
+  logSection: { gap: 6 },
   logSectionLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.textSecondary, letterSpacing: 1 },
-  logNote: { fontSize: 14, color: Theme.textSecondary, lineHeight: 19 },
+  logNote: { fontSize: 13, color: Theme.textSecondary, lineHeight: 18 },
+  nextTimeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: Theme.background, borderRadius: 10, padding: 8 },
   voiceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Theme.cardTinted, borderRadius: 10, padding: 10 },
   voiceText: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
-  shareRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6, borderTopWidth: 1, borderTopColor: Theme.divider },
+  shareRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, marginTop: 2, borderTopWidth: 1, borderTopColor: Theme.divider },
   shareLabel: { fontSize: 13, color: Theme.textSecondary, fontWeight: '600' },
+  coachChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  coachChip: { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: Theme.divider, backgroundColor: Theme.background },
+  coachChipActive: { backgroundColor: Theme.eyebrowGreen, borderColor: Theme.eyebrowGreen },
+  coachChipText: { fontSize: 12, fontWeight: '600', color: Theme.textPrimary },
+  coachChipTextActive: { color: '#FFFFFF' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chip: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  chipStrength: { backgroundColor: 'rgba(46,204,113,0.14)' },
-  chipWeakness: { backgroundColor: 'rgba(231,76,60,0.12)' },
+  chip: { borderRadius: 9, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: 'transparent' },
+  chipStrength: { backgroundColor: 'rgba(46,204,113,0.10)', borderColor: 'rgba(30,142,62,0.28)' },
+  chipWeakness: { backgroundColor: 'rgba(231,76,60,0.08)', borderColor: 'rgba(192,57,43,0.26)' },
   chipText: { fontSize: 13, color: Theme.textPrimary },
+  chipStrengthText: { color: '#1E8E3E', fontWeight: '600' },
+  chipWeaknessText: { color: '#C0392B', fontWeight: '600' },
   emptyState: { alignItems: 'center', paddingTop: 40, gap: 10 },
   emptyDesc: { fontSize: 15, color: Theme.textSecondary, textAlign: 'center' },
   chatSection: { gap: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: Theme.divider },

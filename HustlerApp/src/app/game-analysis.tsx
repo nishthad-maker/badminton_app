@@ -1,8 +1,9 @@
-import { View, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
 
@@ -33,13 +34,13 @@ export default function GameAnalysisScreen() {
       <View style={styles.content}>
         <View style={styles.titleRow}>
           <TouchableOpacity onPress={goBack}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+            <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>Game Analysis</Text>
         </View>
 
         <View style={styles.hero}>
-          <MaterialCommunityIcons name="chart-line" size={48} color="#44403C" />
+          <Icon name="chart-line" size={48} color="#44403C" />
           <Text style={styles.heroTitle}>Coming Soon</Text>
           <Text style={styles.heroDesc}>
             We're building deeper match analysis — think shot patterns, rally length, and trends across all your matches over time.

@@ -1,5 +1,5 @@
 import { Tabs, usePathname } from 'expo-router';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { View } from 'react-native';
 import { useEffect } from 'react';
 import { Theme } from '@/constants/theme';
@@ -36,7 +36,7 @@ export default function TabLayout() {
           options={{
             title: 'Home',
             tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="home" size={26} color={color} />
+              <Icon name="home" size={29} color={color} />
             ),
           }}
         />
@@ -45,7 +45,7 @@ export default function TabLayout() {
           options={{
             title: 'Train',
             tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="run" size={26} color={color} />
+              <Icon name="run" size={29} color={color} />
             ),
           }}
         />
@@ -54,7 +54,7 @@ export default function TabLayout() {
           options={{
             title: 'Matches',
             tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="clipboard-text" size={26} color={color} />
+              <Icon name="clipboard-text" size={29} color={color} />
             ),
           }}
         />
@@ -63,7 +63,7 @@ export default function TabLayout() {
           options={{
             title: 'Community',
             tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="account-group" size={26} color={color} />
+              <Icon name="account-group" size={29} color={color} />
             ),
           }}
         />
@@ -72,7 +72,7 @@ export default function TabLayout() {
           options={{
             title: 'Profile',
             tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="account-circle" size={26} color={color} />
+              <Icon name="account-circle" size={29} color={color} />
             ),
           }}
         />

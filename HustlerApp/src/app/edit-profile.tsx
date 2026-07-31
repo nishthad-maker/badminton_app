@@ -1,10 +1,11 @@
-import { View, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { router } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Theme, Fonts } from '@/constants/theme';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { getOrCreateUsername, containsBlockedWords } from '../lib/community';
 
 const SKILL_LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
@@ -156,7 +157,7 @@ export default function EditProfileScreen() {
 
         <View style={styles.titleRow}>
           <TouchableOpacity onPress={goBack}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+            <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>Edit Profile</Text>
         </View>
@@ -167,7 +168,7 @@ export default function EditProfileScreen() {
           <Text style={styles.label}>Full Name</Text>
           <View style={styles.readOnlyField}>
             <Text style={styles.readOnlyText}>{fullName}</Text>
-            <MaterialCommunityIcons name="lock-outline" size={16} color={Theme.textSecondary} />
+            <Icon name="lock-outline" size={16} color={Theme.textSecondary} />
           </View>
 
           {/* Username */}

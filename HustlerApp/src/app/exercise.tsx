@@ -1,14 +1,15 @@
-import { View, StyleSheet, ScrollView, TouchableOpacity, Pressable, TextInput, Alert, Image, ActivityIndicator, Platform } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Pressable, Alert, Image, ActivityIndicator, Platform } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Audio } from 'expo-av';
 import { supabase } from '../lib/supabase';
+import { notifyWorkoutCompleted } from '../lib/notifications';
 import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { LOG_TYPE_FIELDS } from '@/constants/logTypes';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 
 type VoiceNote = {
   id: string;
@@ -54,6 +55,7 @@ const showConfirm = (title: string, message: string, onConfirm: () => void) => {
 const getLocalImage = (key: string) => {
   switch (key) {
     case 'local': return require('../../assets/images/plank.jpg');
+    case 'wallsit': return require('../../assets/images/wall-sit.jpg');
     case 'icebath': return require('../../assets/images/icebath.png');
     case 'foam': return require('../../assets/images/foam.png');
     case 'upperstretch': return require('../../assets/images/upperstretch.png');
@@ -63,15 +65,23 @@ const getLocalImage = (key: string) => {
   }
 };
 
-const getSkillRecommendation = (logType: string, skillLevel: string) => {
+const getSkillRecommendation = (logType: string, skillLevel: string, exerciseName?: string) => {
   const level = skillLevel?.toLowerCase() ?? 'beginner';
   if (level === 'advanced') return null;
+  // HIIT-style cardio machines get real interval dosing (work sets of
+  // seconds, not one long "set" measured in minutes) — sourced from
+  // standard air-bike HIIT guidance (e.g. 15-45 splits), not the generic
+  // sets-duration default below, which never made sense for interval work.
+  if (exerciseName === 'Air Bike') return level === 'intermediate' ? '15 sets • 20 sec' : '10 sets • 15 sec';
   if (logType === 'plank') return level === 'intermediate' ? '3 sets • 45 sec each' : '2 sets • 20 sec each';
   if (logType === 'reps-sets') return level === 'intermediate' ? '3 sets • 12 reps' : '2 sets • 8 reps';
   if (logType === 'plyometric') return level === 'intermediate' ? '3 sets • 8 reps @ 12in' : '2 sets • 6 reps @ 8in';
   if (logType === 'footwork') return level === 'intermediate' ? '3 sets' : '2 sets';
   if (logType === 'skipping') return level === 'intermediate' ? '5 sets • 50 reps • 45 sec' : '3 sets • 25 reps • 20 sec';
-  if (logType === 'sets-duration') return level === 'intermediate' ? '3 sets • 20 min' : '2 sets • 15 min';
+  // sets-duration's own field config (constants/logTypes.ts) collects duration
+  // in seconds, not minutes — this generic fallback previously said "min",
+  // mismatched against the field it's recommending a target for.
+  if (logType === 'sets-duration') return level === 'intermediate' ? '3 sets • 30 sec' : '2 sets • 20 sec';
   if (logType === 'duration-distance') return level === 'intermediate' ? '25 min' : '15 min';
   return null;
 };
@@ -97,6 +107,8 @@ export default function ExerciseScreen() {
   const [sessionIds, setSessionIds] = useState<string[]>([]);
   const [sessionCreatedAt, setSessionCreatedAt] = useState<string[]>([]);
   const [generalNote, setGeneralNote] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const noteTimeout = useRef<any>(null);
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [startingWeight, setStartingWeight] = useState<number | null>(null);
@@ -139,8 +151,6 @@ export default function ExerciseScreen() {
   const recordingTimerRef = useRef<any>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const playbackIntervalRef = useRef<any>(null);
-
-  const noteKey = `note_${name}`;
 
   useEffect(() => {
     loadData();
@@ -385,6 +395,22 @@ export default function ExerciseScreen() {
     });
   };
 
+  const clearAllVoiceNotes = () => {
+    if (voiceNotes.length === 0 || !user) return;
+    showConfirm('Clear all voice notes?', 'This will delete every recording for this exercise.', async () => {
+      if (soundRef.current) {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+        clearInterval(playbackIntervalRef.current);
+        soundRef.current = null;
+        setPlayingId(null);
+        setPlaybackProgress(0);
+      }
+      await supabase.from('voice_notes').delete().eq('user_id', user.id).eq('exercise_name', name as string);
+      setVoiceNotes([]);
+    });
+  };
+
   const formatVoiceDate = (dateStr: string) =>
     new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
@@ -404,6 +430,8 @@ export default function ExerciseScreen() {
         if (data) { setSessions(sessionLogData); setSessionIds(data.map((row: any) => row.id)); setSessionCreatedAt(sessionCreated); }
         const { data: vnData } = await supabase.from('voice_notes').select('*').eq('user_id', currentUser.id).eq('exercise_name', name as string).order('created_at', { ascending: false }).limit(5);
         if (vnData) setVoiceNotes(vnData as VoiceNote[]);
+        const { data: noteData } = await supabase.from('exercise_notes').select('note').eq('user_id', currentUser.id).eq('exercise_name', name as string).single();
+        if (noteData?.note) setGeneralNote(noteData.note);
         if (logType === 'strength') {
           const { data: settings } = await supabase.from('exercise_settings').select('starting_weight').eq('user_id', currentUser.id).eq('exercise_name', name as string).single();
           if (settings?.starting_weight) {
@@ -415,13 +443,13 @@ export default function ExerciseScreen() {
           }
         } else if (logType === 'plyometric') {
           buildPlyoRecommendation(sessionLogData, sessionCreated, profileData?.skill_level);
+        } else if (logType === 'strength-time') {
+          buildStrengthTimeRecommendation(sessionLogData, profileData?.skill_level);
         } else if (logType !== 'recovery') {
-          const rec = getSkillRecommendation(logType as string, profileData?.skill_level);
+          const rec = getSkillRecommendation(logType as string, profileData?.skill_level, name as string);
           buildNonWeightRecommendation(logType as string, sessionLogData, profileData?.skill_level, rec ?? '');
         }
       }
-      const note = await AsyncStorage.getItem(noteKey);
-      if (note) setGeneralNote(note);
     } catch (e) {}
   };
 
@@ -450,6 +478,45 @@ export default function ExerciseScreen() {
       if (!isConsistent) { setRec(`Let's rebuild consistency: ${lastWeight}kg • ${lastSets} sets • ${lastReps} reps`, 'restore'); return; }
     }
     setRec(`Keep going! ${lastWeight}kg • ${lastSets} sets • ${lastReps} reps`);
+  };
+
+  // Battle-ropes-style moves: build up sets and time first — resistance only
+  // becomes the lever worth pulling once they're solid at a real working volume.
+  const READY_FOR_WEIGHT_SETS = 4;
+  const READY_FOR_WEIGHT_TIME = 45;
+
+  const buildStrengthTimeRecommendation = (sessionData: any[], skillLevel: string) => {
+    const level = skillLevel?.toLowerCase() ?? 'beginner';
+    if (sessionData.length === 0) {
+      if (level === 'advanced') { setRec("Log your first session and we'll track your progress!", 'trending-up'); return; }
+      setRec(level === 'intermediate' ? 'Start with 3 sets • 30 sec each' : 'Start with 2 sets • 20 sec each');
+      return;
+    }
+
+    const last = sessionData[0] as any;
+    const lastSets = parseInt(last.sets) || 0;
+    const lastTime = parseInt(last.time) || 0;
+    const lastWeight = parseFloat(last.weight) || 0;
+
+    if (sessionData.length < 3) {
+      setRec(`Keep going! ${lastSets} sets • ${lastTime} sec each`);
+      return;
+    }
+
+    const last3 = sessionData.slice(0, 3);
+    const times = last3.map((s: any) => parseInt(s.time) || 0);
+    const isConsistent = times[0] >= times[1] && times[1] >= times[2];
+    if (!isConsistent) {
+      setRec(`Let's rebuild consistency: ${lastSets} sets • ${lastTime} sec each`, 'restore');
+      return;
+    }
+
+    const readyForWeight = lastSets >= READY_FOR_WEIGHT_SETS && lastTime >= READY_FOR_WEIGHT_TIME;
+    if (!readyForWeight) {
+      setRec(`Progress! Try ${lastSets} sets • ${lastTime + 10} sec each`, 'trending-up');
+      return;
+    }
+    setRec(`Great control at ${lastSets} sets • ${lastTime} sec — try adding ${lastWeight ? `${lastWeight + 2.5}kg` : 'light resistance'}`, 'trending-up');
   };
 
   const buildNonWeightRecommendation = (lt: string, sessionData: any[], skillLevel: string, baseRec: string) => {
@@ -591,6 +658,7 @@ export default function ExerciseScreen() {
       setSets(''); setReps('');
     } else if (category === 'strength') {
       if (logType === 'plank') newSession = { date, sets, time: reps };
+      else if (logType === 'strength-time') newSession = { date, weight, sets, time: reps };
       else newSession = { date, weight, sets, reps };
       setWeight(''); setSets(''); setReps('');
     } else if (category === 'footwork') {
@@ -620,11 +688,38 @@ export default function ExerciseScreen() {
       setSessions(updatedSessions);
       setSessionIds(updatedIds);
       setSessionCreatedAt(updatedCreatedAt);
+
+      // Notify any coach whose (non-proof) assignment for this exact exercise
+      // this session just completes for the first time. Proof-required
+      // assignments get their own notification when proof is submitted instead.
+      try {
+        const { data: openAssignments } = await supabase
+          .from('assignments')
+          .select('id, coach_id, created_at')
+          .eq('player_id', user.id)
+          .eq('title', name as string)
+          .eq('requires_proof', false);
+        const newlyCompleted = (openAssignments ?? []).filter((a: any) =>
+          new Date(a.created_at) <= new Date(inserted[0].created_at) &&
+          !sessionCreatedAt.some((ts: string) => new Date(ts) >= new Date(a.created_at))
+        );
+        if (newlyCompleted.length) {
+          const { data: myProfile } = await supabase.from('profiles').select('full_name').eq('id', user.id).single();
+          const myName = myProfile?.full_name ?? 'Your player';
+          for (const a of newlyCompleted) {
+            await notifyWorkoutCompleted(a.coach_id, myName, name as string);
+          }
+        }
+      } catch (e) {
+        console.log('notifyWorkoutCompleted error:', e);
+      }
+
       if (logType === 'strength' && startingWeight) buildWeightRecommendation(startingWeight, updatedSessions, profile?.skill_level);
       else if (logType === 'plyometric') buildPlyoRecommendation(updatedSessions, updatedCreatedAt, profile?.skill_level);
-      else if (logType !== 'recovery' && logType) { const rec = getSkillRecommendation(logType as string, profile?.skill_level); buildNonWeightRecommendation(logType as string, updatedSessions, profile?.skill_level, rec ?? ''); }
+      else if (logType === 'strength-time') buildStrengthTimeRecommendation(updatedSessions, profile?.skill_level);
+      else if (logType !== 'recovery' && logType) { const rec = getSkillRecommendation(logType as string, profile?.skill_level, name as string); buildNonWeightRecommendation(logType as string, updatedSessions, profile?.skill_level, rec ?? ''); }
     } else {
-      showAlert('Not signed in', 'Sign in to save your progress across devices.');
+      showAlert('Not logged in', 'Log in to save your progress across devices.');
     }
   };
 
@@ -640,11 +735,31 @@ export default function ExerciseScreen() {
       setSessionCreatedAt(updatedCreatedAt);
       if (logType === 'strength' && startingWeight) buildWeightRecommendation(startingWeight, updatedSessions, profile?.skill_level);
       else if (logType === 'plyometric') buildPlyoRecommendation(updatedSessions, updatedCreatedAt, profile?.skill_level);
-      else if (logType !== 'recovery' && logType) { const rec = getSkillRecommendation(logType as string, profile?.skill_level); buildNonWeightRecommendation(logType as string, updatedSessions, profile?.skill_level, rec ?? ''); }
+      else if (logType === 'strength-time') buildStrengthTimeRecommendation(updatedSessions, profile?.skill_level);
+      else if (logType !== 'recovery' && logType) { const rec = getSkillRecommendation(logType as string, profile?.skill_level, name as string); buildNonWeightRecommendation(logType as string, updatedSessions, profile?.skill_level, rec ?? ''); }
     });
   };
 
-  const saveNote = async (text: string) => { setGeneralNote(text); await AsyncStorage.setItem(noteKey, text); };
+  const saveNote = (text: string) => {
+    setGeneralNote(text);
+    clearTimeout(noteTimeout.current);
+    noteTimeout.current = setTimeout(async () => {
+      if (!user) return;
+      setSavingNote(true);
+      await supabase.from('exercise_notes').upsert({
+        user_id: user.id,
+        exercise_name: name as string,
+        note: text,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,exercise_name' });
+      setSavingNote(false);
+    }, 600);
+  };
+
+  const clearGeneralNote = () => {
+    if (!generalNote.trim()) return;
+    showConfirm('Clear this note?', 'This will erase everything written here.', () => saveNote(''));
+  };
 
   const renderInput = (placeholder: string, value: string, setValue: (v: string) => void, keyboardType: any = 'default') => (
     <TextInput
@@ -708,7 +823,7 @@ export default function ExerciseScreen() {
         <View style={styles.historyTop}>
           <Text style={styles.historyDate}>{session.date}</Text>
           <TouchableOpacity onPress={() => deleteSession(i)}>
-            <MaterialCommunityIcons name="trash-can-outline" size={22} color="#FF6B6B" />
+            <Icon name="trash-can-outline" size={22} color="#FF6B6B" />
           </TouchableOpacity>
         </View>
         <View style={styles.historyFields}>
@@ -721,7 +836,10 @@ export default function ExerciseScreen() {
           {logType === 'plyometric' && (
             <>{session.sets ? <Text style={styles.historyField}>{session.sets} sets</Text> : null}{session.reps ? <Text style={styles.historyField}>{session.reps} reps</Text> : null}{session.height ? <Text style={styles.historyField}>{session.height}{LOG_TYPE_FIELDS.plyometric.units?.height ?? 'in'}</Text> : null}{typeof session.landing === 'number' && session.landing >= 0 ? <Text style={styles.historyField}>{LANDING_LABELS[session.landing]}</Text> : null}</>
           )}
-          {category === 'strength' && logType !== 'plank' && logType !== 'reps-sets' && logType !== 'plyometric' && (
+          {category === 'strength' && logType === 'strength-time' && (
+            <>{session.weight ? <Text style={styles.historyField}>{session.weight}kg</Text> : null}{session.sets ? <Text style={styles.historyField}>{session.sets} sets</Text> : null}{session.time ? <Text style={styles.historyField}>{session.time} sec</Text> : null}</>
+          )}
+          {category === 'strength' && logType !== 'plank' && logType !== 'reps-sets' && logType !== 'plyometric' && logType !== 'strength-time' && (
             <>{session.weight ? <Text style={styles.historyField}>{session.weight}kg</Text> : null}{session.sets ? <Text style={styles.historyField}>{session.sets} sets</Text> : null}{session.reps ? <Text style={styles.historyField}>{session.reps} reps</Text> : null}</>
           )}
           {category === 'footwork' && logType !== 'plyometric' && logType !== 'reps-sets' && (
@@ -745,7 +863,27 @@ export default function ExerciseScreen() {
   };
 
   const renderMedia = () => {
-    if (hasVideo) return <VideoView player={player} style={styles.video} contentFit="cover" />;
+    // "contain" shows the whole frame uncropped — some source videos are framed
+    // wide/zoomed, and "cover" was cropping people/equipment out of view.
+    // A fixed-height box made "contain" videos look tiny and letterboxed
+    // against the light page background, so this sizes the box by aspect
+    // ratio instead (fills the width properly) and fills the letterbox
+    // bars with the exercise's own category color (e.g. footwork's dark
+    // green) instead of leaving them blank, with the corners clipped on
+    // the wrapper so they stay rounded regardless of the video surface.
+    if (hasVideo) {
+      return (
+        <View style={[styles.videoWrap, { backgroundColor: catTheme.fg }]}>
+          <VideoView
+            player={player}
+            style={styles.video}
+            contentFit="contain"
+            nativeControls
+            fullscreenOptions={{ enable: true }}
+          />
+        </View>
+      );
+    }
     if (imageUrl && imageUrl !== '') {
       const localImage = getLocalImage(imageUrl as string);
       if (localImage) return <Image source={localImage} style={styles.image} resizeMode="cover" />;
@@ -756,8 +894,8 @@ export default function ExerciseScreen() {
   const renderVoiceNotesSection = () => {
     if (!user) return (
       <View style={styles.voiceEmptyState}>
-        <MaterialCommunityIcons name="microphone-off" size={32} color={Theme.textSecondary} />
-        <Text style={styles.emptyText}>Sign in to record voice notes.</Text>
+        <Icon name="microphone-off" size={32} color={Theme.textSecondary} />
+        <Text style={styles.emptyText}>Log in to record voice notes.</Text>
       </View>
     );
     return (
@@ -770,24 +908,24 @@ export default function ExerciseScreen() {
         ) : isRecording ? (
           <View style={styles.recordingCard}>
             <View style={styles.recordingPulse}>
-              <MaterialCommunityIcons name="microphone" size={28} color="#FFFFFF" />
+              <Icon name="microphone" size={28} color="#FFFFFF" />
             </View>
             <Text style={styles.recordingTime}>{formatTime(recordingDuration)}</Text>
             <Text style={styles.recordingLabel}>Recording...</Text>
             <View style={styles.recordingActions}>
               <TouchableOpacity style={styles.cancelRecordBtn} onPress={cancelRecording}>
-                <MaterialCommunityIcons name="close" size={20} color="#FF6B6B" />
+                <Icon name="close" size={20} color="#FF6B6B" />
                 <Text style={styles.cancelRecordText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.stopRecordBtn, { backgroundColor: catTheme.fg }]} onPress={stopRecording}>
-                <MaterialCommunityIcons name="stop" size={20} color="#FFFFFF" />
+                <Icon name="stop" size={20} color="#FFFFFF" />
                 <Text style={[styles.stopRecordText, { color: '#FFFFFF' }]}>Save</Text>
               </TouchableOpacity>
             </View>
           </View>
         ) : (
           <TouchableOpacity style={[styles.startRecordBtn, { backgroundColor: catTheme.fg }]} onPress={startRecording}>
-            <MaterialCommunityIcons name="microphone" size={22} color="#FFFFFF" />
+            <Icon name="microphone" size={22} color="#FFFFFF" />
             <Text style={[styles.startRecordText, { color: '#FFFFFF' }]}>Record Voice Note</Text>
           </TouchableOpacity>
         )}
@@ -798,7 +936,7 @@ export default function ExerciseScreen() {
             {voiceNotes.map((note) => (
               <View key={note.id} style={styles.voiceNoteRow}>
                 <TouchableOpacity style={styles.playBtn} onPress={() => playVoiceNote(note)}>
-                  <MaterialCommunityIcons name={playingId === note.id ? 'pause' : 'play'} size={20} color={Theme.limeAccentDark} />
+                  <Icon name={playingId === note.id ? 'pause' : 'play'} size={20} color={Theme.limeAccentDark} />
                 </TouchableOpacity>
                 <View style={styles.voiceNoteInfo}>
                   <Text style={styles.voiceNoteDate}>{formatVoiceDate(note.created_at)}</Text>
@@ -811,11 +949,19 @@ export default function ExerciseScreen() {
                   )}
                 </View>
                 <TouchableOpacity onPress={() => deleteVoiceNote(note)}>
-                  <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />
+                  <Icon name="trash-can-outline" size={18} color="#FF6B6B" />
                 </TouchableOpacity>
               </View>
             ))}
             <Text style={styles.voiceNoteCount}>{voiceNotes.length}/5 voice notes</Text>
+            <TouchableOpacity
+              style={styles.clearAllRow}
+              onPress={clearAllVoiceNotes}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Icon name="trash-can-outline" size={15} color="#C0392B" />
+              <Text style={styles.clearAllText}>Clear all</Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -828,7 +974,7 @@ export default function ExerciseScreen() {
         if (typeof window !== 'undefined') window.history.back();
         else router.back();
       }}>
-        <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+        <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
       </TouchableOpacity>
 
       <Text style={styles.eyebrow}>{(category as string)?.toUpperCase()}</Text>
@@ -907,13 +1053,13 @@ export default function ExerciseScreen() {
                   )}
                 </View>
                 <View style={styles.recommendationBody}>
-                  <MaterialCommunityIcons name={recommendationIcon} size={22} color={catTheme.fg} style={styles.recommendationIcon} />
+                  <Icon name={recommendationIcon} size={22} color={catTheme.fg} style={styles.recommendationIcon} />
                   <Text style={styles.recommendationText}>{recommendation}</Text>
                 </View>
                 {!profile?.age && (
                   <TouchableOpacity style={styles.onboardingHintRow} onPress={() => { if (typeof window !== 'undefined') window.location.href = '/onboarding'; else router.push('/onboarding' as any); }}>
                     <Text style={styles.onboardingHint}>Complete your profile for personalized recommendations</Text>
-                    <MaterialCommunityIcons name="chevron-right" size={19} color={Theme.eyebrowGreen} />
+                    <Icon name="chevron-right" size={19} color={Theme.eyebrowGreen} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -921,19 +1067,22 @@ export default function ExerciseScreen() {
             {!user ? (
               <View style={styles.sessionCard}>
                 <Text style={styles.sectionLabel}>SESSION LOG</Text>
-                <Text style={styles.emptyText}>Sign in to save and track your progress.</Text>
+                <Text style={styles.emptyText}>Log in to save and track your progress.</Text>
                 <TouchableOpacity style={[styles.addButton, { backgroundColor: catTheme.fg }]} onPress={() => router.push('/login' as any)}>
-                  <Text style={[styles.addButtonText, { color: '#FFFFFF' }]}>Sign In</Text>
+                  <Text style={[styles.addButtonText, { color: '#FFFFFF' }]}>Log In</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <View style={styles.sessionCard}>
                 <Text style={styles.sectionLabel}>LOG SESSION</Text>
-                {category === 'strength' && logType !== 'plank' && logType !== 'reps-sets' && logType !== 'plyometric' && (
+                {category === 'strength' && logType !== 'plank' && logType !== 'reps-sets' && logType !== 'plyometric' && logType !== 'strength-time' && (
                   <View><View style={styles.inputRow}>{renderInput('Weight (kg)', weight, setWeight, 'numeric')}{renderInput('Sets', sets, setSets, 'numeric')}</View><View style={styles.inputRow}>{renderInput('Reps', reps, setReps, 'numeric')}</View></View>
                 )}
                 {category === 'strength' && logType === 'plank' && (
                   <View style={styles.inputRow}>{renderInput('Sets', sets, setSets, 'numeric')}{renderInput('Time (sec)', reps, setReps, 'numeric')}</View>
+                )}
+                {category === 'strength' && logType === 'strength-time' && (
+                  <View><View style={styles.inputRow}>{renderInput('Weight (kg)', weight, setWeight, 'numeric')}{renderInput('Sets', sets, setSets, 'numeric')}</View><View style={styles.inputRow}>{renderInput('Time (sec)', reps, setReps, 'numeric')}</View></View>
                 )}
                 {logType === 'reps-sets' && (
                   <View style={styles.inputRow}>{renderInput('Sets', sets, setSets, 'numeric')}{renderInput('Reps', reps, setReps, 'numeric')}</View>
@@ -970,20 +1119,32 @@ export default function ExerciseScreen() {
               {renderSessionHistory()}
             </View>
             <View style={styles.sessionCard}>
-              <Text style={styles.sectionLabel}>GENERAL NOTES</Text>
+              <View style={styles.notesLabelRow}>
+                <Text style={styles.sectionLabel}>GENERAL NOTES</Text>
+                {savingNote && <Text style={styles.savingText}>Saving...</Text>}
+              </View>
               <View style={styles.subTabRow}>
                 <TouchableOpacity style={[styles.subTab, notesSubTab === 'text' && { backgroundColor: catTheme.fg, borderColor: catTheme.fg }]} onPress={() => setNotesSubTab('text')}>
-                  <MaterialCommunityIcons name="pencil-outline" size={14} color={notesSubTab === 'text' ? '#FFFFFF' : Theme.textSecondary} />
+                  <Icon name="pencil-outline" size={14} color={notesSubTab === 'text' ? '#FFFFFF' : Theme.textSecondary} />
                   <Text style={[styles.subTabText, notesSubTab === 'text' && styles.subTabTextActive]}>Text</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.subTab, notesSubTab === 'voice' && { backgroundColor: catTheme.fg, borderColor: catTheme.fg }]} onPress={() => setNotesSubTab('voice')}>
-                  <MaterialCommunityIcons name="microphone-outline" size={14} color={notesSubTab === 'voice' ? '#FFFFFF' : Theme.textSecondary} />
+                  <Icon name="microphone-outline" size={14} color={notesSubTab === 'voice' ? '#FFFFFF' : Theme.textSecondary} />
                   <Text style={[styles.subTabText, notesSubTab === 'voice' && styles.subTabTextActive]}>Voice</Text>
                 </TouchableOpacity>
               </View>
               {notesSubTab === 'text' ? (
                 <View style={styles.notesContainer}>
                   <TextInput style={styles.notesInput} placeholder="Add any extra things to remember..." placeholderTextColor={Theme.textSecondary} value={generalNote} onChangeText={saveNote} multiline numberOfLines={4} />
+                  <TouchableOpacity
+                    style={styles.clearAllRow}
+                    onPress={clearGeneralNote}
+                    disabled={!generalNote.trim()}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Icon name="trash-can-outline" size={15} color={generalNote.trim() ? '#C0392B' : Theme.textMuted} />
+                    <Text style={[styles.clearAllText, { color: generalNote.trim() ? '#C0392B' : Theme.textMuted }]}>Clear</Text>
+                  </TouchableOpacity>
                 </View>
               ) : renderVoiceNotesSection()}
             </View>
@@ -1006,11 +1167,11 @@ export default function ExerciseScreen() {
                 onPress={timerRunning ? pauseTimer : startTimer}
                 disabled={!timerRunning && isCountdown && getCountdownTotal() === 0}
               >
-                <MaterialCommunityIcons name={timerRunning ? 'pause' : 'play'} size={20} color="#FFFFFF" />
+                <Icon name={timerRunning ? 'pause' : 'play'} size={20} color="#FFFFFF" />
                 <Text style={[styles.timerBtnText, { color: '#FFFFFF' }]}>{timerRunning ? 'Pause' : 'Start'}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.timerResetBtn} onPress={() => resetTimer()}>
-                <MaterialCommunityIcons name="refresh" size={20} color={Theme.textSecondary} />
+                <Icon name="refresh" size={20} color={Theme.textSecondary} />
                 <Text style={styles.timerResetText}>Reset</Text>
               </TouchableOpacity>
             </View>
@@ -1018,7 +1179,7 @@ export default function ExerciseScreen() {
             {/* Stop sound button — only shows when timer sound is playing */}
             {timerSoundPlaying && (
               <TouchableOpacity style={styles.stopSoundBtn} onPress={stopTimerSound}>
-                <MaterialCommunityIcons name="volume-off" size={18} color="#fff" />
+                <Icon name="volume-off" size={18} color="#fff" />
                 <Text style={styles.stopSoundText}>Stop Sound</Text>
               </TouchableOpacity>
             )}
@@ -1085,7 +1246,8 @@ const styles = StyleSheet.create({
   tabText: { color: Theme.textSecondary, fontWeight: '600', fontSize: 15 },
   tabTextActive: { color: '#FFFFFF' },
   content: { paddingBottom: 40 },
-  video: { width: '100%', height: 300, borderRadius: 12, marginBottom: 16, backgroundColor: Theme.cardWhite },
+  videoWrap: { width: '100%', aspectRatio: 16 / 9, borderRadius: 16, overflow: 'hidden', marginBottom: 16 },
+  video: { width: '100%', height: '100%' },
   image: { width: '100%', height: 340, borderRadius: 12, marginBottom: 16 },
   description: { fontSize: 17, color: Theme.textSecondary, lineHeight: 24, marginBottom: 20 },
   stepsCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 18, gap: 18 },
@@ -1131,6 +1293,8 @@ const styles = StyleSheet.create({
   countdownHint: { fontSize: 13, color: Theme.textMuted, fontStyle: 'italic', marginTop: 10, textAlign: 'center' },
   sessionCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 12, marginBottom: 16 },
   sectionLabel: { color: Theme.eyebrowGreen, fontWeight: 'bold', fontSize: 12, letterSpacing: 1, marginBottom: 14 },
+  notesLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  savingText: { fontSize: 12, color: Theme.textSecondary, fontStyle: 'italic' },
   inputRow: { flexDirection: 'row', gap: 6, marginBottom: 12 },
   input: { flex: 1, minWidth: 0, backgroundColor: Theme.background, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 6, color: Theme.textPrimary, fontSize: 14, textAlign: 'center', borderWidth: 1, borderColor: Theme.divider },
   fieldLabel: { color: Theme.textSecondary, fontSize: 13, marginBottom: 8 },
@@ -1147,6 +1311,8 @@ const styles = StyleSheet.create({
   emptyText: { color: Theme.textSecondary, fontSize: 15, fontStyle: 'italic', marginBottom: 12 },
   notesContainer: { backgroundColor: Theme.background, borderRadius: 8, padding: 10, borderWidth: 1, borderColor: Theme.divider },
   notesInput: { color: Theme.textPrimary, fontSize: 15, lineHeight: 22, minHeight: 80, textAlignVertical: 'top' },
+  clearAllRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6, marginTop: 8 },
+  clearAllText: { fontSize: 13, fontWeight: '600', color: '#C0392B' },
   subTabRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
   subTab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: Theme.background, borderWidth: 1, borderColor: Theme.divider },
   subTabText: { fontSize: 13, fontWeight: '600', color: Theme.textSecondary },

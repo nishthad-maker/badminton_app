@@ -1,9 +1,10 @@
-import { View, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Platform } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useState, useEffect } from 'react';
 import * as ImagePicker from 'expo-image-picker';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
 
@@ -14,7 +15,7 @@ const CATEGORIES = ['strength', 'footwork', 'endurance', 'recovery'];
 
 const CATEGORY_ICONS: Record<string, string> = {
   strength: 'dumbbell',
-  footwork: 'badminton',
+  footwork: 'footprints',
   endurance: 'lightning-bolt',
   recovery: 'heart-pulse',
 };
@@ -296,14 +297,14 @@ export default function CreateExerciseScreen() {
       >
         <View style={styles.titleRow}>
           <TouchableOpacity onPress={goBack}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+            <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>{isEditing ? 'Edit Exercise' : 'Create Exercise'}</Text>
         </View>
 
         {savedBanner !== '' && (
           <View style={styles.banner}>
-            <MaterialCommunityIcons name="check-circle" size={18} color={Theme.eyebrowGreen} />
+            <Icon name="check-circle" size={18} color={Theme.eyebrowGreen} />
             <Text style={styles.bannerText}>{savedBanner}</Text>
           </View>
         )}
@@ -333,7 +334,7 @@ export default function CreateExerciseScreen() {
                   style={[styles.categoryBtn, active && { backgroundColor: cat.fg, borderColor: cat.fg }]}
                   onPress={() => selectCategory(option)}
                 >
-                  <MaterialCommunityIcons
+                  <Icon
                     name={CATEGORY_ICONS[option] as any}
                     size={16}
                     color={active ? '#FFFFFF' : Theme.textSecondary}
@@ -351,7 +352,7 @@ export default function CreateExerciseScreen() {
             <Text style={styles.trackHint}>Pick a category first and we'll show the right options.</Text>
           ) : isSingleLogType ? (
             <View style={styles.trackInfo}>
-              <MaterialCommunityIcons name="check-circle-outline" size={18} color={Theme.eyebrowGreen} />
+              <Icon name="check-circle-outline" size={18} color={Theme.eyebrowGreen} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.trackInfoLabel}>{logTypesForCategory[0].label}</Text>
                 <Text style={styles.trackInfoDesc}>{logTypesForCategory[0].desc}</Text>
@@ -365,7 +366,7 @@ export default function CreateExerciseScreen() {
                   style={[styles.logTypeOption, logType === lt.key && styles.logTypeOptionActive]}
                   onPress={() => setLogType(lt.key)}
                 >
-                  <MaterialCommunityIcons
+                  <Icon
                     name={logType === lt.key ? 'radiobox-marked' : 'radiobox-blank'}
                     size={18}
                     color={logType === lt.key ? Theme.eyebrowGreen : Theme.textSecondary}
@@ -384,7 +385,7 @@ export default function CreateExerciseScreen() {
 
         {/* ── OPTIONAL DETAIL (collapsed by default) ── */}
         <TouchableOpacity style={styles.moreToggle} onPress={() => setShowMore(!showMore)}>
-          <MaterialCommunityIcons
+          <Icon
             name={showMore ? 'chevron-down' : 'chevron-right'}
             size={22}
             color={Theme.eyebrowGreen}
@@ -429,13 +430,13 @@ export default function CreateExerciseScreen() {
                   />
                   {steps.length > 1 && (
                     <TouchableOpacity onPress={() => removeStep(i)}>
-                      <MaterialCommunityIcons name="close-circle" size={20} color="#FF6B6B" />
+                      <Icon name="close-circle" size={20} color="#FF6B6B" />
                     </TouchableOpacity>
                   )}
                 </View>
               ))}
               <TouchableOpacity style={styles.addStepBtn} onPress={addStep}>
-                <MaterialCommunityIcons name="plus" size={16} color={Theme.eyebrowGreen} />
+                <Icon name="plus" size={16} color={Theme.eyebrowGreen} />
                 <Text style={styles.addStepText}>Add Step</Text>
               </TouchableOpacity>
             </View>
@@ -447,27 +448,27 @@ export default function CreateExerciseScreen() {
 
               {uploading ? (
                 <View style={styles.uploadingState}>
-                  <MaterialCommunityIcons name="cloud-upload-outline" size={24} color={Theme.eyebrowGreen} />
+                  <Icon name="cloud-upload-outline" size={24} color={Theme.eyebrowGreen} />
                   <Text style={styles.uploadingText}>Uploading...</Text>
                 </View>
               ) : videoUri && videoUri.startsWith('https://') ? (
                 <View style={styles.videoSelected}>
-                  <MaterialCommunityIcons name="video-check" size={24} color={Theme.eyebrowGreen} />
+                  <Icon name="video-check" size={24} color={Theme.eyebrowGreen} />
                   <Text style={styles.videoSelectedText}>Video uploaded</Text>
                   <TouchableOpacity onPress={() => setVideoUri('')}>
-                    <MaterialCommunityIcons name="close-circle" size={20} color="#FF6B6B" />
+                    <Icon name="close-circle" size={20} color="#FF6B6B" />
                   </TouchableOpacity>
                 </View>
               ) : (
                 <View style={styles.videoOptions}>
                   {Platform.OS !== 'web' && (
                     <TouchableOpacity style={styles.videoBtn} onPress={filmVideo}>
-                      <MaterialCommunityIcons name="video" size={22} color={Theme.eyebrowGreen} />
+                      <Icon name="video" size={22} color={Theme.eyebrowGreen} />
                       <Text style={styles.videoBtnText}>Film Now</Text>
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={styles.videoBtn} onPress={pickFromCameraRoll}>
-                    <MaterialCommunityIcons name="image-multiple" size={22} color={Theme.eyebrowGreen} />
+                    <Icon name="image-multiple" size={22} color={Theme.eyebrowGreen} />
                     <Text style={styles.videoBtnText}>
                       {Platform.OS === 'web' ? 'Upload Video' : 'Camera Roll'}
                     </Text>
@@ -510,7 +511,7 @@ export default function CreateExerciseScreen() {
             onPress={() => save(true)}
             disabled={loading || uploading}
           >
-            <MaterialCommunityIcons name="plus-circle-outline" size={18} color={Theme.eyebrowGreen} />
+            <Icon name="plus-circle-outline" size={18} color={Theme.eyebrowGreen} />
             <Text style={styles.saveAltBtnText}>Save & Add Another</Text>
           </TouchableOpacity>
         )}

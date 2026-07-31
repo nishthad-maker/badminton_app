@@ -2,10 +2,10 @@ import { View, StyleSheet, TouchableOpacity, Pressable, ScrollView, Alert, Refre
 import { Text } from '@/components/Text';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState, useCallback } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
-import { TOPICS, TOPIC_ICONS, formatTimeAgo, getOrCreateUsername, avatarColorFor } from '../../lib/community';
+import { TOPICS, formatTimeAgo, getOrCreateUsername, avatarColorFor } from '../../lib/community';
 
 const showAlert = (title: string, message: string) => {
   if (typeof window !== 'undefined') {
@@ -143,11 +143,11 @@ export default function CommunityScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.signInPrompt}>
-          <MaterialCommunityIcons name="forum-outline" size={64} color={Theme.eyebrowGreen} />
+          <Icon name="forum-outline" size={64} color={Theme.eyebrowGreen} />
           <Text style={styles.signInTitle}>Join the Community</Text>
-          <Text style={styles.signInDesc}>Sign in to read and post anonymously with other badminton players.</Text>
+          <Text style={styles.signInDesc}>Log in to read and post anonymously with other badminton players.</Text>
           <TouchableOpacity style={styles.signInBtn} onPress={() => router.push('/login' as any)}>
-            <Text style={styles.signInBtnText}>Sign In</Text>
+            <Text style={styles.signInBtnText}>Log In</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -169,7 +169,7 @@ export default function CommunityScreen() {
           onPressIn={() => setNewPostActive(true)}
           onPressOut={() => setNewPostActive(false)}
         >
-          <MaterialCommunityIcons name="plus" size={26} color={newPostActive ? '#FFFFFF' : '#534AB7'} />
+          <Icon name="plus" size={26} color={newPostActive ? '#FFFFFF' : '#534AB7'} />
         </Pressable>
       </View>
 
@@ -185,11 +185,6 @@ export default function CommunityScreen() {
             style={[styles.topicPill, activeTopic === topic && styles.topicPillActive]}
             onPress={() => setActiveTopic(topic)}
           >
-            <MaterialCommunityIcons
-              name={TOPIC_ICONS[topic] as any}
-              size={17}
-              color={activeTopic === topic ? '#FFFFFF' : Theme.textSecondary}
-            />
             <Text style={[styles.topicPillText, activeTopic === topic && styles.topicPillTextActive]}>
               {topic}
             </Text>
@@ -199,7 +194,7 @@ export default function CommunityScreen() {
 
       {activeTopic === 'Recovery & Wellness' && (
         <View style={styles.disclaimer}>
-          <MaterialCommunityIcons name="information-outline" size={19} color={Theme.eyebrowGreen} />
+          <Icon name="information-outline" size={19} color={Theme.eyebrowGreen} />
           <Text style={styles.disclaimerText}>
             For sharing wellness routines only — not medical advice. Always consult a doctor for injuries.
           </Text>
@@ -211,7 +206,7 @@ export default function CommunityScreen() {
           style={[styles.sortBtn, sortMode === 'newest' && styles.sortBtnActive]}
           onPress={() => setSortMode('newest')}
         >
-          <MaterialCommunityIcons
+          <Icon
             name="clock-outline"
             size={16}
             color={sortMode === 'newest' ? '#534AB7' : Theme.textSecondary}
@@ -222,7 +217,7 @@ export default function CommunityScreen() {
           style={[styles.sortBtn, sortMode === 'liked' && styles.sortBtnActive]}
           onPress={() => setSortMode('liked')}
         >
-          <MaterialCommunityIcons
+          <Icon
             name="heart-outline"
             size={16}
             color={sortMode === 'liked' ? '#534AB7' : Theme.textSecondary}
@@ -242,7 +237,7 @@ export default function CommunityScreen() {
           <Text style={styles.emptyText}>Loading...</Text>
         ) : posts.length === 0 ? (
           <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="comment-outline" size={48} color={Theme.textSecondary} />
+            <Icon name="comment-outline" size={48} color={Theme.textSecondary} />
             <Text style={styles.emptyText}>No posts yet in {activeTopic}.</Text>
             <Text style={styles.emptySubtext}>Be the first to start a discussion!</Text>
           </View>
@@ -253,7 +248,7 @@ export default function CommunityScreen() {
             <TouchableOpacity key={post.id} style={styles.postCard} onPress={() => goToThread(post.id)}>
               <View style={styles.postHeader}>
                 <View style={[styles.avatarCircle, { backgroundColor: avatarColor.bg }]}>
-                  <MaterialCommunityIcons name="account" size={20} color={avatarColor.fg} />
+                  <Icon name="account" size={20} color={avatarColor.fg} />
                 </View>
                 <Text style={styles.postAuthor}>{usernames[post.user_id] ?? 'Player'}</Text>
                 <Text style={styles.postTime}>{formatTimeAgo(post.created_at)}</Text>
@@ -262,11 +257,11 @@ export default function CommunityScreen() {
               <Text style={styles.postBody} numberOfLines={2}>{post.body}</Text>
               <View style={styles.postFooter}>
                 <View style={styles.postStat}>
-                  <MaterialCommunityIcons name="heart-outline" size={17} color={Theme.textSecondary} />
+                  <Icon name="heart-outline" size={17} color={Theme.textSecondary} />
                   <Text style={styles.postStatText}>{post.likes_count ?? 0}</Text>
                 </View>
                 <View style={styles.postStat}>
-                  <MaterialCommunityIcons name="comment-outline" size={17} color={Theme.textSecondary} />
+                  <Icon name="comment-outline" size={17} color={Theme.textSecondary} />
                   <Text style={styles.postStatText}>{post.reply_count ?? 0}</Text>
                 </View>
               </View>

@@ -1,12 +1,12 @@
 import { View, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Text } from '@/components/Text';
 import { router, useLocalSearchParams } from 'expo-router';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 
 const CATEGORY_ICONS: Record<string, string> = {
   strength: 'dumbbell',
-  footwork: 'badminton',
+  footwork: 'footprints',
   endurance: 'lightning-bolt',
   recovery: 'heart-pulse',
 };
@@ -49,11 +49,11 @@ export default function RoutineDetailScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+          <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>{name}</Text>
         <TouchableOpacity style={styles.editBtn} onPress={editRoutine}>
-          <MaterialCommunityIcons name="pencil-outline" size={16} color="#44403C" />
+          <Icon name="pencil-outline" size={16} color="#44403C" />
           <Text style={styles.editBtnText}>Edit</Text>
         </TouchableOpacity>
       </View>
@@ -72,7 +72,7 @@ export default function RoutineDetailScreen() {
 
               {/* Icon */}
               <View style={[styles.exIcon, { backgroundColor: cat.bg }]}>
-                <MaterialCommunityIcons
+                <Icon
                   name={(CATEGORY_ICONS[ex.category] ?? 'dumbbell') as any}
                   size={20}
                   color={cat.fg}
@@ -88,14 +88,14 @@ export default function RoutineDetailScreen() {
                 </Text>
               </View>
 
-              <MaterialCommunityIcons name="chevron-right" size={20} color={Theme.textMuted} />
+              <Icon name="chevron-right" size={20} color={Theme.textMuted} />
             </TouchableOpacity>
           );
         })}
 
         {exercises.length === 0 && (
           <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="dumbbell" size={40} color={Theme.textMuted} />
+            <Icon name="dumbbell" size={40} color={Theme.textMuted} />
             <Text style={styles.emptyText}>No exercises in this routine.</Text>
           </View>
         )}

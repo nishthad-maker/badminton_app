@@ -2,7 +2,7 @@ import { View, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } fro
 import { Text } from '@/components/Text';
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
 import { JournalSheet, localDateStr } from '@/components/JournalSheet';
@@ -15,20 +15,31 @@ const fmtRowDate = (dateStr: string) => {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 };
 
+type EntryTab = 'lesson' | 'personal';
+
 export default function JournalHistoryScreen() {
   const [entries, setEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [openDate, setOpenDate] = useState<string | null>(null);
+  // Sheet state: entryId set = editing that entry; open + entryId undefined = resume/new.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [openEntryId, setOpenEntryId] = useState<string | undefined>(undefined);
+  const [forceNew, setForceNew] = useState(false);
+  const [activeTab, setActiveTab] = useState<EntryTab>('lesson');
 
   const load = async () => {
     setLoading(true);
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) { setLoading(false); return; }
     const { data } = await supabase
-      .from('journal_entries').select('*').eq('user_id', session.user.id).order('entry_date', { ascending: false });
+      .from('journal_entries').select('*').eq('user_id', session.user.id).eq('is_draft', false)
+      .order('entry_date', { ascending: false }).order('created_at', { ascending: false });
     setEntries(data ?? []);
     setLoading(false);
   };
+
+  const openEntry = (id: string) => { setOpenEntryId(id); setForceNew(false); setSheetOpen(true); };
+  const openNewEntry = () => { setOpenEntryId(undefined); setForceNew(true); setSheetOpen(true); };
+  const closeSheet = () => setSheetOpen(false);
 
   useFocusEffect(useCallback(() => { load(); }, []));
 
@@ -43,37 +54,64 @@ export default function JournalHistoryScreen() {
     return 'No notes';
   };
 
+  const filteredEntries = entries.filter(e => (e.entry_type === 'personal' ? 'personal' : 'lesson') === activeTab);
+
   return (
     <View style={styles.container}>
       <View style={styles.content}>
         <View style={styles.titleRow}>
           <TouchableOpacity onPress={goBack}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+            <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.title}>Journal History</Text>
+          <Text style={[styles.title, { flex: 1 }]}>Journal History</Text>
+          <TouchableOpacity style={styles.newEntryBtn} onPress={openNewEntry} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Icon name="plus" size={16} color="#FFFFFF" />
+            <Text style={styles.newEntryBtnText}>New entry</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.tabRow}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'lesson' && styles.tabActive]}
+            onPress={() => setActiveTab('lesson')}
+          >
+            <Icon name="school-outline" size={16} color={activeTab === 'lesson' ? '#FFFFFF' : Theme.textSecondary} />
+            <Text style={[styles.tabText, activeTab === 'lesson' && styles.tabTextActive]}>Lessons learned</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'personal' && styles.tabActive]}
+            onPress={() => setActiveTab('personal')}
+          >
+            <Icon name="heart-outline" size={16} color={activeTab === 'personal' ? '#FFFFFF' : Theme.textSecondary} />
+            <Text style={[styles.tabText, activeTab === 'personal' && styles.tabTextActive]}>Journal</Text>
+          </TouchableOpacity>
         </View>
 
         {loading ? (
           <ActivityIndicator color={INK} style={{ marginTop: 40 }} />
         ) : (
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-            {entries.length === 0 ? (
+            {filteredEntries.length === 0 ? (
               <View style={styles.emptyState}>
-                <MaterialCommunityIcons name="notebook-edit-outline" size={48} color={Theme.textMuted} />
+                <Icon name={activeTab === 'lesson' ? 'school-outline' : 'heart-outline'} size={48} color={Theme.textMuted} />
                 <Text style={styles.emptyTitle}>No entries yet</Text>
-                <Text style={styles.emptyDesc}>Tap the journal button on Home, Train, Matches, or Community to log your first entry.</Text>
+                <Text style={styles.emptyDesc}>
+                  {activeTab === 'lesson'
+                    ? 'Log what you want to remember from training or a private lesson.'
+                    : "Log what's on your mind — mental health, feelings, anything else."}
+                </Text>
               </View>
             ) : (
-              entries.map(e => (
-                <TouchableOpacity key={e.id} style={styles.row} onPress={() => setOpenDate(e.entry_date)}>
+              filteredEntries.map(e => (
+                <TouchableOpacity key={e.id} style={styles.row} onPress={() => openEntry(e.id)}>
                   <View style={styles.rowIcon}>
-                    <MaterialCommunityIcons name="notebook-outline" size={18} color={INK} />
+                    <Icon name={activeTab === 'personal' ? 'heart-outline' : 'school-outline'} size={18} color={INK} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.rowDate}>{fmtRowDate(e.entry_date)}</Text>
                     <Text style={styles.rowPreview} numberOfLines={1}>{preview(e)}</Text>
                   </View>
-                  <MaterialCommunityIcons name="chevron-right" size={20} color={Theme.textMuted} />
+                  <Icon name="chevron-right" size={20} color={Theme.textMuted} />
                 </TouchableOpacity>
               ))
             )}
@@ -82,9 +120,11 @@ export default function JournalHistoryScreen() {
       </View>
 
       <JournalSheet
-        visible={!!openDate}
-        onClose={() => setOpenDate(null)}
-        entryDate={openDate ?? ''}
+        visible={sheetOpen}
+        onClose={closeSheet}
+        entryDate={localDateStr()}
+        entryId={openEntryId}
+        forceNew={forceNew}
         onSaved={load}
       />
     </View>
@@ -96,6 +136,13 @@ const styles = StyleSheet.create({
   content: { flex: 1, padding: 24, paddingTop: 60 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   title: { fontFamily: Fonts.serifMedium, fontSize: 22, color: Theme.textPrimary },
+  newEntryBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: INK, borderRadius: 16, paddingVertical: 8, paddingHorizontal: 12 },
+  newEntryBtnText: { fontSize: 13, fontWeight: '600', color: '#FFFFFF' },
+  tabRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Theme.cardWhite, borderRadius: 20, paddingVertical: 11 },
+  tabActive: { backgroundColor: INK },
+  tabText: { fontSize: 13, fontWeight: '600', color: Theme.textSecondary },
+  tabTextActive: { color: '#FFFFFF' },
   scroll: { paddingBottom: 60 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Theme.cardWhite, borderRadius: 12, padding: 14, marginBottom: 10 },
   rowIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: PAPER, alignItems: 'center', justifyContent: 'center' },

@@ -1,13 +1,25 @@
-import { View, StyleSheet, TouchableOpacity, ScrollView, TextInput, Modal, Alert } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ScrollView, Modal, Alert } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { router, useFocusEffect } from 'expo-router';
-import { useState, useCallback } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { useState, useCallback, useMemo, useRef } from 'react';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { getDailyQuote } from '@/constants/dailyQuotes';
 import { supabase } from '../../lib/supabase';
+import { formatTime12h } from '../../lib/scheduling';
+import { getPendingParentRequests, acceptLink, declineLink, PendingRequest } from '../../lib/parentLink';
+import { getPlayerClubMembership, getPendingClubJoinRequest, PlayerClubMembership, PendingClubJoinRequest } from '../../lib/club';
+import { NotificationBell } from '@/components/NotificationBell';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const SCHEDULE_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+const formatScheduleTime = (t: string) => {
+  const [h, m] = t.split(':').map(Number);
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
 
 const EVENT_TYPES = [
   { key: 'tournament', label: 'Tournament', icon: 'trophy', color: '#E74C3C' },
@@ -25,11 +37,65 @@ const getCategoryTheme = (cat: string) =>
 const getCategoryIcon = (cat: string) => {
   switch (cat) {
     case 'strength': return 'dumbbell';
-    case 'footwork': return 'badminton';
+    case 'footwork': return 'footprints';
     case 'endurance': return 'lightning-bolt';
     case 'recovery': return 'heart-pulse';
     default: return 'star';
   }
+};
+
+// Activity chart range options — day-granularity buckets for short windows
+// (readable as individual days), week-granularity for longer ones (so we
+// don't try to cram 28-56 daily bars into one small chart).
+const ACTIVITY_RANGES: { key: string; label: string; rangeLabel: string; days: number; granularity: 'day' | 'week' }[] = [
+  { key: '10d', label: '10D', rangeLabel: 'LAST 10 DAYS', days: 10, granularity: 'day' },
+  { key: '2w', label: '2W', rangeLabel: 'LAST 2 WEEKS', days: 14, granularity: 'day' },
+  { key: '4w', label: '4W', rangeLabel: 'LAST 4 WEEKS', days: 28, granularity: 'week' },
+  { key: '8w', label: '8W', rangeLabel: 'LAST 8 WEEKS', days: 56, granularity: 'week' },
+];
+
+type ActivityBucket = { count: number; label: string; isCurrent: boolean };
+
+const computeActivityBuckets = (sessions: any[], range: (typeof ACTIVITY_RANGES)[number]): ActivityBucket[] => {
+  const countInRange = (start: Date, end: Date) =>
+    new Set(
+      sessions
+        .filter((s: any) => { const d = new Date(s.created_at); return d >= start && d < end; })
+        .map((s: any) => new Date(s.created_at).toDateString())
+    ).size;
+
+  if (range.granularity === 'day') {
+    const buckets: ActivityBucket[] = [];
+    for (let d = range.days - 1; d >= 0; d--) {
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      dayStart.setDate(dayStart.getDate() - d);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      buckets.push({
+        count: countInRange(dayStart, dayEnd),
+        label: d === 0 ? 'Now' : dayStart.toLocaleDateString('en-US', { weekday: 'short' }),
+        isCurrent: d === 0,
+      });
+    }
+    return buckets;
+  }
+
+  const weeks = Math.ceil(range.days / 7);
+  const buckets: ActivityBucket[] = [];
+  for (let w = weeks - 1; w >= 0; w--) {
+    const wStart = new Date();
+    wStart.setDate(wStart.getDate() - w * 7 - ((wStart.getDay() + 6) % 7));
+    wStart.setHours(0, 0, 0, 0);
+    const wEnd = new Date(wStart);
+    wEnd.setDate(wEnd.getDate() + 7);
+    buckets.push({
+      count: countInRange(wStart, wEnd),
+      label: w === 0 ? 'Now' : `W${weeks - w}`,
+      isCurrent: w === 0,
+    });
+  }
+  return buckets;
 };
 
 const showAlert = (title: string, message: string) => {
@@ -53,8 +119,17 @@ export default function HomeScreen() {
   const [recentSessions, setRecentSessions] = useState<any[]>([]);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [unreadAssignments, setUnreadAssignments] = useState(0);
-  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [parentRequests, setParentRequests] = useState<PendingRequest[]>([]);
+  const [showParentModal, setShowParentModal] = useState(false);
+  const [busyRequestId, setBusyRequestId] = useState<string | null>(null);
+  // A ref, not state — loadData is captured once by a useFocusEffect with an
+  // empty dep array, so a state read inside it would always see its stale
+  // initial value; a ref always reflects the latest "did the player already
+  // dismiss this" answer regardless of when the closure was created.
+  const parentModalDismissedRef = useRef(false);
   const [user, setUser] = useState<any>(null);
+  const [clubMembership, setClubMembership] = useState<PlayerClubMembership | null>(null);
+  const [clubPendingRequest, setClubPendingRequest] = useState<PendingClubJoinRequest | null>(null);
 
   // Calendar
   const [weekEvents, setWeekEvents] = useState<CalendarEvent[]>([]);
@@ -63,11 +138,64 @@ export default function HomeScreen() {
   const [quickAddTitle, setQuickAddTitle] = useState('');
   const [quickAddType, setQuickAddType] = useState('training');
 
+  // For You — routines scheduled for today. `activeRoutine` is the in-progress
+  // checklist itself (survives visiting an exercise and coming back);
+  // `modalVisible` is just whether the popup is currently on screen, so
+  // tapping an exercise can hide the modal without losing checked-off
+  // progress, then the focus effect below reopens it when they return.
+  const [todayRoutines, setTodayRoutines] = useState<any[]>([]);
+  const [activeRoutine, setActiveRoutine] = useState<any | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [doneMap, setDoneMap] = useState<Record<string, Set<string>>>({});
+
+  const toggleExerciseDone = (routineId: string, exName: string) => {
+    setDoneMap(prev => {
+      const current = new Set(prev[routineId] ?? []);
+      if (current.has(exName)) current.delete(exName); else current.add(exName);
+      return { ...prev, [routineId]: current };
+    });
+  };
+
+  const startRoutine = (r: any) => {
+    setActiveRoutine(r);
+    setModalVisible(true);
+  };
+
+  const goToExerciseFromChecklist = (ex: any) => {
+    setModalVisible(false); // hide, don't clear — reopens on return
+    router.push({
+      pathname: '/exercise',
+      params: {
+        name: ex.name,
+        description: ex.description ?? '',
+        steps: JSON.stringify(ex.steps ?? []),
+        muscles: JSON.stringify(ex.muscles ?? []),
+        category: ex.category,
+        videoUrl: ex.videoUrl ?? '',
+        imageUrl: ex.imageUrl ?? '',
+        logType: ex.logType ?? ex.category,
+      },
+    });
+  };
+
+  // "Start" until they've checked off at least one exercise, "Continue"
+  // while some are checked but not all, "Done" once every exercise in the
+  // routine is checked off — independent of whether the popup is currently
+  // open, since doneMap persists per routine for the whole session.
+  const routineStatus = (r: any): 'start' | 'continue' | 'done' => {
+    const total = (r.exercises ?? []).length;
+    const doneCount = doneMap[r.id]?.size ?? 0;
+    if (total > 0 && doneCount >= total) return 'done';
+    if (doneCount > 0) return 'continue';
+    return 'start';
+  };
+
   // Progress card
   const [progressExpanded, setProgressExpanded] = useState(false);
   const [progressTab, setProgressTab] = useState<'bests' | 'weekly'>('bests');
   const [personalBests, setPersonalBests] = useState<any[]>([]);
-  const [weeklyActivity, setWeeklyActivity] = useState<number[]>([]);
+  const [allSessions, setAllSessions] = useState<any[]>([]);
+  const [activityRange, setActivityRange] = useState('8w');
 
   const today = new Date();
   const todayDayIndex = today.getDay() === 0 ? 6 : today.getDay() - 1;
@@ -96,6 +224,12 @@ export default function HomeScreen() {
 
   useFocusEffect(useCallback(() => { loadData(); }, []));
 
+  // Coming back from an exercise mid-checklist? Reopen the popup where they
+  // left off instead of making them tap "Start" again.
+  useFocusEffect(useCallback(() => {
+    if (activeRoutine) setModalVisible(true);
+  }, [activeRoutine]));
+
   const loadData = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -115,11 +249,13 @@ export default function HomeScreen() {
         .from('assignments').select('id').eq('player_id', currentUser.id).eq('seen', false);
       setUnreadAssignments((unread ?? []).length);
 
-      const { data: unreadNotifs } = await supabase
-        .from('notifications').select('id').eq('user_id', currentUser.id).eq('type', 'coach_feedback').eq('seen', false);
-      const { data: unreadPlans } = await supabase
-        .from('weekly_plans').select('id').eq('player_id', currentUser.id).eq('seen', false);
-      setUnreadNotifCount((unreadNotifs ?? []).length + (unreadPlans ?? []).length);
+      const pendingParents = await getPendingParentRequests(currentUser.id);
+      setParentRequests(pendingParents);
+      if (pendingParents.length > 0 && !parentModalDismissedRef.current) setShowParentModal(true);
+
+      const activeMembership = await getPlayerClubMembership(currentUser.id);
+      setClubMembership(activeMembership);
+      setClubPendingRequest(activeMembership ? null : await getPendingClubJoinRequest(currentUser.id));
 
       const { data } = await supabase
         .from('session_logs').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false });
@@ -161,26 +297,21 @@ export default function HomeScreen() {
       });
       setPersonalBests(Object.values(bestMap).slice(0, 10));
 
-      // Weekly activity — last 8 weeks
-      const weekly: number[] = [];
-      for (let w = 7; w >= 0; w--) {
-        const wStart = new Date();
-        wStart.setDate(wStart.getDate() - (w * 7) - ((wStart.getDay() + 6) % 7));
-        wStart.setHours(0, 0, 0, 0);
-        const wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 7);
-        const count = new Set(
-          data.filter((s: any) => { const d = new Date(s.created_at); return d >= wStart && d < wEnd; })
-            .map((s: any) => new Date(s.created_at).toDateString())
-        ).size;
-        weekly.push(count);
-      }
-      setWeeklyActivity(weekly);
+      // Kept raw so the Activity chart can re-bucket client-side whenever
+      // the selected range changes, without a re-fetch.
+      setAllSessions(data);
 
       // Calendar events
       const { data: eventsData } = await supabase
         .from('calendar_events').select('*').eq('user_id', currentUser.id)
         .gte('event_date', weekDates[0].full).lte('event_date', weekDates[6].full);
       if (eventsData) setWeekEvents(eventsData);
+
+      // For You — routines scheduled for today
+      const { data: routinesData } = await supabase
+        .from('routines').select('id, name, exercises, scheduled_days, scheduled_times').eq('user_id', currentUser.id);
+      const todayKey = SCHEDULE_DAYS[todayDayIndex];
+      setTodayRoutines((routinesData ?? []).filter((r: any) => (r.scheduled_days ?? []).includes(todayKey)));
 
     } catch (e) { console.log('Error loading home data', e); }
   };
@@ -195,14 +326,37 @@ export default function HomeScreen() {
     else router.push('/coach-section' as any);
   };
 
-  const goToNotifications = () => {
-    if (typeof window !== 'undefined') window.location.href = '/notifications';
-    else router.push('/notifications' as any);
+  const dismissParentModal = () => {
+    parentModalDismissedRef.current = true;
+    setShowParentModal(false);
   };
 
-  const goToCalendar = () => {
-    if (typeof window !== 'undefined') window.location.href = '/calendar';
-    else router.push('/calendar' as any);
+  const handleAcceptParentRequest = async (request: PendingRequest) => {
+    setBusyRequestId(request.linkId);
+    const ok = await acceptLink(request, userName || 'Your child');
+    setBusyRequestId(null);
+    if (!ok) { showAlert('Error', 'Could not accept the link. Please try again.'); return; }
+    const remaining = parentRequests.filter((r) => r.linkId !== request.linkId);
+    setParentRequests(remaining);
+    if (remaining.length === 0) setShowParentModal(false);
+  };
+
+  const handleDeclineParentRequest = async (request: PendingRequest) => {
+    setBusyRequestId(request.linkId);
+    const ok = await declineLink(request.linkId);
+    setBusyRequestId(null);
+    if (!ok) { showAlert('Error', 'Could not decline the request. Please try again.'); return; }
+    const remaining = parentRequests.filter((r) => r.linkId !== request.linkId);
+    setParentRequests(remaining);
+    if (remaining.length === 0) setShowParentModal(false);
+  };
+
+  const goToCalendar = (dateStr?: string, type?: string) => {
+    const query = dateStr
+      ? `?addDate=${encodeURIComponent(dateStr)}${type ? `&addType=${encodeURIComponent(type)}` : ''}`
+      : '';
+    if (typeof window !== 'undefined') window.location.href = `/calendar${query}`;
+    else router.push(`/calendar${query}` as any);
   };
 
   const openQuickAdd = (dateStr: string) => {
@@ -228,8 +382,12 @@ export default function HomeScreen() {
     new Date(quickAddDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
   const maxCount = Math.max(strengthCount, footworkCount, enduranceCount, recoveryCount, 1);
-  const maxWeekly = Math.max(...weeklyActivity, 1);
-  const totalUnread = unreadAssignments + unreadNotifCount;
+  const activeRange = ACTIVITY_RANGES.find((r) => r.key === activityRange) ?? ACTIVITY_RANGES[3];
+  const activityBuckets = useMemo(
+    () => computeActivityBuckets(allSessions, activeRange),
+    [allSessions, activeRange]
+  );
+  const maxActivity = Math.max(...activityBuckets.map((b) => b.count), 1);
   const quickAddDateEvents = quickAddDate ? getEventsForDate(quickAddDate) : [];
 
   return (
@@ -246,27 +404,69 @@ export default function HomeScreen() {
               {dailyQuote.author ? <Text style={styles.quoteAuthor}>— {dailyQuote.author}</Text> : null}
             </View>
           </View>
-          <TouchableOpacity style={styles.bellButton} onPress={goToNotifications} activeOpacity={0.8}>
-            <MaterialCommunityIcons name="bell-outline" size={26} color={Theme.textPrimary} />
-            {totalUnread > 0 && (
-              <View style={styles.bellBadge}>
-                <Text style={styles.bellBadgeText}>{totalUnread > 9 ? '9+' : totalUnread}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          <NotificationBell />
         </View>
+
+        {/* Club status */}
+        {clubMembership ? (
+          <TouchableOpacity style={styles.tintedBanner} onPress={() => router.push('/(tabs)/calendar' as any)} activeOpacity={0.85}>
+            <View style={styles.bannerIconWrap}>
+              <Icon name="account-group" size={22} color={Theme.textPrimary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bannerTitle}>{clubMembership.clubName}</Text>
+              <Text style={styles.bannerDesc}>Tap for your schedule, makeups & more</Text>
+            </View>
+            <Icon name="chevron-right" size={20} color={Theme.textMuted} />
+          </TouchableOpacity>
+        ) : clubPendingRequest ? (
+          <View style={styles.tintedBanner}>
+            <View style={styles.bannerIconWrap}>
+              <Icon name="clock-outline" size={22} color={Theme.textPrimary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bannerTitle}>Request pending — {clubPendingRequest.clubName}</Text>
+              <Text style={styles.bannerDesc}>Waiting on the club's approval</Text>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity style={styles.tintedBanner} onPress={() => router.push('/(tabs)/profile' as any)} activeOpacity={0.85}>
+            <View style={styles.bannerIconWrap}>
+              <Icon name="account-plus-outline" size={22} color={Theme.textPrimary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bannerTitle}>Join a Club</Text>
+              <Text style={styles.bannerDesc}>Enter a club code from your profile</Text>
+            </View>
+            <Icon name="chevron-right" size={20} color={Theme.textMuted} />
+          </TouchableOpacity>
+        )}
 
         {/* Coach banner */}
         {unreadAssignments > 0 && (
           <TouchableOpacity style={styles.tintedBanner} onPress={goToAssignments} activeOpacity={0.85}>
             <View style={styles.bannerIconWrap}>
-              <MaterialCommunityIcons name="clipboard-text" size={22} color={Theme.textPrimary} />
+              <Icon name="clipboard-text" size={22} color={Theme.textPrimary} />
             </View>
             <View style={styles.bannerTextWrap}>
               <Text style={styles.bannerTitle}>New workout{unreadAssignments > 1 ? 's' : ''} from your coach</Text>
               <Text style={styles.bannerDesc}>Tap to see what your coach sent you.</Text>
             </View>
-            <MaterialCommunityIcons name="chevron-right" size={22} color={Theme.textPrimary} />
+            <Icon name="chevron-right" size={22} color={Theme.textPrimary} />
+          </TouchableOpacity>
+        )}
+
+        {/* Parent link request banner */}
+        {parentRequests.length > 0 && (
+          <TouchableOpacity style={styles.tintedBanner} onPress={() => setShowParentModal(true)} activeOpacity={0.85}>
+            <View style={styles.bannerIconWrap}>
+              <Icon name="account-alert-outline" size={22} color={Theme.textPrimary} />
+            </View>
+            <View style={styles.bannerTextWrap}>
+              <Text style={styles.bannerTitle}>{parentRequests.length > 1 ? `${parentRequests.length} parents want to link` : 'A parent wants to link'}</Text>
+              <Text style={styles.bannerDesc}>Tap to review and accept or decline.</Text>
+            </View>
+            <Icon name="chevron-right" size={22} color={Theme.textPrimary} />
           </TouchableOpacity>
         )}
 
@@ -274,13 +474,13 @@ export default function HomeScreen() {
         {needsOnboarding && (
           <TouchableOpacity style={styles.tintedBanner} onPress={goToOnboarding} activeOpacity={0.85}>
             <View style={styles.bannerIconWrap}>
-              <MaterialCommunityIcons name="badminton" size={22} color={Theme.textPrimary} />
+              <Icon name="badminton" size={22} color={Theme.textPrimary} />
             </View>
             <View style={styles.bannerTextWrap}>
               <Text style={styles.bannerTitle}>Complete your profile</Text>
               <Text style={styles.bannerDesc}>Get personalized recommendations built just for you.</Text>
             </View>
-            <MaterialCommunityIcons name="chevron-right" size={22} color={Theme.textPrimary} />
+            <Icon name="chevron-right" size={22} color={Theme.textPrimary} />
           </TouchableOpacity>
         )}
 
@@ -288,8 +488,8 @@ export default function HomeScreen() {
         <View style={styles.whiteCard}>
           <View style={styles.calendarHeader}>
             <Text style={styles.eyebrowSection}>THIS WEEK</Text>
-            <TouchableOpacity onPress={goToCalendar} style={styles.fullCalBtn}>
-              <MaterialCommunityIcons name="calendar-month" size={16} color={Theme.todayBlue} />
+            <TouchableOpacity onPress={() => goToCalendar()} style={styles.fullCalBtn}>
+              <Icon name="calendar-month" size={16} color={Theme.todayBlue} />
               <Text style={styles.fullCalText}>Full Calendar</Text>
             </TouchableOpacity>
           </View>
@@ -304,7 +504,7 @@ export default function HomeScreen() {
                   <Text style={[styles.dayLabel, isToday && styles.dayLabelActive]}>{day}</Text>
                   <View style={[styles.dayCircle, isToday && styles.dayCircleToday, isDone && styles.dayCircleDone]}>
                     {isDone
-                      ? <MaterialCommunityIcons name="check" size={16} color={Theme.limeAccentDark} />
+                      ? <Icon name="check" size={16} color={Theme.limeAccentDark} />
                       : <Text style={[styles.dayNum, isToday && styles.dayNumActive]}>{dateInfo.date}</Text>}
                   </View>
                   <View style={styles.eventDotsRow}>
@@ -326,11 +526,11 @@ export default function HomeScreen() {
                   <View key={event.id} style={styles.todayEventRow}>
                     <View style={[styles.todayEventDot, { backgroundColor: getEventColor(event.event_type) }]} />
                     <Text style={styles.todayEventTitle} numberOfLines={1}>{event.title}</Text>
-                    {event.start_time ? <Text style={styles.todayEventTime}>{event.start_time}</Text> : null}
+                    {event.start_time ? <Text style={styles.todayEventTime}>{formatTime12h(event.start_time)}</Text> : null}
                   </View>
                 ))}
                 {todayEvents.length > 2 && (
-                  <TouchableOpacity onPress={goToCalendar}>
+                  <TouchableOpacity onPress={() => goToCalendar()}>
                     <Text style={styles.todayEventsMore}>+{todayEvents.length - 2} more</Text>
                   </TouchableOpacity>
                 )}
@@ -338,6 +538,35 @@ export default function HomeScreen() {
             );
           })()}
         </View>
+
+        {/* ── FOR YOU — routines scheduled for today ── */}
+        {todayRoutines.length > 0 && (
+          <>
+            <Text style={styles.sectionHeadline}>For you</Text>
+            {todayRoutines.map((r) => (
+              <View key={r.id} style={styles.forYouCard}>
+                <View style={styles.forYouIcon}>
+                  <Icon name="notebook-outline" size={22} color={Theme.eyebrowGreen} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.forYouName} numberOfLines={1}>{r.name}</Text>
+                  <Text style={styles.forYouSub}>
+                    {(r.exercises ?? []).length} exercise{(r.exercises ?? []).length !== 1 ? 's' : ''}
+                    {r.scheduled_times?.[SCHEDULE_DAYS[todayDayIndex]] ? ` · ${formatScheduleTime(r.scheduled_times[SCHEDULE_DAYS[todayDayIndex]])}` : ''}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.forYouStartBtn, routineStatus(r) === 'done' && styles.forYouStartBtnDone]}
+                  onPress={() => startRoutine(r)}
+                >
+                  <Text style={styles.forYouStartBtnText}>
+                    {routineStatus(r) === 'done' ? 'Done' : routineStatus(r) === 'continue' ? 'Continue' : 'Start'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </>
+        )}
 
         {/* ── PROGRESS CARD ── */}
         <Text style={styles.sectionHeadline}>My progress</Text>
@@ -347,12 +576,12 @@ export default function HomeScreen() {
           activeOpacity={0.8}
         >
           <View style={styles.progressHeaderLeft}>
-            <MaterialCommunityIcons name="chart-line" size={20} color={Theme.todayBlue} />
+            <Icon name="chart-line" size={20} color={Theme.todayBlue} />
             <Text style={styles.progressHeaderTitle}>Overview</Text>
           </View>
           <View style={styles.progressHeaderRight}>
             <Text style={styles.progressHeaderSub}>{totalSessions} sessions total</Text>
-            <MaterialCommunityIcons name={progressExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={Theme.textSecondary} />
+            <Icon name={progressExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={Theme.textSecondary} />
           </View>
         </TouchableOpacity>
 
@@ -376,7 +605,7 @@ export default function HomeScreen() {
               <View style={styles.progressSection}>
                 {personalBests.length === 0 ? (
                   <View style={styles.progressEmpty}>
-                    <MaterialCommunityIcons name="trophy-outline" size={36} color={Theme.textMuted} />
+                    <Icon name="trophy-outline" size={36} color={Theme.textMuted} />
                     <Text style={styles.progressEmptyText}>Log some sessions to see your personal bests here.</Text>
                   </View>
                 ) : (
@@ -386,7 +615,7 @@ export default function HomeScreen() {
                     return (
                       <View key={i} style={styles.bestRow}>
                         <View style={[styles.bestIcon, { backgroundColor: cat.bg }]}>
-                          <MaterialCommunityIcons name={getCategoryIcon(b.category) as any} size={16} color={cat.fg} />
+                          <Icon name={getCategoryIcon(b.category) as any} size={16} color={cat.fg} />
                         </View>
                         <Text style={styles.bestName} numberOfLines={1}>{b.name}</Text>
                         <View style={styles.bestStats}>
@@ -408,17 +637,32 @@ export default function HomeScreen() {
             {/* ── ACTIVITY ── */}
             {progressTab === 'weekly' && (
               <View style={styles.progressSection}>
-                <Text style={styles.progressChartTitle}>SESSIONS PER WEEK · LAST 8 WEEKS</Text>
+                <View style={styles.activityRangeRow}>
+                  {ACTIVITY_RANGES.map((r) => (
+                    <TouchableOpacity
+                      key={r.key}
+                      style={[styles.activityRangePill, activityRange === r.key && styles.activityRangePillActive]}
+                      onPress={() => setActivityRange(r.key)}
+                    >
+                      <Text style={[styles.activityRangePillText, activityRange === r.key && styles.activityRangePillTextActive]}>
+                        {r.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.progressChartTitle}>
+                  {activeRange.granularity === 'day' ? 'SESSIONS PER DAY' : 'SESSIONS PER WEEK'} · {activeRange.rangeLabel}
+                </Text>
                 <View style={styles.weeklyChart}>
-                  {weeklyActivity.map((count, i) => {
-                    const isThisWeek = i === 7;
-                    const barH = maxWeekly > 0 ? Math.max((count / maxWeekly) * 90, count > 0 ? 8 : 2) : 2;
+                  {activityBuckets.map((b, i) => {
+                    const barH = maxActivity > 0 ? Math.max((b.count / maxActivity) * 90, b.count > 0 ? 8 : 2) : 2;
                     return (
                       <View key={i} style={styles.weeklyCol}>
-                        <Text style={styles.weeklyCount}>{count > 0 ? count : ''}</Text>
-                        <View style={[styles.weeklyBar, { height: barH, backgroundColor: isThisWeek ? Theme.limeAccent : Theme.divider }]} />
-                        <Text style={[styles.weeklyLabel, isThisWeek && styles.weeklyLabelActive]}>
-                          {i === 7 ? 'Now' : `W${i + 1}`}
+                        <Text style={styles.weeklyCount}>{b.count > 0 ? b.count : ''}</Text>
+                        <View style={[styles.weeklyBar, { height: barH, backgroundColor: b.isCurrent ? Theme.limeAccent : Theme.divider }]} />
+                        <Text style={[styles.weeklyLabel, b.isCurrent && styles.weeklyLabelActive]}>
+                          {b.label}
                         </Text>
                       </View>
                     );
@@ -459,7 +703,7 @@ export default function HomeScreen() {
               return (
                 <View key={i} style={[styles.activityRow, i < recentSessions.length - 1 && styles.activityBorder]}>
                   <View style={[styles.activityIcon, { backgroundColor: cat.bg }]}>
-                    <MaterialCommunityIcons name={getCategoryIcon(s.category) as any} size={18} color={cat.fg} />
+                    <Icon name={getCategoryIcon(s.category) as any} size={18} color={cat.fg} />
                   </View>
                   <View style={styles.activityInfo}>
                     <Text style={styles.activityName}>{s.exercise_name}</Text>
@@ -476,6 +720,40 @@ export default function HomeScreen() {
 
       </ScrollView>
 
+      {/* Parent link request popup — pops automatically so it can't be missed */}
+      <Modal visible={showParentModal} transparent animationType="fade" onRequestClose={dismissParentModal}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{parentRequests.length > 1 ? 'Parents want to link' : 'A parent wants to link'}</Text>
+              <TouchableOpacity onPress={dismissParentModal}>
+                <Icon name="close" size={24} color={Theme.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            {parentRequests.map((request, i) => (
+              <View key={request.linkId} style={[styles.parentRequestRow, i > 0 && styles.parentRequestRowBorder]}>
+                <Text style={styles.parentRequestName}>{request.parentName} wants to link with you</Text>
+                <View style={styles.parentRequestActions}>
+                  <TouchableOpacity
+                    style={styles.parentAcceptBtn}
+                    onPress={() => handleAcceptParentRequest(request)}
+                    disabled={busyRequestId === request.linkId}
+                  >
+                    <Text style={styles.parentAcceptBtnText}>{busyRequestId === request.linkId ? '...' : 'Accept'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleDeclineParentRequest(request)} disabled={busyRequestId === request.linkId}>
+                    <Text style={styles.parentDeclineBtnText}>Decline</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+            <TouchableOpacity style={styles.parentLaterBtn} onPress={dismissParentModal}>
+              <Text style={styles.parentLaterBtnText}>Maybe later</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Quick Add Modal */}
       <Modal visible={showQuickAdd} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -483,7 +761,7 @@ export default function HomeScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Quick Add</Text>
               <TouchableOpacity onPress={() => setShowQuickAdd(false)}>
-                <MaterialCommunityIcons name="close" size={24} color={Theme.textSecondary} />
+                <Icon name="close" size={24} color={Theme.textSecondary} />
               </TouchableOpacity>
             </View>
             <Text style={styles.modalDate}>{quickAddDate ? formatQuickAddDate() : ''}</Text>
@@ -493,9 +771,9 @@ export default function HomeScreen() {
                 {quickAddDateEvents.map(event => (
                   <View key={event.id} style={styles.existingEventRow}>
                     <View style={[styles.existingEventBar, { backgroundColor: getEventColor(event.event_type) }]} />
-                    <MaterialCommunityIcons name={getEventIcon(event.event_type) as any} size={16} color={getEventColor(event.event_type)} />
+                    <Icon name={getEventIcon(event.event_type) as any} size={16} color={getEventColor(event.event_type)} />
                     <Text style={styles.existingEventTitle} numberOfLines={1}>{event.title}</Text>
-                    {event.start_time ? <Text style={styles.existingEventTime}>{event.start_time}</Text> : null}
+                    {event.start_time ? <Text style={styles.existingEventTime}>{formatTime12h(event.start_time)}</Text> : null}
                   </View>
                 ))}
                 <View style={styles.existingEventsDivider} />
@@ -506,8 +784,22 @@ export default function HomeScreen() {
             <Text style={styles.formLabel}>Type</Text>
             <View style={styles.typeRow}>
               {EVENT_TYPES.map(t => (
-                <TouchableOpacity key={t.key} style={[styles.typePill, quickAddType === t.key && { backgroundColor: t.color, borderColor: t.color }]} onPress={() => setQuickAddType(t.key)}>
-                  <MaterialCommunityIcons name={t.icon as any} size={14} color={quickAddType === t.key ? '#FFFFFF' : Theme.textSecondary} />
+                <TouchableOpacity
+                  key={t.key}
+                  style={[styles.typePill, quickAddType === t.key && { backgroundColor: t.color, borderColor: t.color }]}
+                  onPress={() => {
+                    // Tournaments need a location + dates that Quick Add
+                    // doesn't collect — hand off to the full calendar form
+                    // instead of letting an incomplete one get saved here.
+                    if (t.key === 'tournament') {
+                      setShowQuickAdd(false);
+                      goToCalendar(quickAddDate, 'tournament');
+                      return;
+                    }
+                    setQuickAddType(t.key);
+                  }}
+                >
+                  <Icon name={t.icon as any} size={14} color={quickAddType === t.key ? '#FFFFFF' : Theme.textSecondary} />
                   <Text style={[styles.typePillText, quickAddType === t.key && styles.typePillTextActive]}>{t.label}</Text>
                 </TouchableOpacity>
               ))}
@@ -515,10 +807,68 @@ export default function HomeScreen() {
             <TouchableOpacity style={styles.saveBtn} onPress={saveQuickEvent}>
               <Text style={styles.saveBtnText}>Add Event</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.fullDetailsBtn} onPress={() => { setShowQuickAdd(false); goToCalendar(); }}>
+            <TouchableOpacity style={styles.fullDetailsBtn} onPress={() => { setShowQuickAdd(false); goToCalendar(quickAddDate); }}>
               <Text style={styles.fullDetailsBtnText}>Add with full details</Text>
-              <MaterialCommunityIcons name="chevron-right" size={19} color={Theme.eyebrowGreen} />
+              <Icon name="chevron-right" size={19} color={Theme.eyebrowGreen} />
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* For You — pop up the checklist for a scheduled routine. Hides on
+          "close" AND when tapping into an exercise (see goToExerciseFromChecklist),
+          but only clears `activeRoutine` itself on an explicit close, so it
+          reopens with progress intact when they come back from an exercise. */}
+      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>{activeRoutine?.name}</Text>
+                {(() => {
+                  const total = (activeRoutine?.exercises ?? []).length;
+                  const done = doneMap[activeRoutine?.id]?.size ?? 0;
+                  return total > 0 ? <Text style={styles.startProgress}>{done} of {total} done</Text> : null;
+                })()}
+              </View>
+              {activeRoutine && routineStatus(activeRoutine) === 'done' ? (
+                <TouchableOpacity
+                  style={styles.checklistDoneBtn}
+                  onPress={() => { setModalVisible(false); setActiveRoutine(null); }}
+                >
+                  <Icon name="check" size={14} color="#fff" />
+                  <Text style={styles.checklistDoneBtnText}>Done</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity onPress={() => { setModalVisible(false); setActiveRoutine(null); }}>
+                  <Icon name="close" size={24} color={Theme.textSecondary} />
+                </TouchableOpacity>
+              )}
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+              {(activeRoutine?.exercises ?? []).map((ex: any, i: number) => {
+                const cat = getCategoryTheme(ex.category);
+                const done = doneMap[activeRoutine.id]?.has(ex.name) ?? false;
+                return (
+                  <View key={i} style={styles.startExRow}>
+                    <TouchableOpacity
+                      style={[styles.startExCheck, done && styles.startExCheckDone]}
+                      onPress={() => toggleExerciseDone(activeRoutine.id, ex.name)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      {done && <Icon name="check" size={14} color="#fff" />}
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.startExMain} onPress={() => goToExerciseFromChecklist(ex)}>
+                      <View style={[styles.startExIcon, { backgroundColor: cat.bg }]}>
+                        <Icon name={getCategoryIcon(ex.category) as any} size={16} color={cat.fg} />
+                      </View>
+                      <Text style={[styles.startExName, done && styles.startExNameDone]} numberOfLines={1}>{ex.name}</Text>
+                      <Icon name="chevron-right" size={18} color={Theme.textMuted} />
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -559,6 +909,27 @@ const styles = StyleSheet.create({
   eyebrowSection: { fontFamily: Fonts.sansMedium, fontSize: 11, color: '#0B7D62', letterSpacing: 1, marginBottom: 4 },
   sectionHeadline: { fontFamily: Fonts.serifMedium, fontSize: 26, color: Theme.textPrimary, marginBottom: 12 },
 
+  // For You
+  forYouCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 14, marginBottom: 10 },
+  forYouIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: Theme.cardTinted, alignItems: 'center', justifyContent: 'center' },
+  forYouName: { fontSize: 16, fontWeight: '700', color: Theme.textPrimary },
+  forYouSub: { fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
+  forYouStartBtn: { backgroundColor: Theme.eyebrowGreen, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 10 },
+  forYouStartBtnDone: { backgroundColor: Theme.limeAccentDark },
+  forYouStartBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+
+  // Start-routine modal exercise rows
+  startProgress: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600', marginTop: 2 },
+  checklistDoneBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Theme.eyebrowGreen, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8 },
+  checklistDoneBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  startExRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Theme.divider },
+  startExCheck: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: Theme.divider, alignItems: 'center', justifyContent: 'center' },
+  startExCheckDone: { backgroundColor: Theme.eyebrowGreen, borderColor: Theme.eyebrowGreen },
+  startExMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  startExIcon: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  startExName: { flex: 1, fontSize: 15, fontWeight: '600', color: Theme.textPrimary },
+  startExNameDone: { color: Theme.textMuted, textDecorationLine: 'line-through' },
+
   // Tier 1 white card
   whiteCard: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 16, marginBottom: 24 },
 
@@ -598,6 +969,11 @@ const styles = StyleSheet.create({
   progressTabActive: { backgroundColor: '#D8F35C' },
   progressTabText: { fontFamily: Fonts.sansSemiBold, fontSize: 14, color: Theme.textSecondary },
   progressTabTextActive: { color: Theme.limeAccentDark },
+  activityRangeRow: { flexDirection: 'row', gap: 6, marginBottom: 14 },
+  activityRangePill: { flex: 1, alignItems: 'center', paddingVertical: 6, borderRadius: 8, backgroundColor: Theme.background },
+  activityRangePillActive: { backgroundColor: Theme.limeAccentDark },
+  activityRangePillText: { fontFamily: Fonts.sansSemiBold, fontSize: 12, color: Theme.textSecondary },
+  activityRangePillTextActive: { color: '#FFFFFF' },
   progressSection: { gap: 10 },
   progressEmpty: { paddingVertical: 32, alignItems: 'center', gap: 10 },
   progressEmptyText: { fontFamily: Fonts.sansRegular, fontSize: 15, color: Theme.textSecondary, textAlign: 'center' },
@@ -641,6 +1017,15 @@ const styles = StyleSheet.create({
   modalContent: { backgroundColor: Theme.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   modalTitle: { fontFamily: Fonts.serifMedium, fontSize: 20, color: Theme.textPrimary },
+  parentRequestRow: { paddingVertical: 16, gap: 12 },
+  parentRequestRowBorder: { borderTopWidth: 1, borderTopColor: Theme.divider },
+  parentRequestName: { fontFamily: Fonts.sansMedium, fontSize: 16, color: Theme.textPrimary },
+  parentRequestActions: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  parentAcceptBtn: { backgroundColor: Theme.eyebrowGreen, borderRadius: 10, paddingHorizontal: 18, paddingVertical: 9 },
+  parentAcceptBtnText: { fontFamily: Fonts.sansSemiBold, fontSize: 14, color: '#fff' },
+  parentDeclineBtnText: { fontFamily: Fonts.sansSemiBold, fontSize: 14, color: '#FF6B6B' },
+  parentLaterBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
+  parentLaterBtnText: { fontFamily: Fonts.sansSemiBold, fontSize: 14, color: Theme.textSecondary },
   modalDate: { fontFamily: Fonts.sansSemiBold, fontSize: 14, color: Theme.eyebrowGreen, marginBottom: 16 },
   existingEventsSection: { marginBottom: 8 },
   existingEventsLabel: { fontFamily: Fonts.sansBold, fontSize: 12, color: Theme.textSecondary, letterSpacing: 0.5, marginBottom: 8, textTransform: 'uppercase' },

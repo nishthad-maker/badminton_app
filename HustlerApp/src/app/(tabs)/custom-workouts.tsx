@@ -2,7 +2,7 @@ import { View, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, Linking }
 import { Text } from '@/components/Text';
 import { router, useFocusEffect } from 'expo-router';
 import { useEffect, useState, useCallback } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
 
@@ -43,7 +43,7 @@ const getCategoryTheme = (cat: string) =>
 const getCategoryIcon = (category: string) => {
   switch (category) {
     case 'strength': return 'dumbbell';
-    case 'footwork': return 'badminton';
+    case 'footwork': return 'footprints';
     case 'endurance': return 'lightning-bolt';
     case 'recovery': return 'heart-pulse';
     default: return 'star';
@@ -171,7 +171,7 @@ export default function CustomWorkoutsScreen() {
       <View style={styles.titleRow}>
         <Text style={styles.title}>My Workouts</Text>
         <TouchableOpacity style={styles.addBtn} onPress={goToCreate}>
-          <MaterialCommunityIcons name="plus" size={22} color="#44403C" />
+          <Icon name="plus" size={22} color="#44403C" />
         </TouchableOpacity>
       </View>
 
@@ -187,10 +187,10 @@ export default function CustomWorkoutsScreen() {
                 {assignments.map((a) => (
                   <View key={a.id} style={styles.assignCard}>
                     <View style={styles.assignHeader}>
-                      <MaterialCommunityIcons name="whistle" size={16} color={Theme.todayBlue} />
+                      <Icon name="whistle" size={16} color={Theme.todayBlue} />
                       <Text style={styles.assignFrom}>from {a.coachName}</Text>
                       <TouchableOpacity onPress={() => dismissAssignment(a)}>
-                        <MaterialCommunityIcons name="close" size={18} color={Theme.textSecondary} />
+                        <Icon name="close" size={18} color={Theme.textSecondary} />
                       </TouchableOpacity>
                     </View>
 
@@ -202,13 +202,13 @@ export default function CustomWorkoutsScreen() {
                     ) : null}
                     {a.media_url && a.media_type === 'video' ? (
                       <TouchableOpacity style={styles.watchBtn} onPress={() => Linking.openURL(a.media_url)}>
-                        <MaterialCommunityIcons name="play-circle-outline" size={18} color={Theme.todayBlue} />
+                        <Icon name="play-circle-outline" size={18} color={Theme.todayBlue} />
                         <Text style={styles.watchText}>Watch video</Text>
                       </TouchableOpacity>
                     ) : null}
 
                     <TouchableOpacity style={styles.addToBtn} onPress={() => addToMyWorkouts(a)}>
-                      <MaterialCommunityIcons name="plus" size={16} color={Theme.todayBlue} />
+                      <Icon name="plus" size={16} color={Theme.todayBlue} />
                       <Text style={styles.addToBtnText}>Add to My Workouts</Text>
                     </TouchableOpacity>
                   </View>
@@ -219,7 +219,7 @@ export default function CustomWorkoutsScreen() {
             {/* Your custom exercises */}
             {exercises.length === 0 && assignments.length === 0 ? (
               <View style={styles.emptyState}>
-                <MaterialCommunityIcons name="dumbbell" size={48} color={Theme.textMuted} />
+                <Icon name="dumbbell" size={48} color={Theme.textMuted} />
                 <Text style={styles.emptyTitle}>No custom workouts yet</Text>
                 <Text style={styles.emptyDesc}>Tap the + button to create your first custom exercise!</Text>
                 <TouchableOpacity style={styles.createBtn} onPress={goToCreate}>
@@ -237,7 +237,7 @@ export default function CustomWorkoutsScreen() {
                     <View key={exercise.id} style={styles.card}>
                       <TouchableOpacity style={styles.cardMain} onPress={() => goToExercise(exercise)}>
                         <View style={[styles.iconBox, { backgroundColor: cat.bg }]}>
-                          <MaterialCommunityIcons
+                          <Icon
                             name={getCategoryIcon(exercise.category) as any}
                             size={22}
                             color={cat.fg}
@@ -249,22 +249,22 @@ export default function CustomWorkoutsScreen() {
                             <Text style={styles.cardCategory}>{exercise.category}</Text>
                             {exercise.video_url ? (
                               <View style={[styles.videoTag, { backgroundColor: cat.bg }]}>
-                                <MaterialCommunityIcons name="video" size={12} color={cat.fg} />
+                                <Icon name="video" size={12} color={cat.fg} />
                                 <Text style={[styles.videoTagText, { color: cat.fg }]}>Video</Text>
                               </View>
                             ) : null}
                           </View>
                         </View>
-                        <MaterialCommunityIcons name="chevron-right" size={20} color={Theme.textMuted} />
+                        <Icon name="chevron-right" size={20} color={Theme.textMuted} />
                       </TouchableOpacity>
 
                       <View style={styles.actionRow}>
                         <TouchableOpacity style={styles.editBtn} onPress={() => editExercise(exercise)}>
-                          <MaterialCommunityIcons name="pencil-outline" size={14} color="#44403C" />
+                          <Icon name="pencil-outline" size={14} color="#44403C" />
                           <Text style={styles.editBtnText}>Edit</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteExercise(exercise.id, exercise.name)}>
-                          <MaterialCommunityIcons name="trash-can-outline" size={14} color="#E74C3C" />
+                          <Icon name="trash-can-outline" size={14} color="#E74C3C" />
                           <Text style={styles.deleteBtnText}>Delete</Text>
                         </TouchableOpacity>
                       </View>

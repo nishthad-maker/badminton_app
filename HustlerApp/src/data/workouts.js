@@ -265,6 +265,38 @@ const workouts = {
 
     {
 
+      name: 'Wall Sit',
+
+      subcategory: 'lower',
+
+      logType: 'sets-duration',
+
+      description: 'Builds quad endurance for staying low and ready between rallies.',
+
+      muscles: ['Quads', 'Glutes'],
+
+      videoUrl: null,
+
+      imageUrl: 'wallsit',
+
+      steps: [
+
+        'Lean your back flat against a wall.',
+
+        'Slide down until your knees are bent at 90 degrees.',
+
+        'Keep your feet flat and knees over your ankles.',
+
+        'Hold the position, keeping your back pressed to the wall.',
+
+        'Slide back up to stand and rest.',
+
+      ],
+
+    },
+
+    {
+
       name: 'Shoulder Press',
 
       subcategory: 'upper',
@@ -503,7 +535,7 @@ const workouts = {
 
       muscles: ['Lower Abs', 'Core', 'Hip Flexors'],
 
-      videoUrl: null,
+      videoUrl: `${VIDEOS}/Strength/tuck-in.mov`,
 
       imageUrl: null,
 
@@ -535,7 +567,7 @@ const workouts = {
 
       muscles: ['Core', 'Obliques'],
 
-      videoUrl: null,
+      videoUrl: `${VIDEOS}/Strength/bicycle-crunch.mp4`,
 
       imageUrl: null,
 
@@ -567,7 +599,7 @@ const workouts = {
 
       muscles: ['Core', 'Shoulders', 'Triceps'],
 
-      videoUrl: null,
+      videoUrl: `${VIDEOS}/Strength/army-crawl.MP4`,
 
       imageUrl: null,
 
@@ -582,6 +614,70 @@ const workouts = {
         'Keep your hips still and level the whole time.',
 
         'Alternate which arm leads each rep.',
+
+      ],
+
+    },
+
+    {
+
+      name: 'Mountain Climber',
+
+      subcategory: 'core',
+
+      logType: 'reps-sets',
+
+      description: 'Builds core control and quick-feet conditioning at the same time.',
+
+      muscles: ['Core', 'Shoulders', 'Hip Flexors'],
+
+      videoUrl: `${VIDEOS}/Strength/mountain-climber.mp4`,
+
+      imageUrl: null,
+
+      steps: [
+
+        'Start in a high plank with your hands under your shoulders.',
+
+        'Keep your core tight and your back flat.',
+
+        'Drive one knee toward your chest, then quickly switch legs.',
+
+        'Keep alternating legs in a running motion.',
+
+        'Move as fast as you can while staying controlled.',
+
+      ],
+
+    },
+
+    {
+
+      name: 'Battle Ropes',
+
+      subcategory: 'upper',
+
+      logType: 'strength-time',
+
+      description: 'Builds explosive shoulder and arm endurance for repeated fast swings.',
+
+      muscles: ['Shoulders', 'Arms', 'Core'],
+
+      videoUrl: `${VIDEOS}/Strength/battle-rope.mov`,
+
+      imageUrl: null,
+
+      steps: [
+
+        'Hold one rope end in each hand, feet shoulder-width apart.',
+
+        'Bend your knees slightly and brace your core.',
+
+        'Whip the ropes up and down as fast as you can.',
+
+        'Keep a steady rhythm for the set time.',
+
+        'Rest, then repeat for more sets.',
 
       ],
 
@@ -635,7 +731,7 @@ const workouts = {
 
       muscles: ['Feet', 'Ankles', 'Calves', 'Hips', 'Core'],
 
-      videoUrl: null,
+      videoUrl: `${VIDEOS}/Footwork/recation.mov`,
 
       imageUrl: null,
 
@@ -669,7 +765,7 @@ const workouts = {
 
       muscles: ['Feet', 'Ankles', 'Calves', 'Thighs'],
 
-      videoUrl: null,
+      videoUrl: `${VIDEOS}/footwork/defence.mov`,
 
       imageUrl: null,
 
@@ -703,7 +799,7 @@ const workouts = {
 
       muscles: ['Quads', 'Glutes', 'Calves'],
 
-      videoUrl: null,
+      videoUrl: `${VIDEOS}/footwork/box-jump.mov`,
 
       imageUrl: null,
 
@@ -735,7 +831,7 @@ const workouts = {
 
       muscles: ['Quads', 'Glutes', 'Hamstrings', 'Calves'],
 
-      videoUrl: null,
+      videoUrl: `${VIDEOS}/Footwork/lunges-jump.mov`,
 
       imageUrl: null,
 
@@ -750,6 +846,70 @@ const workouts = {
         'Land softly back into a lunge with knees bent to absorb the impact.',
 
         'Immediately jump again, alternating legs each rep with control.',
+
+      ],
+
+    },
+
+    {
+
+      name: 'Single-Leg Hop',
+
+      subcategory: 'plyometrics',
+
+      logType: 'reps-sets',
+
+      description: 'Builds single-leg balance and spring for lunging and recovering on one foot.',
+
+      muscles: ['Calves', 'Ankles', 'Quads', 'Glutes'],
+
+      videoUrl: `${VIDEOS}/Footwork/single-leg-hop.mp4`,
+
+      imageUrl: null,
+
+      steps: [
+
+        'Stand tall balanced on one leg.',
+
+        'Bend your knee slightly and swing your arms back.',
+
+        'Hop forward off that same leg, landing softly on it.',
+
+        'Stick the landing and stay balanced before the next hop.',
+
+        'Finish all reps, then switch legs.',
+
+      ],
+
+    },
+
+    {
+
+      name: 'Burpees',
+
+      subcategory: 'plyometrics',
+
+      logType: 'reps-sets',
+
+      description: 'Builds full-body conditioning and explosive power for scrambling and recovering fast.',
+
+      muscles: ['Legs', 'Chest', 'Shoulders', 'Core'],
+
+      videoUrl: `${VIDEOS}/Footwork/burpees.mp4`,
+
+      imageUrl: null,
+
+      steps: [
+
+        'Start standing with your feet shoulder-width apart.',
+
+        'Squat down and place your hands on the floor.',
+
+        'Kick your feet back into a plank position.',
+
+        'Do a push-up, then jump your feet back up to your hands.',
+
+        'Explode up into a jump, then land softly and go straight into the next rep.',
 
       ],
 
@@ -857,33 +1017,161 @@ const workouts = {
 
     {
 
-      name: 'Court Shuttle Runs',
+      name: 'Sprint',
 
       subcategory: 'endurance',
 
-      logType: 'sets-duration',
+      logType: 'reps-sets',
 
-      description: 'Builds match-style stamina with sprint, stop, and go bursts.',
+      description: 'Builds top-end speed and explosive acceleration for chasing down shots.',
 
       muscles: ['Legs', 'Calves', 'Glutes', 'Core'],
 
-      videoUrl: null,
+      videoUrl: `${VIDEOS}/Endurance/sprint.mov`,
 
       imageUrl: null,
 
       steps: [
 
-        'Start at the center of the court in a ready stance.',
+        'Find a straight stretch of space, like a track or open field.',
 
-        'Sprint to one line or corner.',
+        'Start from a standing or slight crouch position.',
 
-        'Touch the line with your hand or foot.',
+        'Drive hard off your first few steps to accelerate.',
 
-        'Sprint back to the center right away.',
+        'Sprint at full speed for the set distance or time.',
 
-        'Repeat to different lines or corners.',
+        'Slow down gradually, then walk back to recover.',
 
-        'Rest, then do another round.',
+        'Rest, then repeat for more reps.',
+
+      ],
+
+    },
+
+    {
+
+      name: 'Rowing Intervals',
+
+      subcategory: 'endurance',
+
+      logType: 'sets-duration',
+
+      description: 'Builds full-body conditioning and stamina with low-impact cardio bursts.',
+
+      muscles: ['Legs', 'Back', 'Arms', 'Core'],
+
+      videoUrl: `${VIDEOS}/Endurance/rowing.mov`,
+
+      imageUrl: null,
+
+      steps: [
+
+        'Sit on the rowing machine with feet strapped in.',
+
+        'Push hard with your legs first, then pull the handle to your chest.',
+
+        'Extend your arms, then your legs, to return to the start.',
+
+        'Go hard for a short burst, then row easy to recover.',
+
+        'Repeat the hard and easy rowing for several rounds.',
+
+      ],
+
+    },
+
+    {
+
+      name: 'Stair Sprints',
+
+      subcategory: 'endurance',
+
+      logType: 'sets-duration',
+
+      description: 'Builds explosive leg power and match-fitness stamina.',
+
+      muscles: ['Legs', 'Glutes', 'Calves', 'Heart'],
+
+      videoUrl: `${VIDEOS}/Endurance/stair-sprint.mov`,
+
+      imageUrl: null,
+
+      steps: [
+
+        'Find a set of stairs or a steep incline.',
+
+        'Sprint up as fast as you can with quick steps.',
+
+        'Walk back down to recover.',
+
+        'Repeat for the set number of rounds.',
+
+        'Push your pace on every sprint.',
+
+      ],
+
+    },
+
+    {
+
+      name: 'Air Bike',
+
+      subcategory: 'endurance',
+
+      logType: 'sets-duration',
+
+      description: 'Builds full-body conditioning and explosive pace for repeated hard rallies.',
+
+      muscles: ['Legs', 'Arms', 'Heart', 'Lungs'],
+
+      videoUrl: `${VIDEOS}/Endurance/air-bike.mp4`,
+
+      imageUrl: null,
+
+      steps: [
+
+        'Sit on the bike and grab both handles.',
+
+        'Push and pull the handles while pedaling at the same time.',
+
+        'Go hard for a short burst, like 20 to 30 seconds.',
+
+        'Ease off and pedal easy to recover.',
+
+        'Repeat the hard and easy bursts for several rounds.',
+
+      ],
+
+    },
+
+    {
+
+      name: 'Treadmill Run',
+
+      subcategory: 'endurance',
+
+      logType: 'sets-duration',
+
+      description: 'Builds steady-state stamina to help you last longer in matches.',
+
+      muscles: ['Heart', 'Lungs', 'Legs'],
+
+      videoUrl: `${VIDEOS}/Endurance/treadmill-run.mp4`,
+
+      imageUrl: null,
+
+      steps: [
+
+        'Set the treadmill to a comfortable running pace.',
+
+        'Start with a short walk to warm up.',
+
+        'Increase the speed to a steady running pace.',
+
+        'Keep your breathing steady and your posture tall.',
+
+        'Run for the set time or distance, then cool down with an easy walk.',
 
       ],
 
