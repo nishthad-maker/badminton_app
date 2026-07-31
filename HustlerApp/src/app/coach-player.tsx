@@ -1,20 +1,23 @@
-import { View, StyleSheet, TouchableOpacity, ScrollView, Image, TextInput, Linking, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ScrollView, Image, Linking, ActivityIndicator } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useState, useEffect, useRef } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Audio } from 'expo-av';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
 import { notifyCoachMessage } from '../lib/notifications';
 import { pickChatMedia, sendChatMediaMessage } from '../lib/chatMedia';
 import { showAlert, showConfirm } from '../lib/ui';
 import { MessageBubble } from '@/components/MessageBubble';
+import AssignChoiceModal from '@/components/AssignChoiceModal';
 
 const CATEGORY_LABELS: Record<string, string> = {
   strength: 'Strength', footwork: 'Footwork', endurance: 'Endurance', recovery: 'Recovery',
 };
 const CATEGORY_ICONS: Record<string, string> = {
-  strength: 'dumbbell', footwork: 'badminton', endurance: 'lightning-bolt', recovery: 'heart-pulse',
+  strength: 'dumbbell', footwork: 'footprints', endurance: 'lightning-bolt', recovery: 'heart-pulse',
 };
 const FEELINGS = ['Bad', 'OK', 'Great'];
 const LANDINGS = ['Landed clean', 'A little shaky', 'Missed / stepped down'];
@@ -39,15 +42,12 @@ const logChips = (ld: any): string[] => {
 const fmtTime = (d: string) => new Date(d).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+type TabKey = 'training' | 'matches' | 'notes';
 
-type TabKey = 'overview' | 'training' | 'matches' | 'notes';
-
-const TABS: { key: TabKey; label: string }[] = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'training', label: 'Training' },
-  { key: 'matches', label: 'Matches' },
-  { key: 'notes', label: 'Notes' },
+const TABS: { key: TabKey; label: string; icon: string }[] = [
+  { key: 'training', label: 'Training', icon: 'run' },
+  { key: 'matches', label: 'Matches', icon: 'clipboard-text' },
+  { key: 'notes', label: 'Notes', icon: 'notebook-outline' },
 ];
 
 export default function CoachPlayerScreen() {
@@ -58,39 +58,41 @@ export default function CoachPlayerScreen() {
   const [loading, setLoading] = useState(true);
   const [myId, setMyId] = useState<string | null>(null);
   const myIdRef = useRef<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [activeTab, setActiveTab] = useState<TabKey>('training');
   const [trainingView, setTrainingView] = useState<'assigned' | 'logged'>('assigned');
   const [newActivity, setNewActivity] = useState(0);
 
-  const [progressTrends, setProgressTrends] = useState<Record<string, { values: number[]; unit: string; trend: 'up' | 'down' | 'flat' }>>({});
   const [msgInputs, setMsgInputs] = useState<Record<string, string>>({});
   const [sending, setSending] = useState<Record<string, boolean>>({});
   const [sendingMedia, setSendingMedia] = useState<Record<string, boolean>>({});
   const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
-
-  // Progress snapshot
-  const [weekSessions, setWeekSessions] = useState(0);
-  const [lastWeekSessions, setLastWeekSessions] = useState(0);
-  const [consistency, setConsistency] = useState(0);
-  const [categoryBreakdown, setCategoryBreakdown] = useState<Record<string, number>>({});
-  const [last7Days, setLast7Days] = useState<boolean[]>(Array(7).fill(false));
+  const [showAssignChoice, setShowAssignChoice] = useState(false);
 
   // Shared match/opponent scouting logs
   const [opponentLogs, setOpponentLogs] = useState<any[]>([]);
   const [matchMsgInputs, setMatchMsgInputs] = useState<Record<string, string>>({});
   const [sendingMatchMsg, setSendingMatchMsg] = useState<Record<string, boolean>>({});
   const [expandedMatchChats, setExpandedMatchChats] = useState<Record<string, boolean>>({});
+  const [expandedMatches, setExpandedMatches] = useState<Record<string, boolean>>({});
+  const [opponentSearch, setOpponentSearch] = useState('');
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const voiceSoundRef = useRef<Audio.Sound | null>(null);
 
   // Shared journal entries
   const [journalEntries, setJournalEntries] = useState<any[]>([]);
   const [journalMsgInputs, setJournalMsgInputs] = useState<Record<string, string>>({});
   const [sendingJournalMsg, setSendingJournalMsg] = useState<Record<string, boolean>>({});
   const [expandedJournalChats, setExpandedJournalChats] = useState<Record<string, boolean>>({});
+  const [expandedJournalEntries, setExpandedJournalEntries] = useState<Record<string, boolean>>({});
 
   // Private notes
   const [privateNote, setPrivateNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const noteTimeout = useRef<any>(null);
+
+  // Notes shared with the player — flat list, newest first
+  const [sharedNotes, setSharedNotes] = useState<any[]>([]);
+  const [deletingSharedNoteId, setDeletingSharedNoteId] = useState<string | null>(null);
 
   useEffect(() => {
     load();
@@ -112,6 +114,8 @@ export default function CoachPlayerScreen() {
     return () => { supabase.removeChannel(channel); };
   }, [playerId]);
 
+  useEffect(() => () => { if (voiceSoundRef.current) voiceSoundRef.current.unloadAsync(); }, []);
+
   const refreshUnseenActivity = async () => {
     const coachId = myIdRef.current;
     if (!coachId || !playerId) return;
@@ -121,7 +125,21 @@ export default function CoachPlayerScreen() {
   };
 
   const goBack = () => {
-    router.back();
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(coach-tabs)/players' as any);
+    }
+  };
+
+  const assignWorkout = () => {
+    setShowAssignChoice(false);
+    router.push({ pathname: '/assign-workout', params: { playerId: playerId as string, name: playerName } });
+  };
+
+  const assignWeeklyPlan = () => {
+    setShowAssignChoice(false);
+    router.push({ pathname: '/assign-weekly-plan', params: { playerId: playerId as string, name: playerName } });
   };
 
   const load = async () => {
@@ -135,67 +153,6 @@ export default function CoachPlayerScreen() {
       .from('session_logs').select('*').eq('user_id', playerId).order('created_at', { ascending: false });
     const rows = sessionData ?? [];
     setSessions(rows);
-
-    // Progress snapshot calculations
-    const now = new Date();
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-    startOfWeek.setHours(0, 0, 0, 0);
-    const startOfLastWeek = new Date(startOfWeek);
-    startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
-
-    const thisWeek = rows.filter((s: any) => new Date(s.created_at) >= startOfWeek);
-    const lastWeek = rows.filter((s: any) => new Date(s.created_at) >= startOfLastWeek && new Date(s.created_at) < startOfWeek);
-    setWeekSessions(new Set(thisWeek.map((s: any) => new Date(s.created_at).toDateString())).size);
-    setLastWeekSessions(new Set(lastWeek.map((s: any) => new Date(s.created_at).toDateString())).size);
-
-    // Last 30 days consistency
-    const last30 = new Date(); last30.setDate(last30.getDate() - 30);
-    const activeDays = new Set(rows.filter((s: any) => new Date(s.created_at) >= last30).map((s: any) => new Date(s.created_at).toDateString())).size;
-    setConsistency(Math.round((activeDays / 30) * 100));
-
-    // Category breakdown
-    const breakdown: Record<string, number> = {};
-    rows.slice(0, 20).forEach((s: any) => {
-      breakdown[s.category] = (breakdown[s.category] || 0) + 1;
-    });
-    setCategoryBreakdown(breakdown);
-
-    // Last 7 days bar chart
-    const last7 = Array(7).fill(false).map((_, i) => {
-      const d = new Date(); d.setDate(d.getDate() - (6 - i)); d.setHours(0, 0, 0, 0);
-      const next = new Date(d); next.setDate(next.getDate() + 1);
-      return rows.some((s: any) => { const sd = new Date(s.created_at); return sd >= d && sd < next; });
-    });
-    setLast7Days(last7);
-
-    // ── Progress trends per exercise ──
-    const trendMap: Record<string, { values: number[]; unit: string; trend: 'up' | 'down' | 'flat' }> = {};
-    rows.forEach((s: any) => {
-      const ld = s.log_data; if (!ld) return;
-      const key = s.exercise_name;
-      let val = 0; let unit = '';
-      if (ld.weight) { val = parseFloat(ld.weight) || 0; unit = 'kg'; }
-      else if (ld.height) { val = parseFloat(ld.height) || 0; unit = 'in'; }
-      else if (ld.reps) { val = parseInt(ld.reps) || 0; unit = 'reps'; }
-      else if (ld.time) { val = parseInt(ld.time) || 0; unit = 'sec'; }
-      else if (ld.duration) { val = parseInt(ld.duration) || 0; unit = 'min'; }
-      if (val === 0) return;
-      if (!trendMap[key]) trendMap[key] = { values: [], unit, trend: 'flat' };
-      trendMap[key].values.push(val);
-    });
-    Object.keys(trendMap).forEach(key => {
-      const t = trendMap[key];
-      if (t.values.length < 2) return;
-      const recent = t.values.slice(0, Math.min(3, t.values.length));
-      const older = t.values.slice(-Math.min(3, t.values.length));
-      const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
-      const olderAvg = older.reduce((a, b) => a + b, 0) / older.length;
-      if (recentAvg > olderAvg * 1.05) t.trend = 'up';
-      else if (recentAvg < olderAvg * 0.95) t.trend = 'down';
-      else t.trend = 'flat';
-    });
-    setProgressTrends(Object.fromEntries(Object.entries(trendMap).filter(([_, t]) => t.values.length >= 2)));
 
     const { data: { session } } = await supabase.auth.getSession();
     const coachId = session?.user?.id ?? null;
@@ -226,6 +183,11 @@ export default function CoachPlayerScreen() {
       const { data: noteData } = await supabase
         .from('coach_player_notes').select('note').eq('coach_id', coachId).eq('player_id', playerId as string).single();
       if (noteData) setPrivateNote(noteData.note ?? '');
+
+      // Load notes shared with the player
+      const { data: shared } = await supabase
+        .from('coach_shared_notes').select('*').eq('coach_id', coachId).eq('player_id', playerId as string).order('created_at', { ascending: false });
+      setSharedNotes(shared ?? []);
 
       // Load shared opponent scouting logs. Note: opponent_name is stored
       // directly on this row (not joined from `opponents`) because the coach
@@ -400,6 +362,33 @@ export default function CoachPlayerScreen() {
     }, 800);
   };
 
+  const loadSharedNotesOnly = async () => {
+    const coachId = myIdRef.current;
+    if (!coachId || !playerId) return;
+    const { data: shared } = await supabase
+      .from('coach_shared_notes').select('*').eq('coach_id', coachId).eq('player_id', playerId as string).order('created_at', { ascending: false });
+    setSharedNotes(shared ?? []);
+  };
+
+  // Refresh the shared-notes list whenever this screen regains focus — the
+  // coach adds notes on a separate pushed screen (coach-shared-note.tsx), so
+  // this catches new/edited notes on the way back without a full reload.
+  useFocusEffect(useCallback(() => { loadSharedNotesOnly(); }, [playerId]));
+
+  const openNewSharedNote = () => {
+    router.push({ pathname: '/coach-shared-note', params: { playerId: playerId as string, name: playerName } });
+  };
+
+  const deleteSharedNote = (noteId: string) => {
+    showConfirm('Delete note', 'This note will no longer be visible to the player. This can\'t be undone.', async () => {
+      setDeletingSharedNoteId(noteId);
+      const coachId = myIdRef.current;
+      await supabase.from('coach_shared_notes').delete().eq('id', noteId).eq('coach_id', coachId ?? '');
+      setSharedNotes(prev => prev.filter(n => n.id !== noteId));
+      setDeletingSharedNoteId(null);
+    });
+  };
+
   // ── Mark the other person's messages as seen so they can no longer delete them ──
   const markSeen = async (table: string, ids: string[]) => {
     if (!ids.length) return;
@@ -416,6 +405,10 @@ export default function CoachPlayerScreen() {
     setAssignments(prev => prev.map(a =>
       a.id === assignment.id ? { ...a, messages: a.messages.map((m: any) => unseenIds.includes(m.id) ? { ...m, seen_at: seenAt } : m) } : a
     ));
+  };
+
+  const toggleJournalExpand = (id: string) => {
+    setExpandedJournalEntries(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const toggleJournalChat = (entry: any) => {
@@ -448,6 +441,25 @@ export default function CoachPlayerScreen() {
     ));
   };
 
+  const toggleMatchExpand = (id: string) => {
+    setExpandedMatches(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const playVoiceNote = async (log: any) => {
+    if (voiceSoundRef.current) {
+      await voiceSoundRef.current.stopAsync();
+      await voiceSoundRef.current.unloadAsync();
+      voiceSoundRef.current = null;
+    }
+    if (playingVoiceId === log.id) { setPlayingVoiceId(null); return; }
+    const { sound } = await Audio.Sound.createAsync({ uri: log.voice_note_url }, { shouldPlay: true });
+    voiceSoundRef.current = sound;
+    setPlayingVoiceId(log.id);
+    sound.setOnPlaybackStatusUpdate(status => {
+      if (status.isLoaded && status.didJustFinish) setPlayingVoiceId(null);
+    });
+  };
+
   const toggleMatchChat = (log: any) => {
     setExpandedMatchChats(prev => ({ ...prev, [log.id]: !prev[log.id] }));
     const coachId = myIdRef.current;
@@ -478,143 +490,40 @@ export default function CoachPlayerScreen() {
     ));
   };
 
-  const weekDiff = weekSessions - lastWeekSessions;
-  const totalRecent = Object.values(categoryBreakdown).reduce((a, b) => a + b, 0);
+  // opponentLogs is already ordered most-recent-first, so a Set preserves
+  // that order and gives us each opponent's most recent appearance first.
+  const recentOpponents = Array.from(new Set(
+    opponentLogs.map((l: any) => l.opponent_name).filter(Boolean)
+  ));
+
+  const matchQuery = opponentSearch.trim().toLowerCase();
+  const filteredLogs = matchQuery
+    ? opponentLogs.filter((l: any) => (l.opponent_name ?? '').toLowerCase().includes(matchQuery))
+    : opponentLogs;
 
   return (
     <View style={styles.container}>
       <View style={styles.content}>
         <View style={styles.titleRow}>
           <TouchableOpacity onPress={goBack}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+            <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>{playerName}</Text>
         </View>
 
-        {!loading && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.topTabScroll} contentContainerStyle={styles.topTabRow}>
-            {TABS.map(tab => {
-              const active = activeTab === tab.key;
-              const showDot = tab.key === 'training' && newActivity > 0;
-              return (
-                <TouchableOpacity
-                  key={tab.key}
-                  style={[styles.topTabPill, active && styles.topTabPillActive]}
-                  onPress={() => setActiveTab(tab.key)}
-                >
-                  <Text style={[styles.topTabPillText, active && styles.topTabPillTextActive]}>{tab.label}</Text>
-                  {showDot && <View style={styles.topTabDot} />}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        )}
-
-        {!loading && (activeTab === 'overview' || activeTab === 'training') && (
+        {!loading && activeTab === 'training' && (
           <TouchableOpacity
             style={styles.assignBtn}
-            onPress={() => router.push({ pathname: '/assign-workout', params: { playerId: playerId as string, name: playerName } })}
+            onPress={() => setShowAssignChoice(true)}
           >
-            <MaterialCommunityIcons name="clipboard-plus-outline" size={18} color={Theme.limeAccentDark} />
-            <Text style={styles.assignBtnText}>Assign Workout</Text>
+            <Icon name="clipboard-plus-outline" size={18} color={Theme.limeAccentDark} />
+            <Text style={styles.assignBtnText}>Assign</Text>
           </TouchableOpacity>
         )}
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         {loading ? (
           <ActivityIndicator color={Theme.eyebrowGreen} style={{ marginTop: 40 }} />
-        ) : activeTab === 'overview' ? (
-          <>
-            <View style={styles.snapshotCard}>
-
-              {/* Top stats row */}
-              <View style={styles.snapshotRow}>
-                <View style={styles.snapshotStat}>
-                  <Text style={styles.snapshotNum}>{weekSessions}</Text>
-                  <Text style={styles.snapshotLabel}>This week</Text>
-                  {weekDiff !== 0 && (
-                    <View style={[styles.weekDiffChip, weekDiff > 0 ? styles.weekDiffUp : styles.weekDiffDown]}>
-                      <MaterialCommunityIcons name={weekDiff > 0 ? 'trending-up' : 'trending-down'} size={12} color={weekDiff > 0 ? '#2ECC71' : '#FF6B6B'} />
-                      <Text style={[styles.weekDiffText, { color: weekDiff > 0 ? '#2ECC71' : '#FF6B6B' }]}>
-                        {weekDiff > 0 ? '+' : ''}{weekDiff} vs last week
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.snapshotDivider} />
-                <View style={styles.snapshotStat}>
-                  <Text style={styles.snapshotNum}>{consistency}%</Text>
-                  <Text style={styles.snapshotLabel}>30-day consistency</Text>
-                  <View style={styles.consistencyBar}>
-                    <View style={[styles.consistencyFill, { width: `${consistency}%`, backgroundColor: consistency >= 70 ? '#2ECC71' : consistency >= 40 ? '#E67E22' : '#FF6B6B' }]} />
-                  </View>
-                </View>
-              </View>
-
-              {/* 7-day chart */}
-              <View style={styles.chartSection}>
-                <Text style={styles.chartLabel}>LAST 7 DAYS</Text>
-                <View style={styles.chartRow}>
-                  {last7Days.map((active, i) => {
-                    const d = new Date(); d.setDate(d.getDate() - (6 - i));
-                    const dayName = DAYS[(d.getDay() + 6) % 7];
-                    return (
-                      <View key={i} style={styles.chartCol}>
-                        <View style={[styles.chartBar, active && styles.chartBarActive]} />
-                        <Text style={[styles.chartDayLabel, active && styles.chartDayLabelActive]}>{dayName}</Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Category breakdown */}
-              {totalRecent > 0 && (
-                <View style={styles.breakdownSection}>
-                  <Text style={styles.chartLabel}>CATEGORY BREAKDOWN (last 20 sessions)</Text>
-                  {Object.entries(categoryBreakdown).sort((a, b) => b[1] - a[1]).map(([cat, count]) => (
-                    <View key={cat} style={styles.breakdownRow}>
-                      <Text style={styles.breakdownCat}>{CATEGORY_LABELS[cat] ?? cat}</Text>
-                      <View style={styles.breakdownTrack}>
-                        <View style={[styles.breakdownFill, { width: `${(count / totalRecent) * 100}%`, backgroundColor: catTheme(cat).fg }]} />
-                      </View>
-                      <Text style={styles.breakdownCount}>{count}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {/* Progress trends */}
-              {Object.keys(progressTrends).length > 0 && (
-                <View style={styles.breakdownSection}>
-                  <Text style={styles.chartLabel}>EXERCISE TRENDS</Text>
-                  {Object.entries(progressTrends).slice(0, 6).map(([exName, t]) => (
-                    <View key={exName} style={styles.trendRow}>
-                      <Text style={styles.trendName} numberOfLines={1}>{exName}</Text>
-                      <Text style={styles.trendBest}>
-                        {Math.max(...t.values)}{t.unit}
-                      </Text>
-                      <View style={[styles.trendChip,
-                        t.trend === 'up' ? styles.trendUp : t.trend === 'down' ? styles.trendDown : styles.trendFlat
-                      ]}>
-                        <MaterialCommunityIcons
-                          name={t.trend === 'up' ? 'trending-up' : t.trend === 'down' ? 'trending-down' : 'trending-neutral'}
-                          size={13}
-                          color={t.trend === 'up' ? '#2ECC71' : t.trend === 'down' ? '#FF6B6B' : Theme.textSecondary}
-                        />
-                        <Text style={[styles.trendChipText,
-                          { color: t.trend === 'up' ? '#2ECC71' : t.trend === 'down' ? '#FF6B6B' : Theme.textSecondary }
-                        ]}>
-                          {t.trend === 'up' ? 'Improving' : t.trend === 'down' ? 'Declining' : 'Consistent'}
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-
-          </>
         ) : activeTab === 'training' ? (
           <>
             <View style={styles.subToggleRow}>
@@ -635,7 +544,7 @@ export default function CoachPlayerScreen() {
             {trainingView === 'logged' ? (
               sessions.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <MaterialCommunityIcons name="clipboard-text-outline" size={40} color={Theme.textSecondary} />
+                  <Icon name="clipboard-text-outline" size={40} color={Theme.textSecondary} />
                   <Text style={styles.emptyDesc}>No sessions logged yet.</Text>
                 </View>
               ) : (
@@ -644,7 +553,7 @@ export default function CoachPlayerScreen() {
                   return (
                     <View key={i} style={styles.sessionCard}>
                       <View style={[styles.sessionIcon, { backgroundColor: cat.bg }]}>
-                        <MaterialCommunityIcons name={(CATEGORY_ICONS[s.category] ?? 'run') as any} size={18} color={cat.fg} />
+                        <Icon name={(CATEGORY_ICONS[s.category] ?? 'run') as any} size={18} color={cat.fg} />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.sessionName}>{s.exercise_name ?? 'Session'}</Text>
@@ -664,7 +573,7 @@ export default function CoachPlayerScreen() {
             ) : (
               assignments.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <MaterialCommunityIcons name="clipboard-plus-outline" size={40} color={Theme.textSecondary} />
+                  <Icon name="clipboard-plus-outline" size={40} color={Theme.textSecondary} />
                   <Text style={styles.emptyDesc}>No workouts assigned yet.</Text>
                 </View>
               ) : (
@@ -679,17 +588,17 @@ export default function CoachPlayerScreen() {
                       </View>
                       {a.doneAt ? (
                         <View style={[styles.doneChip, styles.doneChipYes]}>
-                          <MaterialCommunityIcons name="check-circle" size={14} color={Theme.eyebrowGreen} />
+                          <Icon name="check-circle" size={14} color={Theme.eyebrowGreen} />
                           <Text style={[styles.doneChipText, styles.doneChipTextYes]}>Done</Text>
                         </View>
                       ) : a.proof ? (
                         <View style={[styles.doneChip, styles.doneChipCompleted]}>
-                          <MaterialCommunityIcons name="check-decagram" size={14} color="#1E8E3E" />
+                          <Icon name="check-decagram" size={14} color="#1E8E3E" />
                           <Text style={[styles.doneChipText, styles.doneChipTextCompleted]}>Completed</Text>
                         </View>
                       ) : (
                         <View style={[styles.doneChip, styles.doneChipNo]}>
-                          <MaterialCommunityIcons name="clock-outline" size={14} color={Theme.textSecondary} />
+                          <Icon name="clock-outline" size={14} color={Theme.textSecondary} />
                           <Text style={[styles.doneChipText, styles.doneChipTextNo]}>Not yet</Text>
                         </View>
                       )}
@@ -704,7 +613,7 @@ export default function CoachPlayerScreen() {
                     {a.proof && (
                       <View style={styles.proofSection}>
                         <View style={styles.proofLabelRow}>
-                          <MaterialCommunityIcons name="paperclip" size={17} color={Theme.textSecondary} />
+                          <Icon name="paperclip" size={17} color={Theme.textSecondary} />
                           <Text style={styles.proofLabel}>Proof uploaded</Text>
                         </View>
                         {a.proof.media_type === 'photo' ? (
@@ -714,16 +623,16 @@ export default function CoachPlayerScreen() {
                           </TouchableOpacity>
                         ) : (
                           <TouchableOpacity style={styles.videoProof} onPress={() => Linking.openURL(a.proof.media_url)}>
-                            <MaterialCommunityIcons name="play-circle-outline" size={32} color={Theme.eyebrowGreen} />
+                            <Icon name="play-circle-outline" size={32} color={Theme.eyebrowGreen} />
                             <Text style={styles.videoProofText}>Tap to watch video</Text>
                           </TouchableOpacity>
                         )}
                       </View>
                     )}
                     <TouchableOpacity style={styles.chatToggle} onPress={() => toggleChat(a)}>
-                      <MaterialCommunityIcons name="message-outline" size={15} color={Theme.eyebrowGreen} />
+                      <Icon name="message-outline" size={15} color={Theme.eyebrowGreen} />
                       <Text style={styles.chatToggleText}>{a.messages.length > 0 ? `Messages (${a.messages.length})` : 'Leave feedback'}</Text>
-                      <MaterialCommunityIcons name={expandedChats[a.id] ? 'chevron-up' : 'chevron-down'} size={16} color={Theme.textSecondary} />
+                      <Icon name={expandedChats[a.id] ? 'chevron-up' : 'chevron-down'} size={16} color={Theme.textSecondary} />
                     </TouchableOpacity>
                     {expandedChats[a.id] && (
                       <>
@@ -746,11 +655,11 @@ export default function CoachPlayerScreen() {
                         )}
                         <View style={styles.inputRow}>
                           <TouchableOpacity style={styles.mediaBtn} onPress={() => pickAndSendMedia(a)} disabled={sendingMedia[a.id]}>
-                            {sendingMedia[a.id] ? <ActivityIndicator size="small" color={Theme.eyebrowGreen} /> : <MaterialCommunityIcons name="image-multiple-outline" size={20} color={Theme.eyebrowGreen} />}
+                            {sendingMedia[a.id] ? <ActivityIndicator size="small" color={Theme.eyebrowGreen} /> : <Icon name="image-multiple-outline" size={20} color={Theme.eyebrowGreen} />}
                           </TouchableOpacity>
                           <TextInput style={styles.input} placeholder="Leave feedback or reply..." placeholderTextColor={Theme.textSecondary} value={msgInputs[a.id] ?? ''} onChangeText={(t) => setMsgInputs(prev => ({ ...prev, [a.id]: t }))} multiline />
                           <TouchableOpacity style={[styles.sendBtn, (!msgInputs[a.id]?.trim() || sending[a.id]) && styles.sendBtnDisabled]} onPress={() => sendMessage(a)} disabled={!msgInputs[a.id]?.trim() || sending[a.id]}>
-                            {sending[a.id] ? <ActivityIndicator size="small" color="#fff" /> : <MaterialCommunityIcons name="send" size={16} color="#fff" />}
+                            {sending[a.id] ? <ActivityIndicator size="small" color="#fff" /> : <Icon name="send" size={16} color="#fff" />}
                           </TouchableOpacity>
                         </View>
                       </>
@@ -764,116 +673,176 @@ export default function CoachPlayerScreen() {
           <>
             {opponentLogs.length === 0 ? (
               <View style={styles.emptyState}>
-                <MaterialCommunityIcons name="clipboard-text-outline" size={40} color={Theme.textSecondary} />
+                <Icon name="clipboard-text-outline" size={40} color={Theme.textSecondary} />
                 <Text style={styles.emptyDesc}>No shared matches yet.</Text>
               </View>
             ) : (
-              opponentLogs.map((log: any) => (
-                <View key={log.id} style={styles.matchCard}>
-                  <View style={styles.matchTopRow}>
-                    <Text style={styles.sessionName}>{log.opponent_name ?? 'Opponent'}</Text>
-                    <Text style={styles.matchDate}>{fmtDate(log.created_at)}</Text>
-                  </View>
-
-                  <View style={styles.scoreResultRow}>
-                    {log.score && <Text style={styles.matchScore}>{log.score}</Text>}
-                    {log.result && log.result !== 'unsure' && (
-                      <View style={[styles.resultBadge, { backgroundColor: log.result === 'win' ? 'rgba(46,204,113,0.15)' : 'rgba(255,107,107,0.15)' }]}>
-                        <MaterialCommunityIcons name={log.result === 'win' ? 'trophy-outline' : 'close-circle-outline'} size={13} color={log.result === 'win' ? Theme.eyebrowGreen : '#FF6B6B'} />
-                        <Text style={[styles.resultBadgeText, { color: log.result === 'win' ? Theme.eyebrowGreen : '#FF6B6B' }]}>
-                          {log.result === 'win' ? 'Win' : 'Loss'}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {(log.strengths_tags?.length > 0 || log.strengths_text) && (
-                    <View style={styles.logSection}>
-                      <Text style={styles.logSectionLabel}>STRENGTHS</Text>
-                      {log.strengths_tags?.length > 0 && (
-                        <View style={styles.chipRow}>
-                          {log.strengths_tags.map((t: string) => (
-                            <View key={`s-${t}`} style={[styles.chip, styles.chipStrength]}><Text style={styles.chipText}>{t}</Text></View>
-                          ))}
-                        </View>
-                      )}
-                      {log.strengths_text && <Text style={styles.sessionMeta}>{log.strengths_text}</Text>}
-                    </View>
-                  )}
-
-                  {(log.weaknesses_tags?.length > 0 || log.weaknesses_text) && (
-                    <View style={styles.logSection}>
-                      <Text style={styles.logSectionLabel}>WEAKNESSES</Text>
-                      {log.weaknesses_tags?.length > 0 && (
-                        <View style={styles.chipRow}>
-                          {log.weaknesses_tags.map((t: string) => (
-                            <View key={`w-${t}`} style={[styles.chip, styles.chipWeakness]}><Text style={styles.chipText}>{t}</Text></View>
-                          ))}
-                        </View>
-                      )}
-                      {log.weaknesses_text && <Text style={styles.sessionMeta}>{log.weaknesses_text}</Text>}
-                    </View>
-                  )}
-
-                  {log.next_time_text && (
-                    <View style={styles.logSection}>
-                      <Text style={styles.logSectionLabel}>NEXT TIME</Text>
-                      <Text style={styles.sessionMeta}>{log.next_time_text}</Text>
-                    </View>
-                  )}
-
-                  {log.video_url && (
-                    <TouchableOpacity style={styles.videoLinkRow} onPress={() => Linking.openURL(log.video_url)}>
-                      <MaterialCommunityIcons name="link-variant" size={18} color={Theme.eyebrowGreen} />
-                      <Text style={styles.videoLinkText}>Watch match video</Text>
+              <>
+                <View style={styles.searchRow}>
+                  <Icon name="magnify" size={20} color={Theme.textSecondary} />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search opponent..."
+                    placeholderTextColor={Theme.textSecondary}
+                    value={opponentSearch}
+                    onChangeText={setOpponentSearch}
+                  />
+                  {opponentSearch.length > 0 && (
+                    <TouchableOpacity onPress={() => setOpponentSearch('')}>
+                      <Icon name="close-circle" size={18} color={Theme.textSecondary} />
                     </TouchableOpacity>
                   )}
-
-                  <TouchableOpacity style={styles.chatToggle} onPress={() => toggleMatchChat(log)}>
-                    <MaterialCommunityIcons name="message-outline" size={15} color={Theme.eyebrowGreen} />
-                    <Text style={styles.chatToggleText}>{log.messages.length > 0 ? `Messages (${log.messages.length})` : 'Leave feedback'}</Text>
-                    <MaterialCommunityIcons name={expandedMatchChats[log.id] ? 'chevron-up' : 'chevron-down'} size={16} color={Theme.textSecondary} />
-                  </TouchableOpacity>
-                  {expandedMatchChats[log.id] && (
-                    <>
-                      {log.messages.length > 0 && (
-                        <View style={styles.chatThread}>
-                          {log.messages.map((m: any) => (
-                            <MessageBubble
-                              key={m.id}
-                              isMine={m.sender_id === myIdRef.current}
-                              senderLabel={playerName}
-                              message={m.message}
-                              mediaUrl={null}
-                              mediaType={null}
-                              timeLabel={fmtTime(m.created_at)}
-                              onDelete={() => deleteMatchMessage(log, m.id)}
-                              deletable={!m.seen_at}
-                            />
-                          ))}
-                        </View>
-                      )}
-                      <View style={styles.inputRow}>
-                        <TextInput
-                          style={styles.input}
-                          placeholder="Leave feedback on this match..."
-                          placeholderTextColor={Theme.textSecondary}
-                          value={matchMsgInputs[log.id] ?? ''}
-                          onChangeText={(t) => setMatchMsgInputs(prev => ({ ...prev, [log.id]: t }))}
-                          multiline
-                        />
-                        <TouchableOpacity
-                          style={[styles.sendBtn, (!matchMsgInputs[log.id]?.trim() || sendingMatchMsg[log.id]) && styles.sendBtnDisabled]}
-                          onPress={() => sendMatchMessage(log)}
-                          disabled={!matchMsgInputs[log.id]?.trim() || sendingMatchMsg[log.id]}
-                        >
-                          {sendingMatchMsg[log.id] ? <ActivityIndicator size="small" color="#fff" /> : <MaterialCommunityIcons name="send" size={16} color="#fff" />}
-                        </TouchableOpacity>
-                      </View>
-                    </>
-                  )}
                 </View>
-              ))
+
+                {!opponentSearch && recentOpponents.length > 1 && (
+                  <View style={styles.recentOpponentsSection}>
+                    <Text style={styles.logSectionLabel}>RECENT OPPONENTS</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                      {recentOpponents.map((oppName) => (
+                        <TouchableOpacity key={oppName} style={styles.opponentChip} onPress={() => setOpponentSearch(oppName)}>
+                          <Text style={styles.opponentChipText}>{oppName}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+
+                {filteredLogs.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Icon name="account-search-outline" size={40} color={Theme.textSecondary} />
+                    <Text style={styles.emptyDesc}>No matches found for "{opponentSearch}".</Text>
+                  </View>
+                ) : (
+                  filteredLogs.map((log: any) => {
+                    const expanded = !!expandedMatches[log.id];
+                    return (
+                      <View key={log.id} style={styles.matchCard}>
+                        <TouchableOpacity style={styles.matchTopRow} onPress={() => toggleMatchExpand(log.id)} activeOpacity={0.7}>
+                          <View style={{ flex: 1 }}>
+                            <View style={styles.matchNameRow}>
+                              <Text style={styles.sessionName}>{log.opponent_name ?? 'Opponent'}</Text>
+                              {log.match_type && (
+                                <View style={[styles.typeTag, log.match_type === 'singles' ? styles.typeTagSingles : styles.typeTagDoubles]}>
+                                  <Text style={[styles.typeTagText, log.match_type === 'singles' ? styles.typeTagTextSingles : styles.typeTagTextDoubles]}>
+                                    {log.match_type === 'singles' ? 'Singles' : 'Doubles'}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text style={styles.matchDate}>{fmtDate(log.created_at)}</Text>
+                          </View>
+                          {log.result && log.result !== 'unsure' && (
+                            <View style={[styles.resultDot, { backgroundColor: log.result === 'win' ? '#3BB273' : '#E14444' }]} />
+                          )}
+                          <Icon name={expanded ? 'chevron-up' : 'chevron-down'} size={22} color={Theme.textSecondary} />
+                        </TouchableOpacity>
+
+                        {expanded && (
+                          <>
+                            {log.score && (
+                              <View style={styles.scoreResultRow}>
+                                <Text style={styles.matchScore}>{log.score}</Text>
+                              </View>
+                            )}
+
+                            {(log.strengths_tags?.length > 0 || log.strengths_text) && (
+                              <View style={styles.logSection}>
+                                <Text style={styles.logSectionLabel}>STRENGTHS</Text>
+                                {log.strengths_tags?.length > 0 && (
+                                  <View style={styles.chipRow}>
+                                    {log.strengths_tags.map((t: string) => (
+                                      <View key={`s-${t}`} style={[styles.chip, styles.chipStrength]}><Text style={[styles.chipText, styles.chipStrengthText]}>{t}</Text></View>
+                                    ))}
+                                  </View>
+                                )}
+                                {log.strengths_text && <Text style={styles.sessionMeta}>{log.strengths_text}</Text>}
+                              </View>
+                            )}
+
+                            {(log.weaknesses_tags?.length > 0 || log.weaknesses_text) && (
+                              <View style={styles.logSection}>
+                                <Text style={styles.logSectionLabel}>WEAKNESSES</Text>
+                                {log.weaknesses_tags?.length > 0 && (
+                                  <View style={styles.chipRow}>
+                                    {log.weaknesses_tags.map((t: string) => (
+                                      <View key={`w-${t}`} style={[styles.chip, styles.chipWeakness]}><Text style={[styles.chipText, styles.chipWeaknessText]}>{t}</Text></View>
+                                    ))}
+                                  </View>
+                                )}
+                                {log.weaknesses_text && <Text style={styles.sessionMeta}>{log.weaknesses_text}</Text>}
+                              </View>
+                            )}
+
+                            {log.next_time_text && (
+                              <View style={styles.logSection}>
+                                <Text style={styles.logSectionLabel}>NEXT TIME</Text>
+                                <Text style={styles.sessionMeta}>{log.next_time_text}</Text>
+                              </View>
+                            )}
+
+                            {log.video_url && (
+                              <TouchableOpacity style={styles.videoLinkRow} onPress={() => Linking.openURL(log.video_url)}>
+                                <Icon name="link-variant" size={18} color={Theme.eyebrowGreen} />
+                                <Text style={styles.videoLinkText}>Watch match video</Text>
+                              </TouchableOpacity>
+                            )}
+                            {log.voice_note_url && (
+                              <TouchableOpacity style={styles.videoLinkRow} onPress={() => playVoiceNote(log)}>
+                                <Icon name={playingVoiceId === log.id ? 'pause-circle' : 'play-circle'} size={20} color={Theme.eyebrowGreen} />
+                                <Text style={styles.videoLinkText}>Voice note{log.voice_note_duration_seconds ? ` · ${log.voice_note_duration_seconds}s` : ''}</Text>
+                              </TouchableOpacity>
+                            )}
+
+                            <TouchableOpacity style={styles.chatToggle} onPress={() => toggleMatchChat(log)}>
+                              <Icon name="message-outline" size={15} color={Theme.eyebrowGreen} />
+                              <Text style={styles.chatToggleText}>{log.messages.length > 0 ? `Messages (${log.messages.length})` : 'Leave feedback'}</Text>
+                              <Icon name={expandedMatchChats[log.id] ? 'chevron-up' : 'chevron-down'} size={16} color={Theme.textSecondary} />
+                            </TouchableOpacity>
+                            {expandedMatchChats[log.id] && (
+                              <>
+                                {log.messages.length > 0 && (
+                                  <View style={styles.chatThread}>
+                                    {log.messages.map((m: any) => (
+                                      <MessageBubble
+                                        key={m.id}
+                                        isMine={m.sender_id === myIdRef.current}
+                                        senderLabel={playerName}
+                                        message={m.message}
+                                        mediaUrl={null}
+                                        mediaType={null}
+                                        timeLabel={fmtTime(m.created_at)}
+                                        onDelete={() => deleteMatchMessage(log, m.id)}
+                                        deletable={!m.seen_at}
+                                      />
+                                    ))}
+                                  </View>
+                                )}
+                                <View style={styles.inputRow}>
+                                  <TextInput
+                                    style={styles.input}
+                                    placeholder="Leave feedback on this match..."
+                                    placeholderTextColor={Theme.textSecondary}
+                                    value={matchMsgInputs[log.id] ?? ''}
+                                    onChangeText={(t) => setMatchMsgInputs(prev => ({ ...prev, [log.id]: t }))}
+                                    multiline
+                                  />
+                                  <TouchableOpacity
+                                    style={[styles.sendBtn, (!matchMsgInputs[log.id]?.trim() || sendingMatchMsg[log.id]) && styles.sendBtnDisabled]}
+                                    onPress={() => sendMatchMessage(log)}
+                                    disabled={!matchMsgInputs[log.id]?.trim() || sendingMatchMsg[log.id]}
+                                  >
+                                    {sendingMatchMsg[log.id] ? <ActivityIndicator size="small" color="#fff" /> : <Icon name="send" size={16} color="#fff" />}
+                                  </TouchableOpacity>
+                                </View>
+                              </>
+                            )}
+                          </>
+                        )}
+                      </View>
+                    );
+                  })
+                )}
+              </>
             )}
           </>
         ) : (
@@ -882,7 +851,7 @@ export default function CoachPlayerScreen() {
             <View style={styles.notesCard}>
               <View style={styles.notesHeader}>
                 <View style={styles.notesHeaderLeft}>
-                  <MaterialCommunityIcons name="lock-outline" size={16} color={Theme.textSecondary} />
+                  <Icon name="lock-outline" size={16} color={Theme.textSecondary} />
                   <Text style={styles.notesHeaderText}>Only you can see these</Text>
                 </View>
                 {savingNote && <Text style={styles.savingText}>Saving...</Text>}
@@ -900,81 +869,151 @@ export default function CoachPlayerScreen() {
             </View>
 
             <View style={styles.sectionDivider} />
-            <Text style={styles.sectionLabel}>SHARED JOURNAL ENTRIES</Text>
+            <View style={styles.sectionLabelRow}>
+              <Text style={[styles.sectionLabel, { marginBottom: 0 }]}>NOTES SHARED WITH PLAYER</Text>
+              <TouchableOpacity style={styles.addNoteBtn} onPress={openNewSharedNote} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Icon name="plus" size={18} color={Theme.limeAccentDark} />
+              </TouchableOpacity>
+            </View>
 
-            {journalEntries.length === 0 ? (
+            {sharedNotes.length === 0 ? (
               <View style={styles.emptyState}>
-                <MaterialCommunityIcons name="notebook-outline" size={40} color={Theme.textSecondary} />
-                <Text style={styles.emptyDesc}>No shared journal entries yet.</Text>
+                <Icon name="account-multiple" size={40} color={Theme.textSecondary} />
+                <Text style={styles.emptyDesc}>No shared notes yet. Tap + to write one — {playerName} will be able to see it.</Text>
               </View>
             ) : (
-              journalEntries.map((entry: any) => (
-                <View key={entry.id} style={styles.sessionCard}>
-                  <View style={styles.sessionIcon}>
-                    <MaterialCommunityIcons name="notebook-outline" size={18} color={Theme.eyebrowGreen} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.sessionName}>{fmtDate(`${entry.entry_date}T00:00:00`)}</Text>
-                    {entry.soreness_tags?.length > 0 && (
-                      <View style={styles.chipRow}>
-                        {entry.soreness_tags.map((t: string) => (
-                          <View key={t} style={styles.chip}><Text style={styles.chipText}>{t}</Text></View>
-                        ))}
-                      </View>
-                    )}
-                    {entry.free_text && <Text style={styles.sessionMeta}>{entry.free_text}</Text>}
-
-                    <TouchableOpacity style={styles.chatToggle} onPress={() => toggleJournalChat(entry)}>
-                      <MaterialCommunityIcons name="message-outline" size={15} color={Theme.eyebrowGreen} />
-                      <Text style={styles.chatToggleText}>{entry.messages.length > 0 ? `Messages (${entry.messages.length})` : 'Leave a message'}</Text>
-                      <MaterialCommunityIcons name={expandedJournalChats[entry.id] ? 'chevron-up' : 'chevron-down'} size={16} color={Theme.textSecondary} />
+              sharedNotes.map((n: any) => (
+                <View key={n.id} style={styles.sharedNoteCard}>
+                  <Text style={styles.sharedNoteText}>{n.note}</Text>
+                  <View style={styles.sharedNoteFooter}>
+                    <Text style={styles.sharedNoteDate}>{fmtDate(n.created_at)}</Text>
+                    <TouchableOpacity onPress={() => deleteSharedNote(n.id)} disabled={deletingSharedNoteId === n.id} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      {deletingSharedNoteId === n.id ? (
+                        <ActivityIndicator size="small" color={Theme.textSecondary} />
+                      ) : (
+                        <Icon name="trash-can-outline" size={16} color={Theme.textSecondary} />
+                      )}
                     </TouchableOpacity>
-                    {expandedJournalChats[entry.id] && (
-                      <>
-                        {entry.messages.length > 0 && (
-                          <View style={styles.chatThread}>
-                            {entry.messages.map((m: any) => (
-                              <MessageBubble
-                                key={m.id}
-                                isMine={m.sender_id === myIdRef.current}
-                                senderLabel={playerName}
-                                message={m.message}
-                                mediaUrl={null}
-                                mediaType={null}
-                                timeLabel={fmtTime(m.created_at)}
-                                onDelete={() => deleteJournalMessage(entry, m.id)}
-                                deletable={!m.seen_at}
-                              />
-                            ))}
-                          </View>
-                        )}
-                        <View style={styles.inputRow}>
-                          <TextInput
-                            style={styles.input}
-                            placeholder="Ask about how they're feeling..."
-                            placeholderTextColor={Theme.textSecondary}
-                            value={journalMsgInputs[entry.id] ?? ''}
-                            onChangeText={(t) => setJournalMsgInputs(prev => ({ ...prev, [entry.id]: t }))}
-                            multiline
-                          />
-                          <TouchableOpacity
-                            style={[styles.sendBtn, (!journalMsgInputs[entry.id]?.trim() || sendingJournalMsg[entry.id]) && styles.sendBtnDisabled]}
-                            onPress={() => sendJournalMessage(entry)}
-                            disabled={!journalMsgInputs[entry.id]?.trim() || sendingJournalMsg[entry.id]}
-                          >
-                            {sendingJournalMsg[entry.id] ? <ActivityIndicator size="small" color={Theme.limeAccentDark} /> : <MaterialCommunityIcons name="send" size={16} color={Theme.limeAccentDark} />}
-                          </TouchableOpacity>
-                        </View>
-                      </>
-                    )}
                   </View>
                 </View>
               ))
+            )}
+
+            <View style={styles.sectionDivider} />
+            <Text style={styles.sectionLabel}>PLAYER'S SHARED JOURNAL</Text>
+
+            {journalEntries.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Icon name="school-outline" size={40} color={Theme.textSecondary} />
+                <Text style={styles.emptyDesc}>No shared lesson notes yet. Personal journal entries stay private to the player.</Text>
+              </View>
+            ) : (
+              journalEntries.map((entry: any) => {
+                const journalExpanded = !!expandedJournalEntries[entry.id];
+                return (
+                  <View key={entry.id} style={styles.journalCard}>
+                    <TouchableOpacity
+                      style={styles.journalHeaderRow}
+                      onPress={() => toggleJournalExpand(entry.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.sessionIcon}>
+                        <Icon name="notebook-outline" size={18} color={Theme.eyebrowGreen} />
+                      </View>
+                      <Text style={[styles.sessionName, { flex: 1 }]}>{fmtDate(`${entry.entry_date}T00:00:00`)}</Text>
+                      <Icon name={journalExpanded ? 'chevron-up' : 'chevron-down'} size={22} color={Theme.textSecondary} />
+                    </TouchableOpacity>
+
+                    {journalExpanded && (
+                      <View style={styles.journalBody}>
+                        {entry.soreness_tags?.length > 0 && (
+                          <View style={styles.chipRow}>
+                            {entry.soreness_tags.map((t: string) => (
+                              <View key={t} style={styles.chip}><Text style={styles.chipText}>{t}</Text></View>
+                            ))}
+                          </View>
+                        )}
+                        {entry.free_text && <Text style={styles.sessionMeta}>{entry.free_text}</Text>}
+
+                        <TouchableOpacity style={styles.chatToggle} onPress={() => toggleJournalChat(entry)}>
+                          <Icon name="message-outline" size={15} color={Theme.eyebrowGreen} />
+                          <Text style={styles.chatToggleText}>{entry.messages.length > 0 ? `Messages (${entry.messages.length})` : 'Leave a message'}</Text>
+                          <Icon name={expandedJournalChats[entry.id] ? 'chevron-up' : 'chevron-down'} size={16} color={Theme.textSecondary} />
+                        </TouchableOpacity>
+                        {expandedJournalChats[entry.id] && (
+                          <>
+                            {entry.messages.length > 0 && (
+                              <View style={styles.chatThread}>
+                                {entry.messages.map((m: any) => (
+                                  <MessageBubble
+                                    key={m.id}
+                                    isMine={m.sender_id === myIdRef.current}
+                                    senderLabel={playerName}
+                                    message={m.message}
+                                    mediaUrl={null}
+                                    mediaType={null}
+                                    timeLabel={fmtTime(m.created_at)}
+                                    onDelete={() => deleteJournalMessage(entry, m.id)}
+                                    deletable={!m.seen_at}
+                                  />
+                                ))}
+                              </View>
+                            )}
+                            <View style={styles.inputRow}>
+                              <TextInput
+                                style={styles.input}
+                                placeholder="Ask about how they're feeling..."
+                                placeholderTextColor={Theme.textSecondary}
+                                value={journalMsgInputs[entry.id] ?? ''}
+                                onChangeText={(t) => setJournalMsgInputs(prev => ({ ...prev, [entry.id]: t }))}
+                                multiline
+                              />
+                              <TouchableOpacity
+                                style={[styles.sendBtn, (!journalMsgInputs[entry.id]?.trim() || sendingJournalMsg[entry.id]) && styles.sendBtnDisabled]}
+                                onPress={() => sendJournalMessage(entry)}
+                                disabled={!journalMsgInputs[entry.id]?.trim() || sendingJournalMsg[entry.id]}
+                              >
+                                {sendingJournalMsg[entry.id] ? <ActivityIndicator size="small" color={Theme.limeAccentDark} /> : <Icon name="send" size={16} color={Theme.limeAccentDark} />}
+                              </TouchableOpacity>
+                            </View>
+                          </>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                );
+              })
             )}
           </>
         )}
         </ScrollView>
       </View>
+
+      {!loading && (
+        <View style={styles.bottomTabBar}>
+          {TABS.map(tab => {
+            const active = activeTab === tab.key;
+            const showDot = tab.key === 'training' && newActivity > 0;
+            const color = active ? Theme.todayBlue : Theme.textMuted;
+            return (
+              <TouchableOpacity key={tab.key} style={styles.bottomTabItem} onPress={() => setActiveTab(tab.key)}>
+                <View>
+                  <Icon name={tab.icon as any} size={26} color={color} />
+                  {showDot && <View style={styles.bottomTabDot} />}
+                </View>
+                <Text style={[styles.bottomTabLabel, { color }]}>{tab.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+
+      <AssignChoiceModal
+        visible={showAssignChoice}
+        onClose={() => setShowAssignChoice(false)}
+        onSelectWorkout={assignWorkout}
+        onSelectWeeklyPlan={assignWeeklyPlan}
+      />
     </View>
   );
 }
@@ -983,130 +1022,109 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Theme.background },
   content: { flex: 1, padding: 24, paddingTop: 60 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
-  title: { fontFamily: Fonts.serifMedium, fontSize: 24, color: Theme.textPrimary },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 30, color: Theme.textPrimary },
   scroll: { paddingBottom: 60 },
-  assignBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Theme.limeAccent, borderRadius: 12, paddingVertical: 14, marginBottom: 16 },
-  assignBtnText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 15 },
+  assignBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Theme.limeAccent, borderRadius: 14, paddingVertical: 17, marginBottom: 18 },
+  assignBtnText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 17 },
   sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 12 },
   sectionDivider: { height: 1, backgroundColor: Theme.divider, marginVertical: 20 },
+  sectionLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  addNoteBtn: { width: 26, height: 26, borderRadius: 13, backgroundColor: Theme.limeAccent, alignItems: 'center', justifyContent: 'center' },
+  sharedNoteCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 16, marginBottom: 12, gap: 10 },
+  sharedNoteText: { fontSize: 16, color: Theme.textPrimary, lineHeight: 22 },
+  sharedNoteFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sharedNoteDate: { fontSize: 13, color: Theme.textSecondary },
 
-  // Top segmented tab bar
-  topTabScroll: { flexGrow: 0, marginBottom: 16 },
-  topTabRow: { flexDirection: 'row', gap: 8 },
-  topTabPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20, backgroundColor: Theme.cardWhite, borderWidth: 1, borderColor: Theme.divider },
-  topTabPillActive: { backgroundColor: Theme.eyebrowGreen, borderColor: Theme.eyebrowGreen },
-  topTabPillText: { fontSize: 13, fontWeight: '600', color: Theme.textSecondary },
-  topTabPillTextActive: { color: '#FFFFFF' },
-  topTabDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FF3B30' },
+  // Bottom tab bar (matches the app's main tab bar styling)
+  bottomTabBar: { flexDirection: 'row', backgroundColor: Theme.background, borderTopColor: Theme.divider, borderTopWidth: 1, height: 96, paddingBottom: 20, paddingTop: 12 },
+  bottomTabItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  bottomTabLabel: { fontSize: 12, fontWeight: '600', marginTop: 2 },
+  bottomTabDot: { position: 'absolute', top: -2, right: -6, width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF3B30' },
 
   // Training sub-toggle (Assigned / Logged)
-  subToggleRow: { flexDirection: 'row', backgroundColor: Theme.cardWhite, borderRadius: 10, padding: 4, marginBottom: 16, gap: 4 },
-  subToggleBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8 },
+  subToggleRow: { flexDirection: 'row', backgroundColor: Theme.cardWhite, borderRadius: 12, padding: 5, marginBottom: 18, gap: 5 },
+  subToggleBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 9 },
   subToggleBtnActive: { backgroundColor: Theme.eyebrowGreen },
-  subToggleText: { fontSize: 13, fontWeight: '600', color: Theme.textSecondary },
+  subToggleText: { fontSize: 15, fontWeight: '600', color: Theme.textSecondary },
   subToggleTextActive: { color: '#FFFFFF' },
 
-  // Progress snapshot
-  snapshotCard: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 16, marginBottom: 24, gap: 16 },
-  snapshotRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 16 },
-  snapshotStat: { flex: 1, gap: 4 },
-  snapshotNum: { fontSize: 32, fontWeight: 'bold', color: Theme.textPrimary },
-  snapshotLabel: { fontSize: 13, color: Theme.textSecondary },
-  snapshotDivider: { width: 1, backgroundColor: Theme.divider, alignSelf: 'stretch' },
-  weekDiffChip: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  weekDiffUp: { backgroundColor: 'rgba(46,204,113,0.15)' },
-  weekDiffDown: { backgroundColor: 'rgba(231,76,60,0.15)' },
-  weekDiffText: { fontSize: 12, fontWeight: '600' },
-  consistencyBar: { height: 6, backgroundColor: Theme.background, borderRadius: 3, overflow: 'hidden', marginTop: 6 },
-  consistencyFill: { height: '100%', borderRadius: 3 },
-
-  // 7-day chart
-  chartSection: { gap: 8 },
-  chartLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.textSecondary, letterSpacing: 1 },
-  chartRow: { flexDirection: 'row', gap: 6, alignItems: 'flex-end', height: 50 },
-  chartCol: { flex: 1, alignItems: 'center', gap: 4, justifyContent: 'flex-end' },
-  chartBar: { width: '100%', height: 32, borderRadius: 6, backgroundColor: Theme.background },
-  chartBarActive: { backgroundColor: Theme.eyebrowGreen },
-  chartDayLabel: { fontSize: 12, color: Theme.textSecondary, fontWeight: '600' },
-  chartDayLabelActive: { color: Theme.eyebrowGreen },
-
-  // Category breakdown
-  breakdownSection: { gap: 8 },
-  breakdownRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  breakdownCat: { width: 72, fontSize: 13, color: Theme.textSecondary },
-  breakdownTrack: { flex: 1, height: 8, backgroundColor: Theme.background, borderRadius: 4, overflow: 'hidden' },
-  breakdownFill: { height: '100%', borderRadius: 4 },
-  breakdownCount: { width: 24, fontSize: 13, color: Theme.textPrimary, fontWeight: '600', textAlign: 'right' },
-
-  // Trends
-  trendRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 },
-  trendName: { flex: 1, fontSize: 13, color: Theme.textPrimary, fontWeight: '500' },
-  trendBest: { fontSize: 13, fontWeight: '700', color: Theme.eyebrowGreen, minWidth: 40, textAlign: 'right' },
-  trendChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  trendUp: { backgroundColor: 'rgba(46,204,113,0.12)' },
-  trendDown: { backgroundColor: 'rgba(231,76,60,0.12)' },
-  trendFlat: { backgroundColor: Theme.background },
-  trendChipText: { fontSize: 12, fontWeight: '600' },
-
   // Assigned workouts
-  assignCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 14, marginBottom: 12, gap: 10 },
+  assignCard: { backgroundColor: Theme.cardWhite, borderRadius: 18, padding: 20, marginBottom: 16, gap: 14 },
   assignTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  assignTitle: { fontSize: 16, fontWeight: '600', color: Theme.textPrimary },
-  assignSub: { fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
-  doneChip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
+  assignTitle: { fontSize: 20, fontWeight: '600', color: Theme.textPrimary },
+  assignSub: { fontSize: 15, color: Theme.textSecondary, marginTop: 3 },
+  doneChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, paddingHorizontal: 11, paddingVertical: 6 },
   doneChipYes: { backgroundColor: Theme.cardTinted },
   doneChipCompleted: { backgroundColor: '#E3F8E3' },
   doneChipNo: { backgroundColor: Theme.background },
-  doneChipText: { fontSize: 12, fontWeight: '600' },
+  doneChipText: { fontSize: 14, fontWeight: '600' },
   doneChipTextYes: { color: Theme.eyebrowGreen },
   doneChipTextCompleted: { color: '#1E8E3E' },
   doneChipTextNo: { color: Theme.textSecondary },
   proofSection: { gap: 6 },
   proofLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  proofLabel: { fontSize: 13, color: Theme.textSecondary, fontWeight: '600' },
-  proofThumb: { width: '100%', height: 160, borderRadius: 10, backgroundColor: Theme.background },
-  proofTap: { fontSize: 13, color: Theme.textSecondary, marginTop: 4, textAlign: 'center' },
-  videoProof: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Theme.cardTinted, borderRadius: 10, padding: 14 },
-  videoProofText: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
-  chatToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 2, borderTopWidth: 1, borderTopColor: Theme.divider },
-  chatToggleText: { flex: 1, fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
+  proofLabel: { fontSize: 15, color: Theme.textSecondary, fontWeight: '600' },
+  proofThumb: { width: '100%', height: 170, borderRadius: 10, backgroundColor: Theme.background },
+  proofTap: { fontSize: 15, color: Theme.textSecondary, marginTop: 4, textAlign: 'center' },
+  videoProof: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Theme.cardTinted, borderRadius: 10, padding: 16 },
+  videoProofText: { fontSize: 15, color: Theme.eyebrowGreen, fontWeight: '600' },
+  chatToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 12, paddingHorizontal: 2, borderTopWidth: 1, borderTopColor: Theme.divider },
+  chatToggleText: { flex: 1, fontSize: 16, color: Theme.eyebrowGreen, fontWeight: '600' },
   chatThread: { gap: 6 },
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginTop: 4 },
   mediaBtn: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: Theme.background, borderWidth: 1, borderColor: Theme.divider },
-  input: { flex: 1, backgroundColor: Theme.background, borderRadius: 10, padding: 10, color: Theme.textPrimary, fontSize: 14, borderWidth: 1, borderColor: Theme.divider, maxHeight: 80 },
+  input: { flex: 1, backgroundColor: Theme.background, borderRadius: 12, padding: 13, color: Theme.textPrimary, fontSize: 16, borderWidth: 1, borderColor: Theme.divider, maxHeight: 90 },
   sendBtn: { backgroundColor: Theme.limeAccent, borderRadius: 10, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled: { opacity: 0.4 },
 
   // Private notes
-  notesCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 14, marginBottom: 4 },
-  notesHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  notesCard: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 18, marginBottom: 4 },
+  notesHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   notesHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  notesHeaderText: { fontSize: 13, color: Theme.textSecondary, fontWeight: '600' },
+  notesHeaderText: { fontSize: 14, color: Theme.textSecondary, fontWeight: '600' },
   savingText: { fontSize: 13, color: Theme.textSecondary, fontStyle: 'italic' },
-  notesInput: { color: Theme.textPrimary, fontSize: 15, lineHeight: 20, minHeight: 220 },
+  notesInput: { color: Theme.textPrimary, fontSize: 17, lineHeight: 25, minHeight: 320 },
 
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chip: { backgroundColor: Theme.background, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: Theme.divider },
-  chipStrength: { backgroundColor: 'rgba(46,204,113,0.14)', borderColor: 'transparent' },
-  chipWeakness: { backgroundColor: 'rgba(231,76,60,0.12)', borderColor: 'transparent' },
-  chipText: { fontSize: 13, color: Theme.textPrimary },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { backgroundColor: Theme.background, borderRadius: 10, paddingHorizontal: 13, paddingVertical: 7, borderWidth: 1, borderColor: Theme.divider },
+  chipStrength: { backgroundColor: 'rgba(46,204,113,0.10)', borderWidth: 1, borderColor: 'rgba(30,142,62,0.28)' },
+  chipWeakness: { backgroundColor: 'rgba(231,76,60,0.08)', borderWidth: 1, borderColor: 'rgba(192,57,43,0.26)' },
+  chipText: { fontSize: 15, color: Theme.textPrimary },
+  chipStrengthText: { color: '#1E8E3E', fontWeight: '600' },
+  chipWeaknessText: { color: '#C0392B', fontWeight: '600' },
   emptyState: { alignItems: 'center', paddingTop: 40, gap: 10 },
   emptyDesc: { fontSize: 15, color: Theme.textSecondary, textAlign: 'center' },
-  sessionCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Theme.cardWhite, borderRadius: 12, padding: 14, marginBottom: 10 },
-  sessionIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: Theme.cardTinted, alignItems: 'center', justifyContent: 'center' },
-  sessionName: { fontSize: 16, fontWeight: '600', color: Theme.textPrimary },
-  sessionMeta: { fontSize: 13, color: Theme.textSecondary, marginTop: 1 },
+  sessionCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 18, marginBottom: 14 },
+  sessionIcon: { width: 46, height: 46, borderRadius: 23, backgroundColor: Theme.cardTinted, alignItems: 'center', justifyContent: 'center' },
+  sessionName: { fontSize: 19, fontWeight: '600', color: Theme.textPrimary },
+  sessionMeta: { fontSize: 15, color: Theme.textSecondary, marginTop: 2 },
+
+  // Journal entries — collapsed to just the date, expand on tap
+  journalCard: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 18, marginBottom: 14 },
+  journalHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  journalBody: { marginTop: 14, gap: 6 },
 
   // Matches tab
-  matchCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 14, marginBottom: 12, gap: 10 },
-  matchTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  matchDate: { fontSize: 13, color: Theme.textSecondary },
-  matchScore: { fontSize: 16, fontWeight: '600', color: Theme.textPrimary },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Theme.cardWhite, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16, borderWidth: 1, borderColor: Theme.divider },
+  searchInput: { flex: 1, fontSize: 15, color: Theme.textPrimary },
+  recentOpponentsSection: { marginBottom: 18 },
+  opponentChip: { backgroundColor: Theme.cardWhite, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: Theme.divider },
+  opponentChipText: { fontSize: 14, fontWeight: '600', color: Theme.eyebrowGreen },
+  matchCard: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 18, marginBottom: 14, gap: 14 },
+  matchTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  matchNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  typeTag: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  typeTagSingles: { backgroundColor: Theme.cardTinted },
+  typeTagDoubles: { backgroundColor: '#E2EFAE' },
+  typeTagText: { fontSize: 12, fontWeight: '600' },
+  typeTagTextSingles: { color: '#0C447C' },
+  typeTagTextDoubles: { color: '#3B6D11' },
+  matchDate: { fontSize: 14, color: Theme.textSecondary, marginTop: 1 },
+  matchScore: { fontSize: 21, fontWeight: '700', color: Theme.textPrimary },
   scoreResultRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  resultBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
-  resultBadgeText: { fontSize: 13, fontWeight: '700' },
-  logSection: { gap: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: Theme.divider },
-  logSectionLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.textSecondary, letterSpacing: 1 },
+  resultDot: { width: 16, height: 16, borderRadius: 8 },
+  logSection: { gap: 9, paddingTop: 12, borderTopWidth: 1, borderTopColor: Theme.divider },
+  logSectionLabel: { fontSize: 12, fontWeight: 'bold', color: Theme.textSecondary, letterSpacing: 1 },
   videoLinkRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Theme.cardTinted, borderRadius: 10, padding: 10 },
   videoLinkText: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
 });

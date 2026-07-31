@@ -1,10 +1,11 @@
-import { View, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { router } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Theme, Fonts } from '@/constants/theme';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 
 const showAlert = (title: string, message: string) => {
   if (typeof window !== 'undefined') window.alert(`${title}\n\n${message}`);
@@ -68,7 +69,7 @@ export default function EditCoachProfileScreen() {
 
         <View style={styles.titleRow}>
           <TouchableOpacity onPress={goBack}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+            <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>Edit Profile</Text>
         </View>
@@ -110,16 +111,16 @@ export default function EditCoachProfileScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Theme.background },
   scroll: { flexGrow: 1, padding: 24, paddingTop: 60, paddingBottom: 60 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24 },
-  title: { fontFamily: Fonts.serifMedium, fontSize: 24, color: Theme.textPrimary },
-  card: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 24 },
-  label: { fontSize: 13, color: Theme.textSecondary, marginBottom: 8, fontWeight: '600' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 26 },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 27, color: Theme.textPrimary },
+  card: { backgroundColor: Theme.cardWhite, borderRadius: 18, padding: 26 },
+  label: { fontSize: 15, color: Theme.textSecondary, marginBottom: 9, fontWeight: '600' },
   input: {
-    backgroundColor: Theme.background, borderRadius: 10, padding: 14,
-    color: Theme.textPrimary, fontSize: 15, marginBottom: 16,
+    backgroundColor: Theme.background, borderRadius: 12, padding: 16,
+    color: Theme.textPrimary, fontSize: 17, marginBottom: 18,
     borderWidth: 1, borderColor: Theme.divider,
   },
-  button: { backgroundColor: Theme.limeAccent, borderRadius: 30, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
+  button: { backgroundColor: Theme.limeAccent, borderRadius: 30, paddingVertical: 17, alignItems: 'center', marginTop: 8 },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 15 },
+  buttonText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 17 },
 });

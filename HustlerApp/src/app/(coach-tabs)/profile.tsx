@@ -1,11 +1,13 @@
-import { View, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal } from 'react-native';
 import { Text } from '@/components/Text';
+import { TextInput } from '@/components/TextInput';
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import { supabase } from '../../lib/supabase';
 import { Theme, Fonts } from '@/constants/theme';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
+import { getMyClubs, getActiveClubId, getPendingCoachRequest, requestJoinClubAsCoach, setActiveClubId, MyClub, PendingClubRequest } from '../../lib/club';
 
 const showConfirm = (title: string, message: string, onConfirm: () => void) => {
   if (typeof window !== 'undefined') {
@@ -22,9 +24,17 @@ export default function CoachProfileScreen() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [playerCount, setPlayerCount] = useState(0);
+  const [activeThisWeek, setActiveThisWeek] = useState(0);
+  const [assignmentsSent, setAssignmentsSent] = useState(0);
   const [memberSince, setMemberSince] = useState('');
   const [copied, setCopied] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [myClubs, setMyClubs] = useState<MyClub[]>([]);
+  const [activeClubId, setActiveClubIdState] = useState<string | null>(null);
+  const [pendingClub, setPendingClub] = useState<PendingClubRequest | null>(null);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [joiningClub, setJoiningClub] = useState(false);
 
   useFocusEffect(useCallback(() => { loadProfile(); }, []));
 
@@ -38,8 +48,35 @@ export default function CoachProfileScreen() {
     if (profileData) setProfile(profileData);
 
     const { data: conns } = await supabase
-      .from('coach_connections').select('id').eq('coach_id', session.user.id).eq('status', 'accepted');
-    setPlayerCount((conns ?? []).length);
+      .from('coach_connections').select('player_id').eq('coach_id', session.user.id).eq('status', 'accepted');
+    const playerIds = (conns ?? []).map((c: any) => c.player_id);
+    setPlayerCount(playerIds.length);
+
+    if (playerIds.length > 0) {
+      const weekStart = new Date();
+      weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+      weekStart.setHours(0, 0, 0, 0);
+      const { data: weekSess } = await supabase
+        .from('session_logs').select('user_id').in('user_id', playerIds).gte('created_at', weekStart.toISOString());
+      setActiveThisWeek(new Set((weekSess ?? []).map((s: any) => s.user_id)).size);
+    } else {
+      setActiveThisWeek(0);
+    }
+
+    const { count } = await supabase
+      .from('assignments').select('id', { count: 'exact', head: true }).eq('coach_id', session.user.id);
+    setAssignmentsSent(count ?? 0);
+
+    const clubs = await getMyClubs();
+    setMyClubs(clubs);
+    setActiveClubIdState(clubs.length ? (await getActiveClubId()) ?? clubs[0].clubId : null);
+    setPendingClub(clubs.length ? null : await getPendingCoachRequest(session.user.id));
+  };
+
+  const enterClub = async (club: MyClub) => {
+    await setActiveClubId(club.clubId);
+    setActiveClubIdState(club.clubId);
+    goTo('/(club-admin)/dashboard');
   };
 
   const copyUsername = async () => {
@@ -78,7 +115,24 @@ export default function CoachProfileScreen() {
               await supabase.from('coach_connections').delete().eq('coach_id', userId);
               await supabase.from('coach_schedule_events').delete().eq('coach_id', userId);
               await supabase.from('notifications').delete().eq('user_id', userId);
+              await supabase.from('exercise_settings').delete().eq('user_id', userId);
+              await supabase.from('usernames').delete().eq('user_id', userId);
+              await supabase.from('community_posts').delete().eq('user_id', userId);
+              await supabase.from('post_replies').delete().eq('user_id', userId);
+              await supabase.from('post_likes').delete().eq('user_id', userId);
+              await supabase.from('post_reports').delete().eq('reported_by', userId);
+              await supabase.from('opponent_log_messages').delete().eq('sender_id', userId);
               await supabase.from('profiles').delete().eq('id', userId);
+
+              // Table rows are gone at this point, but the actual Supabase
+              // Auth user still exists — the client SDK has no ability to
+              // delete it (that requires the service-role key), so a small
+              // edge function does it last, while the session is still valid.
+              const { error: authDeleteError } = await supabase.functions.invoke('delete-account');
+              if (authDeleteError) {
+                console.log('Auth account deletion error:', authDeleteError);
+                Alert.alert('Partial deletion', 'Your data was removed, but we couldn\'t fully close your account. Please contact support so your email can be freed up.');
+              }
 
               await supabase.auth.signOut();
               if (typeof window !== 'undefined') window.location.href = '/';
@@ -100,6 +154,19 @@ export default function CoachProfileScreen() {
     else router.push(path as any);
   };
 
+  const submitJoinClub = async () => {
+    if (!joinCode.trim()) { Alert.alert('Missing code', "Enter the club's coach code."); return; }
+    setJoiningClub(true);
+    const result = await requestJoinClubAsCoach(joinCode);
+    setJoiningClub(false);
+    if (!result.ok) { Alert.alert('Could not join', result.message); return; }
+    setShowJoinModal(false);
+    setJoinCode('');
+    await setActiveClubId(result.clubId);
+    Alert.alert('Joined', `You're in — welcome to ${result.clubName}.`);
+    loadProfile();
+  };
+
   const displayName = profile?.full_name || user?.user_metadata?.full_name || 'Coach';
   const initials = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
 
@@ -114,18 +181,20 @@ export default function CoachProfileScreen() {
           </View>
           <Text style={styles.name}>{displayName}</Text>
           <Text style={styles.email}>{user?.email}</Text>
-          {profile?.club ? (
-            <View style={styles.clubBadge}>
-              <MaterialCommunityIcons name="whistle-outline" size={12} color={Theme.eyebrowGreen} />
-              <Text style={styles.clubText}>{profile.club}</Text>
-            </View>
-          ) : null}
-          {memberSince ? (
-            <View style={styles.memberBadge}>
-              <MaterialCommunityIcons name="calendar-check" size={12} color={Theme.eyebrowGreen} />
-              <Text style={styles.memberText}>Coaching since {memberSince}</Text>
-            </View>
-          ) : null}
+          <View style={styles.badgeRow}>
+            {profile?.club ? (
+              <View style={styles.badge}>
+                <Icon name="whistle-outline" size={15} color={Theme.eyebrowGreen} />
+                <Text style={styles.badgeText}>{profile.club}</Text>
+              </View>
+            ) : null}
+            {memberSince ? (
+              <View style={styles.badge}>
+                <Icon name="calendar-check" size={15} color={Theme.eyebrowGreen} />
+                <Text style={styles.badgeText}>Coaching since {memberSince}</Text>
+              </View>
+            ) : null}
+          </View>
         </View>
 
         {/* Stats row */}
@@ -133,6 +202,16 @@ export default function CoachProfileScreen() {
           <View style={styles.statCard}>
             <Text style={styles.statNum}>{playerCount}</Text>
             <Text style={styles.statLabel}>Players</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statCard}>
+            <Text style={styles.statNum}>{activeThisWeek}</Text>
+            <Text style={styles.statLabel}>Active This Week</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statCard}>
+            <Text style={styles.statNum}>{assignmentsSent}</Text>
+            <Text style={styles.statLabel}>Workouts Sent</Text>
           </View>
         </View>
 
@@ -143,7 +222,7 @@ export default function CoachProfileScreen() {
             <View style={styles.usernameRow}>
               <Text style={styles.usernameValue}>{profile.coach_username}</Text>
               <TouchableOpacity style={styles.copyBtn} onPress={copyUsername}>
-                <MaterialCommunityIcons name={copied ? 'check' : 'content-copy'} size={16} color={copied ? '#2ECC71' : Theme.eyebrowGreen} />
+                <Icon name={copied ? 'check' : 'content-copy'} size={18} color={copied ? '#2ECC71' : Theme.eyebrowGreen} />
                 <Text style={[styles.copyBtnText, copied && { color: '#2ECC71' }]}>{copied ? 'Copied' : 'Copy'}</Text>
               </TouchableOpacity>
             </View>
@@ -154,16 +233,61 @@ export default function CoachProfileScreen() {
         {/* Account */}
         <Text style={styles.sectionTitle}>Account</Text>
         <View style={styles.optionsCard}>
+          {myClubs.length > 0 ? (
+            <>
+              <TouchableOpacity
+                style={styles.option}
+                onPress={() => enterClub(myClubs.find((c) => c.clubId === activeClubId) ?? myClubs[0])}
+              >
+                <Icon name="account-badge" size={24} color={Theme.eyebrowGreen} />
+                <Text style={styles.optionText}>
+                  My Club — {(myClubs.find((c) => c.clubId === activeClubId) ?? myClubs[0]).clubName}
+                </Text>
+                <Icon name="chevron-right" size={24} color={Theme.textMuted} />
+              </TouchableOpacity>
+              {myClubs.length > 1 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clubChipRow}>
+                  {myClubs.map((c) => (
+                    <TouchableOpacity
+                      key={c.clubId}
+                      style={[styles.clubChip, c.clubId === activeClubId && styles.clubChipActive]}
+                      onPress={() => enterClub(c)}
+                    >
+                      <Text style={[styles.clubChipText, c.clubId === activeClubId && styles.clubChipTextActive]}>{c.clubName}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+              <View style={styles.divider} />
+            </>
+          ) : pendingClub ? (
+            <>
+              <View style={styles.option}>
+                <Icon name="account-badge" size={24} color={Theme.textMuted} />
+                <Text style={[styles.optionText, { color: Theme.textSecondary }]}>Pending approval — {pendingClub.clubName}</Text>
+              </View>
+              <View style={styles.divider} />
+            </>
+          ) : (
+            <>
+              <TouchableOpacity style={styles.option} onPress={() => setShowJoinModal(true)}>
+                <Icon name="account-badge" size={24} color={Theme.eyebrowGreen} />
+                <Text style={styles.optionText}>Join a Club</Text>
+                <Icon name="chevron-right" size={24} color={Theme.textMuted} />
+              </TouchableOpacity>
+              <View style={styles.divider} />
+            </>
+          )}
           <TouchableOpacity style={styles.option} onPress={() => goTo('/edit-coach-profile')}>
-            <MaterialCommunityIcons name="account-edit-outline" size={20} color={Theme.eyebrowGreen} />
+            <Icon name="account-edit-outline" size={24} color={Theme.eyebrowGreen} />
             <Text style={styles.optionText}>Edit Profile</Text>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={Theme.textSecondary} />
+            <Icon name="chevron-right" size={24} color={Theme.textMuted} />
           </TouchableOpacity>
           <View style={styles.divider} />
           <TouchableOpacity style={styles.option} onPress={handleSignOut}>
-            <MaterialCommunityIcons name="logout" size={20} color={Theme.textSecondary} />
+            <Icon name="logout" size={24} color={Theme.textSecondary} />
             <Text style={styles.optionText}>Sign Out</Text>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={Theme.textSecondary} />
+            <Icon name="chevron-right" size={24} color={Theme.textMuted} />
           </TouchableOpacity>
         </View>
 
@@ -171,59 +295,113 @@ export default function CoachProfileScreen() {
         <Text style={styles.sectionTitle}>Danger Zone</Text>
         <View style={[styles.optionsCard, styles.dangerCard]}>
           <TouchableOpacity style={styles.option} onPress={handleDeleteAccount} disabled={deletingAccount}>
-            <MaterialCommunityIcons name="delete-forever-outline" size={20} color="#E74C3C" />
+            <Icon name="delete-forever-outline" size={24} color="#E74C3C" />
             <View style={{ flex: 1 }}>
               <Text style={[styles.optionText, styles.dangerText]}>
                 {deletingAccount ? 'Deleting...' : 'Delete Account'}
               </Text>
               <Text style={styles.dangerSubText}>Permanently delete your account and all data</Text>
             </View>
-            <MaterialCommunityIcons name="chevron-right" size={20} color="#E74C3C" />
+            <Icon name="chevron-right" size={24} color="#E74C3C" />
           </TouchableOpacity>
         </View>
 
         <Text style={styles.appVersion}>Hustler · Built for badminton coaches</Text>
 
       </ScrollView>
+
+      <Modal visible={showJoinModal} transparent animationType="fade" onRequestClose={() => setShowJoinModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Join a Club</Text>
+              <TouchableOpacity onPress={() => setShowJoinModal(false)}>
+                <Icon name="close-circle-outline" size={26} color={Theme.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.codeHint}>Enter the coach code your club gave you. You'll join instantly — no approval needed. You can join more than one club this way.</Text>
+            <TextInput
+              style={styles.joinCodeInput}
+              value={joinCode}
+              onChangeText={(t) => setJoinCode(t.toUpperCase())}
+              placeholder="C12345"
+              placeholderTextColor={Theme.textSecondary}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={6}
+            />
+            <TouchableOpacity style={[styles.copyBtn, joiningClub && { opacity: 0.6 }]} onPress={submitJoinClub} disabled={joiningClub}>
+              <Text style={styles.copyBtnText}>{joiningClub ? 'Joining...' : 'Join Club'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Theme.background },
-  scroll: { padding: 24, paddingTop: 60, paddingBottom: 120 },
+  scroll: { padding: 24, paddingTop: 60, paddingBottom: 130 },
 
-  avatarSection: { alignItems: 'center', marginBottom: 24, gap: 6 },
-  avatar: { width: 88, height: 88, borderRadius: 44, backgroundColor: Theme.eyebrowGreen, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  avatarInitials: { fontSize: 32, fontWeight: 'bold', color: '#fff' },
-  name: { fontFamily: Fonts.serifMedium, fontSize: 24, color: Theme.textPrimary },
-  email: { fontSize: 14, color: Theme.textSecondary, marginBottom: 4 },
-  clubBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Theme.cardTinted, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
-  clubText: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
-  memberBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Theme.cardTinted, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
-  memberText: { fontSize: 13, color: Theme.eyebrowGreen, fontWeight: '600' },
+  avatarSection: { alignItems: 'center', marginBottom: 28 },
+  avatar: { width: 104, height: 104, borderRadius: 52, backgroundColor: Theme.eyebrowGreen, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  avatarInitials: { fontSize: 38, fontWeight: 'bold', color: '#fff' },
+  name: { fontFamily: Fonts.serifMedium, fontSize: 28, color: Theme.textPrimary, marginBottom: 5 },
+  email: { fontSize: 15, color: Theme.textSecondary, marginBottom: 12 },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 },
+  badge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Theme.cardTinted, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
+  badgeText: { fontSize: 14, color: Theme.eyebrowGreen, fontWeight: '600' },
 
-  statsRow: { flexDirection: 'row', backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 16, marginBottom: 20, alignItems: 'center' },
-  statCard: { flex: 1, alignItems: 'center', gap: 4 },
-  statNum: { fontSize: 24, fontWeight: 'bold', color: Theme.textPrimary },
+  statsRow: { flexDirection: 'row', backgroundColor: Theme.cardWhite, borderRadius: 18, padding: 20, marginBottom: 24, alignItems: 'center' },
+  statCard: { flex: 1, alignItems: 'center', gap: 5 },
+  statNum: { fontSize: 28, fontWeight: 'bold', color: Theme.textPrimary },
   statLabel: { fontSize: 13, color: Theme.textSecondary, textAlign: 'center' },
+  statDivider: { width: 1, height: 44, backgroundColor: Theme.divider },
 
-  card: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 16, marginBottom: 20 },
-  cardLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 12 },
+  card: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 19, marginBottom: 22 },
+  cardLabel: { fontSize: 13, fontWeight: 'bold', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 13 },
   usernameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  usernameValue: { fontSize: 18, fontWeight: 'bold', color: Theme.textPrimary },
-  copyBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Theme.cardTinted, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
-  copyBtnText: { fontSize: 13, fontWeight: '600', color: Theme.eyebrowGreen },
-  usernameHint: { fontSize: 13, color: Theme.textSecondary, marginTop: 8 },
+  usernameValue: { fontSize: 20, fontWeight: 'bold', color: Theme.textPrimary },
+  copyBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Theme.cardTinted, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  copyBtnText: { fontSize: 14, fontWeight: '600', color: Theme.eyebrowGreen },
+  usernameHint: { fontSize: 14, color: Theme.textSecondary, marginTop: 9 },
 
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: Theme.textPrimary, marginBottom: 10 },
-  optionsCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, overflow: 'hidden', marginBottom: 20 },
+  sectionTitle: { fontSize: 19, fontWeight: 'bold', color: Theme.textPrimary, marginBottom: 12 },
+  optionsCard: { backgroundColor: Theme.cardWhite, borderRadius: 16, overflow: 'hidden', marginBottom: 22 },
   dangerCard: { borderWidth: 1, borderColor: 'rgba(231,76,60,0.25)' },
-  option: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
-  optionText: { flex: 1, fontSize: 15, color: Theme.textPrimary, fontWeight: '500' },
+  option: { flexDirection: 'row', alignItems: 'center', padding: 19, gap: 14 },
+  optionText: { flex: 1, fontSize: 17, color: Theme.textPrimary, fontWeight: '500' },
   dangerText: { color: '#E74C3C', fontWeight: '600' },
-  dangerSubText: { fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
-  divider: { height: 1, backgroundColor: Theme.divider, marginHorizontal: 16 },
+  dangerSubText: { fontSize: 14, color: Theme.textSecondary, marginTop: 3 },
+  divider: { height: 1, backgroundColor: Theme.divider, marginHorizontal: 19 },
+  clubChipRow: { gap: 8, paddingHorizontal: 19, paddingBottom: 14 },
+  clubChip: { backgroundColor: Theme.cardTinted, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 7 },
+  clubChipActive: { backgroundColor: Theme.eyebrowGreen },
+  clubChipText: { fontSize: 13, fontWeight: '600', color: Theme.eyebrowGreen },
+  clubChipTextActive: { color: '#fff' },
 
-  appVersion: { fontSize: 13, color: Theme.textSecondary, textAlign: 'center', marginTop: 8 },
+  appVersion: { fontSize: 14, color: Theme.textSecondary, textAlign: 'center', marginTop: 10 },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  modalContent: { backgroundColor: Theme.cardWhite, borderRadius: 24, padding: 24, width: '100%', alignItems: 'center' },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 20 },
+  modalTitle: { fontFamily: Fonts.serifMedium, fontSize: 22, color: Theme.textPrimary },
+  muted: { fontSize: 16, color: Theme.textSecondary, fontStyle: 'italic', paddingVertical: 20 },
+  codeText: { fontFamily: Fonts.serifMedium, fontSize: 40, letterSpacing: 6, color: Theme.eyebrowGreen, marginBottom: 16 },
+  codeHint: { fontSize: 14, color: Theme.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 16 },
+  joinCodeInput: {
+    backgroundColor: Theme.background,
+    borderRadius: 10,
+    padding: 16,
+    color: Theme.textPrimary,
+    fontFamily: Fonts.serifMedium,
+    fontSize: 22,
+    letterSpacing: 3,
+    textAlign: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Theme.divider,
+    width: '100%',
+  },
 });

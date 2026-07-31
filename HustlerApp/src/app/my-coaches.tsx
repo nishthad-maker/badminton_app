@@ -1,19 +1,11 @@
-import { View, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, RefreshControl } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ScrollView, Alert, RefreshControl } from 'react-native';
 import { Text } from '@/components/Text';
 import { router } from 'expo-router';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
-
-const showAlert = (title: string, message: string) => {
-  if (typeof window !== 'undefined') {
-    window.alert(`${title}\n\n${message}`);
-  } else {
-    Alert.alert(title, message);
-  }
-};
 
 const showConfirm = (title: string, message: string, onConfirm: () => void) => {
   if (typeof window !== 'undefined') {
@@ -35,11 +27,14 @@ type Conn = {
   club: string | null;
 };
 
+// Manual "search and connect to a coach" was removed here — coach access is
+// now fully inherited via club join approval, never manual (a player joins
+// a club, the club approves, and every coach at that club whose assigned
+// levels match the player's level sees them automatically). This screen is
+// now view/manage-only for whatever coach_connections rows already exist
+// (legacy direct relationships, or ones a coach initiated from their side).
 export default function MyCoachesScreen() {
-  const [me, setMe] = useState<string | null>(null);
   const [connections, setConnections] = useState<Conn[]>([]);
-  const [username, setUsername] = useState('');
-  const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -58,7 +53,6 @@ export default function MyCoachesScreen() {
       return;
     }
     const myId = session.user.id;
-    setMe(myId);
 
     const { data: conns } = await supabase
       .from('coach_connections')
@@ -89,69 +83,9 @@ export default function MyCoachesScreen() {
     setRefreshing(false);
   };
 
-  useEffect(() => { load(); }, []);
   useFocusEffect(useCallback(() => { load(); }, []));
 
   const onRefresh = () => { setRefreshing(true); load(); };
-
-  const addCoach = async () => {
-    const uname = username.trim();
-    if (!/^[a-z0-9_]{3,20}$/.test(uname)) {
-      showAlert('Invalid username', 'Enter a valid coach username (lowercase letters, numbers, underscores).');
-      return;
-    }
-    if (!me) return;
-
-    setAdding(true);
-
-    // Find a real coach with that username.
-    const { data: coach } = await supabase
-      .from('profiles')
-      .select('id, full_name, is_coach')
-      .eq('coach_username', uname)
-      .eq('is_coach', true)
-      .maybeSingle();
-
-    if (!coach) {
-      setAdding(false);
-      showAlert('Coach not found', `No coach found with the username "${uname}". Double-check it with your coach.`);
-      return;
-    }
-
-    if (coach.id === me) {
-      setAdding(false);
-      showAlert('Oops', "You can't add yourself.");
-      return;
-    }
-
-    const existing = connections.find((c) => c.coach_id === coach.id);
-    if (existing) {
-      setAdding(false);
-      showAlert(
-        'Already added',
-        existing.status === 'accepted'
-          ? `You're already connected with ${coach.full_name}.`
-          : `You already have a pending request to ${coach.full_name}.`
-      );
-      return;
-    }
-
-    const { error } = await supabase
-      .from('coach_connections')
-      .insert({ coach_id: coach.id, player_id: me, status: 'pending' });
-
-    setAdding(false);
-
-   if (error) {
-      showAlert('Error (debug)', error.message + (error.code ? ` [${error.code}]` : ''));
-      console.log('addCoach insert error:', error);
-      return;
-    }
-
-    setUsername('');
-    showAlert('Request sent', `Your request was sent to ${coach.full_name}. They'll need to accept it before you're connected.`);
-    load();
-  };
 
   const disconnect = (conn: Conn) => {
     const verb = conn.status === 'accepted' ? 'Disconnect from' : 'Cancel request to';
@@ -167,7 +101,7 @@ export default function MyCoachesScreen() {
     <View style={styles.container}>
       <View style={styles.titleRow}>
         <TouchableOpacity onPress={goBack}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={Theme.textPrimary} />
+          <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.title}>My Coaches</Text>
       </View>
@@ -175,42 +109,17 @@ export default function MyCoachesScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Theme.eyebrowGreen} colors={[Theme.eyebrowGreen]} />
         }
       >
-        {/* Add a coach */}
-        <View style={styles.addCard}>
-          <Text style={styles.sectionLabel}>ADD A COACH</Text>
-          <Text style={styles.hint}>Ask your coach for their username, then enter it here.</Text>
-          <View style={styles.addRow}>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. coach_priya"
-              placeholderTextColor={Theme.textSecondary}
-              value={username}
-              onChangeText={(t) => setUsername(t.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity
-              style={[styles.addBtn, adding && styles.addBtnDisabled]}
-              onPress={addCoach}
-              disabled={adding}
-            >
-              <Text style={styles.addBtnText}>{adding ? '...' : 'Add'}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Current connections */}
+        {connections.length > 0 && <Text style={styles.sectionLabel}>YOUR COACHES</Text>}
         {loading ? (
           <Text style={styles.muted}>Loading...</Text>
         ) : connections.length === 0 ? (
           <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="whistle-outline" size={44} color={Theme.textSecondary} />
-            <Text style={styles.emptyDesc}>No coaches yet. Add one above using their username.</Text>
+            <Icon name="whistle-outline" size={44} color={Theme.textSecondary} />
+            <Text style={styles.emptyDesc}>No coaches yet. Join a club from the Train tab to get one automatically.</Text>
           </View>
         ) : (
           connections.map((conn) => (
@@ -230,7 +139,7 @@ export default function MyCoachesScreen() {
                 </View>
               </View>
               <TouchableOpacity onPress={() => disconnect(conn)}>
-                <MaterialCommunityIcons name="close-circle-outline" size={22} color="#FF6B6B" />
+                <Icon name="close-circle-outline" size={22} color="#FF6B6B" />
               </TouchableOpacity>
             </View>
           ))
@@ -245,29 +154,7 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   title: { fontFamily: Fonts.serifMedium, fontSize: 26, color: Theme.textPrimary },
   scroll: { paddingBottom: 40 },
-  addCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 16, marginBottom: 20 },
   sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 8 },
-  hint: { fontSize: 13, color: Theme.textSecondary, marginBottom: 12, lineHeight: 18 },
-  addRow: { flexDirection: 'row', gap: 10 },
-  input: {
-    flex: 1,
-    backgroundColor: Theme.background,
-    borderRadius: 10,
-    padding: 14,
-    color: Theme.textPrimary,
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: Theme.divider,
-  },
-  addBtn: {
-    backgroundColor: Theme.limeAccent,
-    borderRadius: 10,
-    paddingHorizontal: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addBtnDisabled: { opacity: 0.6 },
-  addBtnText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 14 },
   muted: { fontSize: 15, color: Theme.textSecondary, fontStyle: 'italic', textAlign: 'center', marginTop: 20 },
   emptyState: { alignItems: 'center', paddingTop: 40, gap: 10 },
   emptyDesc: { fontSize: 15, color: Theme.textSecondary, textAlign: 'center', lineHeight: 20, paddingHorizontal: 30 },

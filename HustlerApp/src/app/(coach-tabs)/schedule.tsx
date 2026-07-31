@@ -1,10 +1,14 @@
-import { View, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Modal, Alert } from 'react-native';
+import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Icon } from '@/components/icons/Icon';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
+import { formatTime12h, firstName } from '../../lib/scheduling';
+import { getMyClub, MyClub } from '../../lib/club';
+import ClubCalendarScreen from '../(club-admin)/club-calendar';
 
 type Tournament = {
   id: string;
@@ -104,6 +108,17 @@ export default function CoachScheduleScreen() {
   const [formTime, setFormTime] = useState('');
   const [formPlayerIds, setFormPlayerIds] = useState<string[]>([]);
 
+  // Club Schedule sub-tab — only shown once a coach has actually joined a
+  // club (see the same gate on the Players tab). Reuses the club-admin
+  // calendar screen wholesale rather than re-building the by-coach view: it
+  // already resolves "me" as the default selected coach and already locks
+  // editing another coach's schedule behind canEditOtherSchedules, so a
+  // staff coach gets read-only visibility into everyone but edit access to
+  // their own for free.
+  const [myClub, setMyClub] = useState<MyClub | null>(null);
+  const [myName, setMyName] = useState('');
+  const [scheduleTab, setScheduleTab] = useState<'mine' | 'club'>('mine');
+
   useFocusEffect(useCallback(() => { load(); }, [viewMonth, viewYear]));
 
   const load = async () => {
@@ -112,6 +127,9 @@ export default function CoachScheduleScreen() {
     if (!session?.user) { setLoading(false); return; }
     const me = session.user.id;
     setMyId(me);
+    setMyClub(await getMyClub());
+    const { data: myProfile } = await supabase.from('profiles').select('full_name').eq('id', me).maybeSingle();
+    setMyName(myProfile?.full_name ?? '');
 
     const { data: conns } = await supabase
       .from('coach_connections').select('player_id').eq('coach_id', me).eq('status', 'accepted');
@@ -134,7 +152,7 @@ export default function CoachScheduleScreen() {
         .gte('event_date', startDate).lte('event_date', endDate)
         .order('event_date', { ascending: true });
       setTournaments((tourneys ?? []).map((t: any) => ({
-        id: t.id, player_id: t.user_id, playerName: nameMap[t.user_id] ?? 'Player',
+        id: t.id, player_id: t.user_id, playerName: firstName(nameMap[t.user_id]),
         title: t.title, event_date: t.event_date, start_time: t.start_time, location: t.location,
       })));
     } else {
@@ -147,7 +165,7 @@ export default function CoachScheduleScreen() {
       .order('event_date', { ascending: true });
     setCoachEvents((coachEvs ?? []).map((e: any) => ({
       id: e.id, event_date: e.event_date, event_type: e.event_type, title: e.title, event_time: e.event_time,
-      player_id: e.player_id, playerName: e.player_id ? (nameMap[e.player_id] ?? 'Player') : null,
+      player_id: e.player_id, playerName: e.player_id ? firstName(nameMap[e.player_id]) : null,
     })));
 
     setLoading(false);
@@ -299,6 +317,25 @@ export default function CoachScheduleScreen() {
     return rows;
   };
 
+  if (myClub) {
+    const tabRow = (
+      <View style={[styles.scheduleTabRow, styles.scheduleTabRowStandalone]}>
+        <TouchableOpacity style={[styles.scheduleTabBtn, scheduleTab === 'mine' && styles.scheduleTabBtnActive]} onPress={() => setScheduleTab('mine')}>
+          <Text style={[styles.scheduleTabText, scheduleTab === 'mine' && styles.scheduleTabTextActive]}>{firstName(myName)}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.scheduleTabBtn, scheduleTab === 'club' && styles.scheduleTabBtnActive]} onPress={() => setScheduleTab('club')}>
+          <Text style={[styles.scheduleTabText, scheduleTab === 'club' && styles.scheduleTabTextActive]}>Club</Text>
+        </TouchableOpacity>
+      </View>
+    );
+    return (
+      <View style={styles.container}>
+        {tabRow}
+        {scheduleTab === 'mine' ? <ClubCalendarScreen embedded lockToSelf /> : <ClubCalendarScreen embedded />}
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -320,7 +357,7 @@ export default function CoachScheduleScreen() {
                 {upcomingTournaments.map(t => (
                   <TouchableOpacity key={t.id} style={styles.tourneyCard} onPress={() => jumpToDate(t.event_date)}>
                     <View style={styles.tourneyIcon}>
-                      <MaterialCommunityIcons name="trophy" size={16} color={TOURNAMENT_COLOR} />
+                      <Icon name="trophy" size={16} color={TOURNAMENT_COLOR} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.tourneyName}>{t.playerName} — {t.title}</Text>
@@ -328,7 +365,7 @@ export default function CoachScheduleScreen() {
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
                       <Text style={styles.tourneyDate}>{fmtDate(t.event_date)}</Text>
-                      {t.start_time ? <Text style={styles.tourneyLocation}>{t.start_time}</Text> : null}
+                      {t.start_time ? <Text style={styles.tourneyLocation}>{formatTime12h(t.start_time)}</Text> : null}
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -339,11 +376,11 @@ export default function CoachScheduleScreen() {
               {/* Month nav */}
               <View style={styles.monthNav}>
                 <TouchableOpacity onPress={prevMonth} style={styles.monthArrow}>
-                  <MaterialCommunityIcons name="chevron-left" size={28} color={Theme.textPrimary} />
+                  <Icon name="chevron-left" size={28} color={Theme.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.monthTitle}>{MONTH_NAMES[viewMonth]} {viewYear}</Text>
                 <TouchableOpacity onPress={nextMonth} style={styles.monthArrow}>
-                  <MaterialCommunityIcons name="chevron-right" size={28} color={Theme.textPrimary} />
+                  <Icon name="chevron-right" size={28} color={Theme.textPrimary} />
                 </TouchableOpacity>
               </View>
 
@@ -374,7 +411,7 @@ export default function CoachScheduleScreen() {
                   {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
                 </Text>
                 <TouchableOpacity style={styles.addBtn} onPress={openAddModal}>
-                  <MaterialCommunityIcons name="plus" size={24} color={Theme.limeAccentDark} />
+                  <Icon name="plus" size={24} color={Theme.limeAccentDark} />
                 </TouchableOpacity>
               </View>
 
@@ -387,19 +424,19 @@ export default function CoachScheduleScreen() {
                     <View style={styles.eventContent}>
                       <View style={styles.eventTopRow}>
                         <View style={styles.eventTitleRow}>
-                          <MaterialCommunityIcons name={item.icon as any} size={15} color={item.color} />
+                          <Icon name={item.icon as any} size={15} color={item.color} />
                           <Text style={styles.eventTitle}>{item.title}</Text>
                         </View>
                         {item.onDelete && (
                           <TouchableOpacity onPress={item.onDelete}>
-                            <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />
+                            <Icon name="trash-can-outline" size={18} color="#FF6B6B" />
                           </TouchableOpacity>
                         )}
                       </View>
                       {item.time && (
                         <View style={styles.eventDetailRow}>
-                          <MaterialCommunityIcons name="clock-outline" size={12} color={Theme.textSecondary} />
-                          <Text style={styles.eventDetailText}>{item.time}</Text>
+                          <Icon name="clock-outline" size={12} color={Theme.textSecondary} />
+                          <Text style={styles.eventDetailText}>{formatTime12h(item.time)}</Text>
                         </View>
                       )}
                       {item.detailLines.map((line, i) => (
@@ -427,7 +464,7 @@ export default function CoachScheduleScreen() {
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setShowModal(false)}>
-                <MaterialCommunityIcons name="close" size={24} color={Theme.textPrimary} />
+                <Icon name="close" size={24} color={Theme.textPrimary} />
               </TouchableOpacity>
             </View>
 
@@ -444,7 +481,7 @@ export default function CoachScheduleScreen() {
                       if (!t.multiPlayer) setFormPlayerIds(prev => prev.slice(0, 1));
                     }}
                   >
-                    <MaterialCommunityIcons name={t.icon as any} size={14} color={formType === t.key ? '#FFFFFF' : Theme.textSecondary} />
+                    <Icon name={t.icon as any} size={14} color={formType === t.key ? '#FFFFFF' : Theme.textSecondary} />
                     <Text style={[styles.typePillText, formType === t.key && styles.typePillTextActive]}>{t.label}</Text>
                   </TouchableOpacity>
                 ))}
@@ -518,6 +555,20 @@ const styles = StyleSheet.create({
   todayBtn: { fontSize: 14, color: Theme.eyebrowGreen, fontWeight: '600' },
   scroll: { paddingHorizontal: 24, paddingBottom: 100 },
   muted: { fontSize: 15, color: Theme.textSecondary, fontStyle: 'italic' },
+
+  // Same white-track/dark-green-active language used on the club-calendar
+  // toggle (Theme.eyebrowGreen, the app's real accent) instead of a bright
+  // ad hoc green.
+  scheduleTabRow: {
+    flexDirection: 'row', gap: 4, marginHorizontal: 24, marginBottom: 16,
+    backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 4,
+    borderWidth: 1, borderColor: Theme.divider,
+  },
+  scheduleTabRowStandalone: { marginTop: 60 },
+  scheduleTabBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 12 },
+  scheduleTabBtnActive: { backgroundColor: Theme.eyebrowGreen },
+  scheduleTabText: { fontSize: 17, fontWeight: '700', color: Theme.eyebrowGreen },
+  scheduleTabTextActive: { color: '#FFFFFF' },
 
   section: { marginBottom: 20 },
   sectionLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 12 },
