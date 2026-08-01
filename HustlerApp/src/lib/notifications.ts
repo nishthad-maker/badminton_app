@@ -99,8 +99,15 @@ async function sendPushToUser(userId: string, title: string, body: string, data?
 // Categories are free-form strings (not a DB enum) — see NOTIFICATION_CATEGORIES
 // below for the canonical list shown in notification settings. Absence of a
 // notification_preferences row means enabled (opt-out model, not opt-in).
+// 'lesson_reminder' (evening-before-lesson) and 'lesson_recap' (post-lesson
+// "what did you learn" nudge) are sent server-side by a pg_cron job — see
+// send_evening_lesson_reminders() / send_post_lesson_nudges() in
+// supabase/migrations/20260731100000_lesson_recap_and_evening_reminder_cron.sql
+// — not by a notify*() call below, since neither fires from a live user
+// action the way everything else here does.
 export const NOTIFICATION_CATEGORIES: { key: string; label: string }[] = [
   { key: 'lesson_reminder', label: 'Lesson reminders' },
+  { key: 'lesson_recap', label: 'Lesson recap prompts' },
   { key: 'attendance', label: 'Attendance changes' },
   { key: 'cancellation', label: 'Last-minute cancellations' },
   { key: 'coach_feedback', label: 'Coach feedback' },

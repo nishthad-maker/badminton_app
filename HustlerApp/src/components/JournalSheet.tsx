@@ -51,6 +51,7 @@ type Props = {
   entryDate: string; // YYYY-MM-DD, local — date a new entry is created under
   entryId?: string | null; // editing this existing entry; omit/null to resume/start one
   forceNew?: boolean; // skip resuming an in-progress draft — always start blank
+  initialEntryType?: EntryType | null; // paired with forceNew: skip the type-picker step and jump straight to writing
   onSaved?: () => void;
 };
 
@@ -71,7 +72,7 @@ const fmtHeaderDate = (dateStr: string) => {
 const fmtFullDate = (dateStr: string) =>
   new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-export function JournalSheet({ visible, onClose, entryDate, entryId: entryIdProp, forceNew, onSaved }: Props) {
+export function JournalSheet({ visible, onClose, entryDate, entryId: entryIdProp, forceNew, initialEntryType, onSaved }: Props) {
   const [loading, setLoading] = useState(true);
   const [stepIndex, setStepIndex] = useState(0);
   const step = STEPS[stepIndex];
@@ -106,7 +107,7 @@ export function JournalSheet({ visible, onClose, entryDate, entryId: entryIdProp
   useEffect(() => {
     if (!visible) return;
     load();
-  }, [visible, entryDate, entryIdProp, forceNew]);
+  }, [visible, entryDate, entryIdProp, forceNew, initialEntryType]);
 
   // Stop any in-progress read-aloud the moment the sheet closes or the
   // entry it's reading gets edited/navigated away from.
@@ -224,7 +225,11 @@ export function JournalSheet({ visible, onClose, entryDate, entryId: entryIdProp
       return;
     }
 
-    if (forceNew) { setLoading(false); return; }
+    if (forceNew) {
+      if (initialEntryType) { setEntryType(initialEntryType); setStepIndex(1); }
+      setLoading(false);
+      return;
+    }
 
     // No specific entry requested — pick up wherever we left off: the most
     // recently autosaved draft for this date, if any, so nothing written is lost.

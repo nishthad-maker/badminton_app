@@ -1,4 +1,4 @@
-import { Tabs, usePathname } from 'expo-router';
+import { Tabs, usePathname, useGlobalSearchParams } from 'expo-router';
 import { Icon } from '@/components/icons/Icon';
 import { View } from 'react-native';
 import { useEffect } from 'react';
@@ -8,6 +8,9 @@ import { JournalFAB } from '@/components/JournalFAB';
 
 export default function TabLayout() {
   const pathname = usePathname();
+  // Set by the post-lesson journal nudge push: (tabs)?openJournal=lesson
+  const { openJournal } = useGlobalSearchParams<{ openJournal?: string }>();
+  const autoOpenType = openJournal === 'lesson' || openJournal === 'personal' ? openJournal : null;
 
   useEffect(() => {
     registerForPushNotifications();
@@ -101,7 +104,7 @@ export default function TabLayout() {
           }}
         />
       </Tabs>
-      {pathname !== '/profile' && <JournalFAB />}
+      {pathname !== '/profile' && <JournalFAB autoOpenType={autoOpenType} />}
     </View>
   );
 }

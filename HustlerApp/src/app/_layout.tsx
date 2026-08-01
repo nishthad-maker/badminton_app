@@ -1,5 +1,7 @@
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
+import { useEffect } from 'react';
+import * as Notifications from 'expo-notifications';
 import {
   useFonts,
   Fraunces_400Regular,
@@ -26,6 +28,17 @@ export default function Layout() {
     DMSans_600SemiBold,
     DMSans_700Bold,
   });
+
+  // Every notify*() call (and the lesson-reminder cron jobs) already sends a
+  // `data.screen` payload, but nothing ever read it when the system push
+  // notification itself was tapped — tapping just opened the app wherever it
+  // was left. useLastNotificationResponse covers both a cold start from a
+  // tap and a tap while backgrounded/running.
+  const lastNotificationResponse = Notifications.useLastNotificationResponse();
+  useEffect(() => {
+    const screen = lastNotificationResponse?.notification.request.content.data?.screen as string | undefined;
+    if (screen) router.push(('/' + screen) as any);
+  }, [lastNotificationResponse]);
 
   if (!fontsLoaded) {
     return (
