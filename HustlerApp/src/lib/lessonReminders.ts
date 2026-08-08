@@ -1,5 +1,5 @@
 import { notifyLessonReminder } from './notifications';
-import { formatTime12h } from './scheduling';
+import { formatTime12h, localDateStr } from './scheduling';
 
 // Best-effort, client-triggered "soft" reminder — fires when a player's or
 // parent's own screen happens to load within 2 hours of an upcoming lesson.
@@ -15,7 +15,7 @@ export async function maybeRemindUpcoming(
   lessons: { id: string; day_of_week: number; start_time: string; label: string }[]
 ) {
   const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
+  const todayStr = localDateStr(now);
   for (const l of lessons) {
     if (l.day_of_week !== now.getDay()) continue;
     const [h, m] = l.start_time.split(':').map(Number);

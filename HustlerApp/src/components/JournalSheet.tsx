@@ -10,6 +10,9 @@ import { notifyJournalShared, notifyPlayerMessage } from '../lib/notifications';
 import { showAlert, showConfirm } from '../lib/ui';
 import { GENERAL_PROMPTS } from '@/constants/journalPrompts';
 import { getShareableCoaches, ShareableCoach } from '../lib/coachSharing';
+import { firstName, localDateStr } from '../lib/scheduling';
+
+export { localDateStr };
 
 type StepKey = 'type' | 'reflect' | 'done';
 const STEPS: StepKey[] = ['type', 'reflect', 'done'];
@@ -55,22 +58,13 @@ type Props = {
   onSaved?: () => void;
 };
 
-// Local calendar date as YYYY-MM-DD — never use toISOString() for "today", it's UTC
-// and drifts a day off from local midnight depending on the user's timezone.
-export const localDateStr = (d: Date = new Date()) => {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
 const fmtHeaderDate = (dateStr: string) => {
   if (dateStr === localDateStr()) return 'Today';
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
 const fmtFullDate = (dateStr: string) =>
-  new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
 export function JournalSheet({ visible, onClose, entryDate, entryId: entryIdProp, forceNew, initialEntryType, onSaved }: Props) {
   const [loading, setLoading] = useState(true);
@@ -309,7 +303,11 @@ export function JournalSheet({ visible, onClose, entryDate, entryId: entryIdProp
           free_text: freeText.trim() || null,
           shared_with_coach: shareIds.length > 0,
           shared_with_coach_ids: shareIds,
-          shared_with_parent: sharedWithParent,
+          // Lesson entries are always visible to a linked parent — not
+          // optional, unlike coach-sharing — since what a kid worked on in a
+          // private lesson is exactly the kind of thing a parent should see.
+          // Personal entries stay opt-in (or never, for mental-health content).
+          shared_with_parent: entryType === 'lesson' ? true : sharedWithParent,
           is_draft: false,
           updated_at: new Date().toISOString(),
         }).eq('id', entryId).select().single()
@@ -321,7 +319,9 @@ export function JournalSheet({ visible, onClose, entryDate, entryId: entryIdProp
           free_text: freeText.trim() || null,
           shared_with_coach: shareIds.length > 0,
           shared_with_coach_ids: shareIds,
-          shared_with_parent: sharedWithParent,
+          // Lesson entries are always visible to a linked parent (see the
+          // update branch above for why); personal entries stay opt-in.
+          shared_with_parent: entryType === 'lesson' ? true : sharedWithParent,
           is_draft: false,
           updated_at: new Date().toISOString(),
         }).select().single();
@@ -367,7 +367,7 @@ export function JournalSheet({ visible, onClose, entryDate, entryId: entryIdProp
           <Text style={[styles.typeCardTitle, { flex: 1 }]}>Lesson learned</Text>
           <Icon name="chevron-right" size={26} color={Theme.textMuted} />
         </View>
-        <Text style={styles.typeCardDesc}>Technical stuff from training or a private lesson you want to remember. Shareable with your coach — training purposes only.</Text>
+        <Text style={styles.typeCardDesc}>Technical stuff from training or a private lesson you want to remember. Visible to your parent, and shareable with your coach — training purposes only.</Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.typeCard} onPress={() => chooseType('personal')} activeOpacity={0.8}>
         <View style={styles.typeCardHeader}>
@@ -480,45 +480,60 @@ export function JournalSheet({ visible, onClose, entryDate, entryId: entryIdProp
 
       {entryType === 'lesson' && (
         <View style={styles.shareBlock}>
-          <View style={styles.shareRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.shareLabel}>Share with coach</Text>
-              <Text style={styles.shareHint}>
-                {selectedCoachIds.length > 0
-                  ? `Shared with ${selectedCoachIds.length} coach${selectedCoachIds.length > 1 ? 'es' : ''} — they can see this and give feedback.`
-                  : 'Off by default — only you can see it until you share.'}
-              </Text>
-            </View>
-            <Switch
-              value={selectedCoachIds.length > 0}
-              onValueChange={(v) => setSelectedCoachIds(v ? shareableCoaches.map((c) => c.id) : [])}
-              trackColor={{ false: Theme.divider, true: INK }}
-              thumbColor="#FFFFFF"
-              disabled={shareableCoaches.length === 0}
-            />
-          </View>
           {shareableCoaches.length === 0 ? (
-            <Text style={styles.shareHint}>You don't have a coach to share with yet.</Text>
-          ) : selectedCoachIds.length > 0 && shareableCoaches.length > 1 && (
-            <View style={styles.coachChipRow}>
-              {shareableCoaches.map((c) => {
-                const active = selectedCoachIds.includes(c.id);
-                return (
-                  <TouchableOpacity
-                    key={c.id}
-                    style={[styles.coachChip, active && styles.coachChipActive]}
-                    onPress={() => setSelectedCoachIds((prev) => prev.includes(c.id) ? prev.filter((id) => id !== c.id) : [...prev, c.id])}
-                  >
-                    <Text style={[styles.coachChipText, active && styles.coachChipTextActive]}>{c.full_name}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+            <>
+              <Text style={styles.shareLabel}>Share with coach</Text>
+              <Text style={styles.shareHint}>You don't have a coach to share with yet.</Text>
+            </>
+          ) : shareableCoaches.length === 1 ? (
+            <View style={styles.shareRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.shareLabel}>Share with {firstName(shareableCoaches[0].full_name)}</Text>
+                <Text style={styles.shareHint}>
+                  {selectedCoachIds.length > 0 ? `${firstName(shareableCoaches[0].full_name)} can see this and give feedback.` : 'Off by default — only you can see it until you share.'}
+                </Text>
+              </View>
+              <Switch
+                value={selectedCoachIds.length > 0}
+                onValueChange={(v) => setSelectedCoachIds(v ? [shareableCoaches[0].id] : [])}
+                trackColor={{ false: Theme.divider, true: INK }}
+                thumbColor="#FFFFFF"
+              />
             </View>
+          ) : (
+            <>
+              <Text style={styles.shareLabel}>Who was this lesson with?</Text>
+              <Text style={styles.shareHint}>Only the coach(es) you pick can see this — other coaches don't need to.</Text>
+              <View style={styles.coachChipRow}>
+                {shareableCoaches.map((c) => {
+                  const active = selectedCoachIds.includes(c.id);
+                  return (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[styles.coachChip, active && styles.coachChipActive]}
+                      onPress={() => setSelectedCoachIds((prev) => prev.includes(c.id) ? prev.filter((id) => id !== c.id) : [...prev, c.id])}
+                    >
+                      <Text style={[styles.coachChipText, active && styles.coachChipTextActive]}>{firstName(c.full_name)}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
           )}
         </View>
       )}
 
-      {hasLinkedParent && (
+      {hasLinkedParent && entryType === 'lesson' && (
+        <View style={styles.shareRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.shareLabel}>Share with parent</Text>
+            <Text style={styles.shareHint}>Lesson entries always show up in your linked parent's Journal.</Text>
+          </View>
+          <Icon name="check-circle" size={22} color={INK} />
+        </View>
+      )}
+
+      {hasLinkedParent && entryType === 'personal' && (
         <View style={styles.shareRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.shareLabel}>Share with parent</Text>
@@ -561,7 +576,7 @@ export function JournalSheet({ visible, onClose, entryDate, entryId: entryIdProp
         </View>
       )}
 
-      {!sharedWithParent && (entryType === 'personal' || selectedCoachIds.length === 0) && (
+      {entryType === 'personal' && !sharedWithParent && (
         <View style={styles.privateNote}>
           <Icon name="lock-outline" size={14} color={Theme.textSecondary} />
           <Text style={styles.privateNoteText}>Private — only you can see this entry.</Text>

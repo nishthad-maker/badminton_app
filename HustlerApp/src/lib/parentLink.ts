@@ -4,7 +4,7 @@ import { notifyParentLinkRequest, notifyParentLinkAccepted } from './notificatio
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L
 const CODE_LENGTH = 6;
 
-export type LinkedPerson = { linkId: string; profileId: string; fullName: string };
+export type LinkedPerson = { linkId: string; profileId: string; fullName: string; managedByParentId: string | null };
 export type PendingRequest = { linkId: string; parentId: string; parentName: string; requestedAt: string };
 
 function generateCode(): string {
@@ -67,7 +67,7 @@ export async function getLinkedParents(playerId: string): Promise<LinkedPerson[]
     .is('unlinked_at', null);
   if (error) { console.log('getLinkedParents error', error); return []; }
   const names = await namesById((data ?? []).map((r: any) => r.parent_id));
-  return (data ?? []).map((r: any) => ({ linkId: r.id, profileId: r.parent_id, fullName: names.get(r.parent_id) ?? 'Parent' }));
+  return (data ?? []).map((r: any) => ({ linkId: r.id, profileId: r.parent_id, fullName: names.get(r.parent_id) ?? 'Parent', managedByParentId: null }));
 }
 
 // Requests still awaiting this player's accept/decline.
@@ -83,7 +83,10 @@ export async function getPendingParentRequests(playerId: string): Promise<Pendin
   return (data ?? []).map((r: any) => ({ linkId: r.id, parentId: r.parent_id, parentName: names.get(r.parent_id) ?? 'Parent', requestedAt: r.requested_at }));
 }
 
-// Active (accepted, not unlinked) children linked to a parent.
+// Active (accepted, not unlinked) children linked to a parent. Plain
+// follow-up query rather than a nested embed for the same reason namesById
+// avoids one (see its comment) — also picks up managed_by_parent_id so the
+// UI can show a "Managed" badge for a parent-created, no-login profile.
 export async function getLinkedChildren(parentId: string): Promise<LinkedPerson[]> {
   const { data, error } = await supabase
     .from('parent_children')
@@ -92,8 +95,16 @@ export async function getLinkedChildren(parentId: string): Promise<LinkedPerson[
     .eq('status', 'accepted')
     .is('unlinked_at', null);
   if (error) { console.log('getLinkedChildren error', error); return []; }
-  const names = await namesById((data ?? []).map((r: any) => r.player_id));
-  return (data ?? []).map((r: any) => ({ linkId: r.id, profileId: r.player_id, fullName: names.get(r.player_id) ?? 'Player' }));
+  const playerIds = (data ?? []).map((r: any) => r.player_id);
+  if (playerIds.length === 0) return [];
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles').select('id, full_name, managed_by_parent_id').in('id', playerIds);
+  if (profilesError) console.log('getLinkedChildren profiles error', profilesError);
+  const byId = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+  return (data ?? []).map((r: any) => {
+    const p = byId.get(r.player_id);
+    return { linkId: r.id, profileId: r.player_id, fullName: p?.full_name ?? 'Player', managedByParentId: p?.managed_by_parent_id ?? null };
+  });
 }
 
 // Child accepts a pending request — the link only becomes active now.

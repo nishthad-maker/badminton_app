@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, getFunctionErrorMessage } from './supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ensureGroupLessonsForBatchTypes } from './lessons';
 
@@ -89,6 +89,18 @@ export async function getMyClub(): Promise<MyClub | null> {
   return clubs[0];
 }
 
+// The club's own operating hours (set during onboarding or from Club
+// Settings) — the fallback bound for the parent/player "Book a Lesson"
+// hour grid whenever a coach hasn't defined their own working hours. Either
+// side null (or the whole row missing) means the club hasn't set this yet.
+// Goes through an RPC rather than selecting club_settings directly — that
+// table's own RLS is staff-only (it also holds the coach/player join
+// codes), and a parent/player calling this has neither role.
+export async function getClubHours(clubId: string): Promise<{ openTime: string | null; closeTime: string | null }> {
+  const { data } = await supabase.rpc('get_club_hours', { p_club_id: clubId }).maybeSingle();
+  return { openTime: (data as any)?.open_time ?? null, closeTime: (data as any)?.close_time ?? null };
+}
+
 // A coach's own view of a club_coaches request they made that's still
 // awaiting the owner's approval — shown as "pending" rather than linking
 // into the club-admin section (which getMyClub() won't resolve for yet).
@@ -174,6 +186,78 @@ export async function updateCoachPermissions(
   if (patch.canEditOtherSchedules !== undefined) update.can_edit_other_schedules = patch.canEditOtherSchedules;
   if (patch.assignedLevels !== undefined) update.assigned_levels = patch.assignedLevels;
   const { error } = await supabase.from('club_coaches').update(update).eq('id', clubCoachId);
+  return { ok: !error };
+}
+
+// Soft-removal for a coach who leaves — unlike a hard delete, this preserves
+// their lesson_coaches/schedule history while immediately revoking access
+// (is_club_staff/is_club_owner both require status = 'active' exactly).
+export async function deactivateCoach(clubCoachId: string): Promise<{ ok: boolean }> {
+  const { error } = await supabase.from('club_coaches').update({ status: 'inactive' }).eq('id', clubCoachId);
+  return { ok: !error };
+}
+
+export async function reactivateCoach(clubCoachId: string): Promise<{ ok: boolean }> {
+  const { error } = await supabase.from('club_coaches').update({ status: 'active' }).eq('id', clubCoachId);
+  return { ok: !error };
+}
+
+// Co-admin promotion — a second (or third...) club_coaches row with
+// role='owner' for the same club. Nothing in the schema/RLS assumes one
+// owner per club (verified live: no unique constraint beyond
+// (club_id, coach_id), no triggers), and every owner-only UI gate in the
+// app already keys off club_coaches.role === 'owner', not clubs.owner_id —
+// so this alone grants full admin access. The one place that still needs
+// clubs.owner_id specifically is the Danger Zone's "Delete Club & Account"
+// (see club-settings.tsx), since that cascades from the TRUE owner's
+// profile row, not any 'owner'-role row.
+export async function promoteCoachToOwner(clubCoachId: string): Promise<{ ok: boolean }> {
+  const { error } = await supabase.from('club_coaches').update({ role: 'owner' }).eq('id', clubCoachId);
+  return { ok: !error };
+}
+
+export async function demoteCoachToStaff(clubCoachId: string): Promise<{ ok: boolean }> {
+  const { error } = await supabase.from('club_coaches').update({ role: 'staff' }).eq('id', clubCoachId);
+  return { ok: !error };
+}
+
+// Staff-initiated coach add (onboarding's "Add coaches" step) — creates a
+// real, immediately-active club_coaches row, bypassing the join-code/
+// pending flow entirely since the owner is adding them in person. Email is
+// optional here (unlike the player walk-in flow) — see
+// supabase/functions/create-club-staff-coach/index.ts for why: a coach the
+// owner already knows and trusts in person doesn't need mandatory contact
+// info, just a name.
+export async function createSetupCoach(
+  clubId: string, fullName: string, email: string
+): Promise<{ ok: boolean; coachId?: string; message?: string }> {
+  const { data, error } = await supabase.functions.invoke('create-club-staff-coach', {
+    body: { clubId, fullName, email },
+  });
+  if (error) return { ok: false, message: await getFunctionErrorMessage(error, 'Could not add that coach. Please try again.') };
+  if (data?.error) return { ok: false, message: data.error };
+  return { ok: true, coachId: data?.coachId };
+}
+
+// Same soft-removal pattern for a player who leaves — distinct from the
+// player-initiated leaveClub() (a hard delete), this is the club-admin side
+// "this student left" action, and stays reversible.
+export async function deactivateClubMember(clubMemberId: string): Promise<{ ok: boolean }> {
+  const { error } = await supabase.from('club_members').update({ status: 'inactive' }).eq('id', clubMemberId);
+  return { ok: !error };
+}
+
+export async function reactivateClubMember(clubMemberId: string): Promise<{ ok: boolean }> {
+  const { error } = await supabase.from('club_members').update({ status: 'active' }).eq('id', clubMemberId);
+  return { ok: !error };
+}
+
+// Goes through a SECURITY DEFINER RPC rather than a direct profiles update —
+// profiles' own UPDATE policy is auth.uid() = id only, so a staffer editing
+// a different player's phone has to go through update_roster_player_phone,
+// which checks is_club_staff on the target club_member's club itself.
+export async function updateRosterPlayerPhone(clubMemberId: string, phone: string): Promise<{ ok: boolean }> {
+  const { error } = await supabase.rpc('update_roster_player_phone', { p_club_member_id: clubMemberId, p_phone: phone.trim() || null });
   return { ok: !error };
 }
 
@@ -304,7 +388,7 @@ export async function rejectClubJoinRequest(requestId: string): Promise<{ ok: bo
   return { ok: !error };
 }
 
-export type PlayerSearchResult = { id: string; full_name: string; email: string | null };
+export type PlayerSearchResult = { id: string; full_name: string; email: string | null; phone: string | null };
 
 // Adding a player to a LESSON (group tier roster, private lesson) is scoped
 // to players who are already active club_members — the only way onto the

@@ -1,23 +1,51 @@
-import { Tabs, usePathname, useGlobalSearchParams } from 'expo-router';
+import { Tabs, usePathname, useGlobalSearchParams, router } from 'expo-router';
 import { Icon } from '@/components/icons/Icon';
-import { View } from 'react-native';
-import { useEffect } from 'react';
+import { View, ActivityIndicator } from 'react-native';
+import { useEffect, useState } from 'react';
 import { Theme } from '@/constants/theme';
 import { registerForPushNotifications } from '../../lib/notifications';
 import { JournalFAB } from '@/components/JournalFAB';
+import { SwitchBackBanner } from '@/components/SwitchBackBanner';
+import { resolveMyRole, ROLE_HOME_ROUTE } from '../../lib/roleRouting';
+import { hasSavedParentSession, restoreParentSession } from '../../lib/managedAccounts';
 
 export default function TabLayout() {
   const pathname = usePathname();
   // Set by the post-lesson journal nudge push: (tabs)?openJournal=lesson
   const { openJournal } = useGlobalSearchParams<{ openJournal?: string }>();
   const autoOpenType = openJournal === 'lesson' || openJournal === 'personal' ? openJournal : null;
+  const [ready, setReady] = useState(false);
+  // Set when a parent used "Use this phone as [child]" from their own
+  // Profile tab (see lib/managedAccounts.ts) — this device is temporarily
+  // signed into the managed child's real account instead of the parent's.
+  const [showReturnToParent, setShowReturnToParent] = useState(false);
 
   useEffect(() => {
     registerForPushNotifications();
+    hasSavedParentSession().then(setShowReturnToParent);
+    resolveMyRole().then((role) => {
+      if (role === null) { router.replace('/login' as any); return; }
+      if (role !== 'player') { router.replace(ROLE_HOME_ROUTE[role] as any); return; }
+      setReady(true);
+    });
   }, []);
+
+  const returnToParent = async () => {
+    const ok = await restoreParentSession();
+    if (ok) router.replace('/(parent-tabs)/home' as any);
+  };
+
+  if (!ready) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Theme.background }}>
+        <ActivityIndicator color={Theme.eyebrowGreen} />
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1 }}>
+      {showReturnToParent && <SwitchBackBanner label="Back to my account" onPress={returnToParent} />}
       <Tabs
         screenOptions={{
           headerShown: false,

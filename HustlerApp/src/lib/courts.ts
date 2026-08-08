@@ -3,9 +3,25 @@ import { DAY_NAMES, hhmm, timesOverlap } from './scheduling';
 
 export type Court = { id: string; name: string };
 
+// Plain string order puts "Court 10" before "Court 2" (lexicographic, not
+// numeric) — sort naturally instead so courts everywhere in the app read
+// "Court 1, Court 2, ... Court 20", not "Court 1, Court 10, Court 11, ...".
+// Falls back to a plain string compare for names with no trailing number
+// (e.g. "Center Court"), so custom court names still sort sensibly.
+export const compareCourtNames = (a: string, b: string): number => {
+  const numA = a.match(/(\d+)\s*$/);
+  const numB = b.match(/(\d+)\s*$/);
+  if (numA && numB) {
+    const prefixA = a.slice(0, numA.index).trim();
+    const prefixB = b.slice(0, numB.index).trim();
+    if (prefixA === prefixB) return parseInt(numA[1], 10) - parseInt(numB[1], 10);
+  }
+  return a.localeCompare(b);
+};
+
 export async function getClubCourts(clubId: string): Promise<Court[]> {
-  const { data } = await supabase.from('courts').select('id, name').eq('club_id', clubId).order('name', { ascending: true });
-  return data ?? [];
+  const { data } = await supabase.from('courts').select('id, name').eq('club_id', clubId);
+  return (data ?? []).sort((a, b) => compareCourtNames(a.name, b.name));
 }
 
 export type CourtConflict = { label: string; day: string; time: string };
@@ -47,7 +63,7 @@ export async function findCourtConflicts(opts: {
 
   let lessonQuery = supabase
     .from('schedule_assignments')
-    .select('id, day_of_week, start_time, end_time, profiles(full_name)')
+    .select('id, day_of_week, start_time, end_time, profiles!schedule_assignments_player_id_fkey(full_name)')
     .eq('court_id', courtId)
     .in('day_of_week', days);
   if (excludeLessonId) lessonQuery = lessonQuery.neq('id', excludeLessonId);

@@ -14,7 +14,7 @@ import { getOrCreatePlayerShareCode } from '../../lib/parentLink';
 import { NotificationBell } from '@/components/NotificationBell';
 import { getMyClub, getClubRosterForCoach, requestJoinClubAsCoach, setActiveClubId, MyClub, ClubRosterBatch } from '../../lib/club';
 import { getGroupLessons } from '../../lib/lessons';
-import { firstName, formatTime12h } from '../../lib/scheduling';
+import { firstName, formatTime12h, localDateStr } from '../../lib/scheduling';
 
 const showConfirm = (title: string, message: string, onConfirm: () => void) => {
   if (typeof window !== 'undefined') {
@@ -118,7 +118,7 @@ export default function CoachPlayersScreen() {
       // same split as the club owner's dashboard, just scoped to me instead
       // of the whole club.
       const dow = new Date().getDay();
-      const dateStr = new Date().toISOString().split('T')[0];
+      const dateStr = localDateStr(new Date());
       const { data: privRows } = await supabase
         .from('schedule_assignments')
         .select('id, player_id, start_time, end_time, profiles!schedule_assignments_player_id_fkey(full_name)')
@@ -424,9 +424,9 @@ export default function CoachPlayersScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1, paddingRight: 12 }}>
           <Text style={styles.eyebrow}>ROSTER</Text>
-          <Text style={styles.title}>{myClub ? myClub.clubName : 'My Players'}</Text>
+          <Text style={styles.title} numberOfLines={2}>{myClub ? myClub.clubName : 'My Players'}</Text>
         </View>
         <View style={styles.headerBtns}>
           <NotificationBell />
@@ -743,7 +743,7 @@ export default function CoachPlayersScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Theme.background, padding: 24, paddingTop: 60 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 },
   eyebrow: { fontSize: 14, fontWeight: '700', color: Theme.eyebrowGreen, letterSpacing: 1.5, marginBottom: 4 },
   title: { fontFamily: Fonts.serifMedium, fontSize: 36, color: Theme.textPrimary },
   headerBtns: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -785,7 +785,10 @@ const styles = StyleSheet.create({
   classIconWrap: { width: 36, height: 36, borderRadius: 18, backgroundColor: Theme.cardTinted, alignItems: 'center', justifyContent: 'center' },
   classTitle: { fontSize: 15, fontWeight: '600', color: Theme.textPrimary },
   classMeta: { fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
-  batchCard: { backgroundColor: Theme.background, borderRadius: 14, borderWidth: 1, borderColor: Theme.divider, marginBottom: 10, overflow: 'hidden' },
+  batchCard: {
+    backgroundColor: Theme.cardWhite, borderRadius: 14, borderWidth: 1, borderColor: '#C9C6BB', marginBottom: 10, overflow: 'hidden',
+    elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3,
+  },
   batchCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
   batchCardTitle: { fontSize: 15, fontWeight: '700', color: Theme.textPrimary },
   batchCardBody: { paddingHorizontal: 10, paddingBottom: 10 },

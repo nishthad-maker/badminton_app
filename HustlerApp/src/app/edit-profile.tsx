@@ -92,7 +92,7 @@ export default function EditProfileScreen() {
 
     if (trimmedUsername !== originalUsername) {
       const { data: taken } = await supabase
-        .from('usernames').select('user_id').eq('username', trimmedUsername).neq('user_id', session.user.id).single();
+        .from('usernames').select('user_id').eq('username', trimmedUsername).neq('user_id', session.user.id).maybeSingle();
       if (taken) { setLoading(false); showAlert('Username taken', 'Please choose a different username.'); return; }
       const { error: usernameError } = await supabase
         .from('usernames').update({ username: trimmedUsername }).eq('user_id', session.user.id);

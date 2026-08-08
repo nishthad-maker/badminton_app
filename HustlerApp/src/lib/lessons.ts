@@ -17,6 +17,8 @@ export type GroupLesson = {
   coaches: LessonCoach[];
   slots: TimeSlot[];
   roster_count: number;
+  capacity: number | null;
+  age_group: string | null;
 };
 export type RosterPlayer = { id: string; player_id: string; player_name: string };
 
@@ -43,7 +45,7 @@ export async function ensureGroupLessonsForBatchTypes(clubId: string, batchTypes
 }
 
 export async function getGroupLessons(clubId: string): Promise<GroupLesson[]> {
-  const { data: tierRows } = await supabase.from('group_tiers').select('id, name').eq('club_id', clubId).order('name', { ascending: true });
+  const { data: tierRows } = await supabase.from('group_tiers').select('id, name, capacity, age_group').eq('club_id', clubId).order('name', { ascending: true });
   const tiers = tierRows ?? [];
   if (tiers.length === 0) return [];
   const tierIds = tiers.map((t: any) => t.id);
@@ -65,6 +67,8 @@ export async function getGroupLessons(clubId: string): Promise<GroupLesson[]> {
   return tiers.map((t: any) => ({
     id: t.id,
     name: t.name,
+    capacity: t.capacity ?? null,
+    age_group: t.age_group ?? null,
     coaches: (coachRows ?? [])
       .filter((c: any) => c.group_tier_id === t.id)
       .map((c: any) => ({ id: c.id, coach_id: c.coach_id, full_name: c.profiles?.full_name ?? 'Coach', role: c.role }))
@@ -113,8 +117,13 @@ export async function createGroupLesson(opts: {
   mainCoachId: string;
   assistantCoachIds: string[];
   slots: SlotDraft[];
+  capacity?: number | null;
+  ageGroup?: string | null;
 }): Promise<{ ok: true; id: string } | { ok: false; message: string }> {
-  const { data: tier, error } = await supabase.from('group_tiers').insert({ club_id: opts.clubId, name: opts.name }).select().single();
+  const { data: tier, error } = await supabase.from('group_tiers').insert({
+    club_id: opts.clubId, name: opts.name,
+    capacity: opts.capacity ?? null, age_group: opts.ageGroup ?? null,
+  }).select().single();
   if (error || !tier) return { ok: false, message: 'Could not create the lesson.' };
 
   await assignLessonCoaches(tier.id, opts.mainCoachId, opts.assistantCoachIds);
@@ -127,6 +136,18 @@ export async function createGroupLesson(opts: {
 
 export async function renameGroupLesson(groupTierId: string, name: string) {
   await supabase.from('group_tiers').update({ name }).eq('id', groupTierId);
+}
+
+// Generalizes renameGroupLesson to also cover the two soft-enforced fields
+// (never blocks enrollment, just informs the roster-count display) — kept
+// as a separate function from renameGroupLesson rather than replacing it,
+// since name-only edits are still the common case.
+export async function updateTierDetails(groupTierId: string, patch: { capacity?: number | null; ageGroup?: string | null }): Promise<{ ok: boolean }> {
+  const update: Record<string, any> = {};
+  if (patch.capacity !== undefined) update.capacity = patch.capacity;
+  if (patch.ageGroup !== undefined) update.age_group = patch.ageGroup;
+  const { error } = await supabase.from('group_tiers').update(update).eq('id', groupTierId);
+  return { ok: !error };
 }
 
 export async function deleteGroupLesson(groupTierId: string) {

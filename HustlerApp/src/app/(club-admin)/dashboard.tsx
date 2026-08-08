@@ -1,5 +1,6 @@
 import { View, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal } from 'react-native';
 import { Text } from '@/components/Text';
+import { TextInput } from '@/components/TextInput';
 import { Icon } from '@/components/icons/Icon';
 import * as Clipboard from 'expo-clipboard';
 import { useState, useCallback, useEffect } from 'react';
@@ -9,24 +10,28 @@ import { supabase } from '../../lib/supabase';
 import {
   getMyClub, getMyClubs, setActiveClubId, getClubSkillLevels,
   updatePlayerLevel, updatePlayerPriorityCoach, getPendingClubJoinRequests, approveClubJoinRequest, rejectClubJoinRequest,
+  deactivateClubMember, reactivateClubMember, updateRosterPlayerPhone, createSetupCoach,
   MyClub, ClubJoinRequest,
 } from '../../lib/club';
+import { createWalkInPlayer } from '../../lib/walkIn';
+import { getPlayerPrivateLessonPlans, addSessionsToPlan, getPlayerPrivateLessonHistory, PrivateLessonPlan, PrivateLessonSession } from '../../lib/privateLessonPlans';
 import { getClubCourts, Court } from '../../lib/courts';
 import { getGroupLessons, getPlayerFolder, getRoster, GroupLesson, PlayerFolder, RosterPlayer } from '../../lib/lessons';
 import { colorForId } from '../../lib/colors';
-import { DAY_NAMES, formatTime12h, hhmm, firstName } from '../../lib/scheduling';
+import { DAY_NAMES, formatTime12h, formatDateLong, hhmm, firstName, localDateStr } from '../../lib/scheduling';
 import { getAttendanceForDate, setAttendance, statusFor, AttendanceStatus } from '../../lib/attendance';
 import { notifyPostCutoffCancellation } from '../../lib/notifications';
 import { getClubMakeupCredits, MakeupCredit } from '../../lib/makeup';
 import { showAlert, showConfirm } from '../../lib/ui';
 import { NoClubPrompt } from '@/components/NoClubPrompt';
 import { NotificationBell } from '@/components/NotificationBell';
+import { CoachTimeOffModal } from '@/components/CoachTimeOffModal';
 
 type Person = { id: string; full_name: string };
-type RosterEntry = { id: string; player_id: string; full_name: string; level: string | null; priority_coach_id: string | null };
+type RosterEntry = { id: string; player_id: string; full_name: string; level: string | null; priority_coach_id: string | null; phone: string | null };
 type LessonSession = { id: string; player_id: string; start_time: string; end_time: string; player_name: string; coach_name: string; court_name: string | null };
 
-const todayStr = () => new Date().toISOString().split('T')[0];
+const todayStr = () => localDateStr(new Date());
 
 export default function ClubDashboardScreen() {
   const [hasClub, setHasClub] = useState(true);
@@ -42,6 +47,18 @@ export default function ClubDashboardScreen() {
   const [coaches, setCoaches] = useState<Person[]>([]);
   const [courts, setCourts] = useState<Court[]>([]);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [inactiveRoster, setInactiveRoster] = useState<RosterEntry[]>([]);
+  const [deactivatingMemberId, setDeactivatingMemberId] = useState<string | null>(null);
+  const [phoneDraft, setPhoneDraft] = useState('');
+  const [savingPhone, setSavingPhone] = useState(false);
+  const [newPlayerModalVisible, setNewPlayerModalVisible] = useState(false);
+  const [newPlayerName, setNewPlayerName] = useState('');
+  const [newPlayerEmail, setNewPlayerEmail] = useState('');
+  const [newPlayerPhone, setNewPlayerPhone] = useState('');
+  const [newPlayerLevel, setNewPlayerLevel] = useState<string | null>(null);
+  const [newPlayerEnrollMode, setNewPlayerEnrollMode] = useState<'group' | 'private'>('group');
+  const [creatingWalkIn, setCreatingWalkIn] = useState(false);
+  const [approvalEnrollMode, setApprovalEnrollMode] = useState<'group' | 'private'>('group');
   const [groupLessons, setGroupLessons] = useState<GroupLesson[]>([]);
   const [loading, setLoading] = useState(true);
   // Forces "Today's Classes" to re-filter on a clock tick, not just on
@@ -63,6 +80,12 @@ export default function ClubDashboardScreen() {
   const [folderPlayer, setFolderPlayer] = useState<RosterEntry | null>(null);
   const [folder, setFolder] = useState<PlayerFolder | null>(null);
   const [folderLoading, setFolderLoading] = useState(false);
+  const [folderPlans, setFolderPlans] = useState<PrivateLessonPlan[]>([]);
+  const [topUpPlanId, setTopUpPlanId] = useState<string | null>(null);
+  const [topUpAmount, setTopUpAmount] = useState('5');
+  const [savingTopUp, setSavingTopUp] = useState(false);
+  const [folderHistory, setFolderHistory] = useState<PrivateLessonSession[]>([]);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
 
   // Attendance (today) — coach override, applies on top of the player/parent default-on toggle
   const [privateAttendance, setPrivateAttendance] = useState<Record<string, AttendanceStatus>>({});
@@ -82,6 +105,11 @@ export default function ClubDashboardScreen() {
   const [rosterModalVisible, setRosterModalVisible] = useState(false);
   const [pendingModalVisible, setPendingModalVisible] = useState(false);
   const [groupNotAttendingToday, setGroupNotAttendingToday] = useState<Record<string, number>>({});
+  const [timeOffCoach, setTimeOffCoach] = useState<Person | null>(null);
+  const [addCoachModalVisible, setAddCoachModalVisible] = useState(false);
+  const [addCoachName, setAddCoachName] = useState('');
+  const [addCoachEmail, setAddCoachEmail] = useState('');
+  const [addingCoach, setAddingCoach] = useState(false);
 
   const load = async () => {
     const club = await getMyClub();
@@ -191,11 +219,22 @@ export default function ClubDashboardScreen() {
 
     const { data: memberRows } = await supabase
       .from('club_members')
-      .select('id, player_id, level, priority_coach_id, profiles!club_members_player_id_fkey(full_name)')
+      .select('id, player_id, level, priority_coach_id, profiles!club_members_player_id_fkey(full_name, phone)')
       .eq('club_id', club.clubId)
       .eq('status', 'active');
     setRoster((memberRows ?? []).map((m: any) => ({
       id: m.id, player_id: m.player_id, full_name: m.profiles?.full_name ?? 'Player', level: m.level, priority_coach_id: m.priority_coach_id,
+      phone: m.profiles?.phone ?? null,
+    })));
+
+    const { data: inactiveMemberRows } = await supabase
+      .from('club_members')
+      .select('id, player_id, level, priority_coach_id, profiles!club_members_player_id_fkey(full_name, phone)')
+      .eq('club_id', club.clubId)
+      .eq('status', 'inactive');
+    setInactiveRoster((inactiveMemberRows ?? []).map((m: any) => ({
+      id: m.id, player_id: m.player_id, full_name: m.profiles?.full_name ?? 'Player', level: m.level, priority_coach_id: m.priority_coach_id,
+      phone: m.profiles?.phone ?? null,
     })));
 
     setSkillLevels(await getClubSkillLevels(club.clubId));
@@ -239,22 +278,48 @@ export default function ClubDashboardScreen() {
     router.push({ pathname: '/(club-admin)/club-calendar', params: { view: 'coach', coachId: coach.id } } as any);
   };
 
+  // Same real-account creation as onboarding's "Add coaches" step — lets
+  // the owner bring on a new coach mid-season without going through the
+  // join-code flow, right from the dashboard's coach row.
+  const submitAddCoach = async () => {
+    if (!clubId || !addCoachName.trim()) { showAlert('Missing name', "Enter the coach's name."); return; }
+    setAddingCoach(true);
+    const res = await createSetupCoach(clubId, addCoachName.trim(), addCoachEmail.trim());
+    setAddingCoach(false);
+    if (!res.ok) { showAlert('Error', res.message ?? 'Could not add that coach.'); return; }
+    setAddCoachModalVisible(false);
+    setAddCoachName('');
+    setAddCoachEmail('');
+    load();
+  };
+
   // Opens the approval modal rather than approving directly — the club
   // needs to confirm (or override) the player's level before they're
-  // rostered, per the "level assigned at approval time" flow.
+  // rostered, per the "level assigned at approval time" flow. Defaults to
+  // Group enrollment (today's behavior); Private skips the level-driven
+  // auto-enroll and schedules private lesson slots instead.
   const openApproval = (request: ClubJoinRequest) => {
     const matched = skillLevels.find((l) => l.toLowerCase() === (request.signupSkillLevel ?? '').toLowerCase());
     setApprovalLevel(matched ?? skillLevels[0] ?? null);
+    setApprovalEnrollMode('group');
     setApprovalRequest(request);
   };
 
+  // Group: approves and enrolls in one step, same as before. Private:
+  // approves with no level, then hands off to the full-screen
+  // enroll-private wizard, same as the New Player walk-in flow.
   const confirmApproval = async () => {
     if (!approvalRequest) return;
     setApproving(true);
-    const res = await approveClubJoinRequest(approvalRequest.id, approvalLevel);
+    const res = await approveClubJoinRequest(approvalRequest.id, approvalEnrollMode === 'group' ? approvalLevel : null);
     setApproving(false);
     if (!res.ok) { showAlert('Error', res.message || 'Could not approve that request.'); return; }
+    const { playerId, playerName } = approvalRequest;
     setApprovalRequest(null);
+    if (approvalEnrollMode === 'private') {
+      router.push({ pathname: '/(club-admin)/enroll-private', params: { clubId, playerId, playerName } } as any);
+      return;
+    }
     load();
   };
 
@@ -270,9 +335,100 @@ export default function ClubDashboardScreen() {
   const openFolder = async (entry: RosterEntry) => {
     if (!clubId) return;
     setFolderPlayer(entry);
+    setPhoneDraft(entry.phone ?? '');
     setFolderLoading(true);
-    setFolder(await getPlayerFolder(clubId, entry.player_id));
+    setHistoryExpanded(false);
+    const [folderData, plans, history] = await Promise.all([
+      getPlayerFolder(clubId, entry.player_id),
+      getPlayerPrivateLessonPlans(clubId, entry.player_id),
+      getPlayerPrivateLessonHistory(clubId, entry.player_id),
+    ]);
+    setFolder(folderData);
+    setFolderPlans(plans);
+    setFolderHistory(history);
     setFolderLoading(false);
+  };
+
+  const submitTopUp = async () => {
+    if (!topUpPlanId) return;
+    const n = parseInt(topUpAmount, 10);
+    if (!Number.isFinite(n) || n <= 0) { showAlert('Invalid amount', 'Enter how many sessions to add.'); return; }
+    setSavingTopUp(true);
+    const res = await addSessionsToPlan(topUpPlanId, n);
+    setSavingTopUp(false);
+    if (!res.ok) { showAlert('Error', res.message ?? 'Could not add sessions.'); return; }
+    setTopUpPlanId(null);
+    setTopUpAmount('5');
+    if (clubId && folderPlayer) setFolderPlans(await getPlayerPrivateLessonPlans(clubId, folderPlayer.player_id));
+  };
+
+  const savePhoneDraft = async () => {
+    if (!folderPlayer) return;
+    setSavingPhone(true);
+    await updateRosterPlayerPhone(folderPlayer.id, phoneDraft);
+    setSavingPhone(false);
+    const nextPhone = phoneDraft.trim() || null;
+    setFolderPlayer({ ...folderPlayer, phone: nextPhone });
+    setRoster((prev) => prev.map((r) => (r.id === folderPlayer.id ? { ...r, phone: nextPhone } : r)));
+  };
+
+  // Soft — preserves attendance/lesson history instead of erasing the
+  // roster row. Front-desk equivalent of "this student left."
+  const deactivatePlayer = () => {
+    if (!folderPlayer) return;
+    showConfirm(
+      'Deactivate player?',
+      `${firstName(folderPlayer.full_name)} will drop off the active roster, but their history stays intact. You can reactivate them later.`,
+      async () => {
+        setDeactivatingMemberId(folderPlayer.id);
+        await deactivateClubMember(folderPlayer.id);
+        setDeactivatingMemberId(null);
+        setFolderPlayer(null);
+        load();
+      },
+      'Deactivate'
+    );
+  };
+
+  const reactivatePlayer = async (entry: RosterEntry) => {
+    setDeactivatingMemberId(entry.id);
+    await reactivateClubMember(entry.id);
+    setDeactivatingMemberId(null);
+    load();
+  };
+
+  const openNewPlayerModal = () => {
+    setNewPlayerName('');
+    setNewPlayerEmail('');
+    setNewPlayerPhone('');
+    setNewPlayerLevel(skillLevels[0] ?? null);
+    setNewPlayerEnrollMode('group');
+    setNewPlayerModalVisible(true);
+  };
+
+  // Group: registers and enrolls in one step, same as before. Private:
+  // registers with no level, then hands off to the full-screen
+  // enroll-private wizard (count -> days -> coach -> open-slot pick ->
+  // recurring) rather than building the plan inline in this modal.
+  const submitNewPlayer = async () => {
+    if (!clubId || !newPlayerName.trim()) { showAlert('Missing name', "Enter the player's name."); return; }
+    if (!newPlayerEmail.trim()) { showAlert('Missing email', "Enter the player's email."); return; }
+    setCreatingWalkIn(true);
+    const res = await createWalkInPlayer(
+      clubId, newPlayerName.trim(), newPlayerEmail.trim(), newPlayerPhone,
+      newPlayerEnrollMode === 'group' ? newPlayerLevel : null
+    );
+    setCreatingWalkIn(false);
+    if (!res.ok || !res.playerId) {
+      showAlert('Error', res.message ?? 'Could not register that player.');
+      return;
+    }
+    setNewPlayerModalVisible(false);
+    if (newPlayerEnrollMode === 'private') {
+      router.push({ pathname: '/(club-admin)/enroll-private', params: { clubId, playerId: res.playerId, playerName: newPlayerName.trim() } } as any);
+      return;
+    }
+    load();
   };
 
   const setFolderPlayerLevel = async (level: string) => {
@@ -481,8 +637,41 @@ export default function ClubDashboardScreen() {
               </View>
             )}
 
+            {(coaches.length > 0 || isOwner) && (
+              <>
+                <Text style={styles.sectionLabel}>COACHES</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, marginBottom: 8 }}>
+                  {coaches.map((c) => (
+                    <TouchableOpacity key={c.id} style={styles.coachChip} onPress={() => openCoach(c)}>
+                      <View style={[styles.coachAvatar, { backgroundColor: colorForId(c.id).bg }]}>
+                        <Text style={[styles.coachAvatarText, { color: colorForId(c.id).fg }]}>{c.full_name.slice(0, 1).toUpperCase()}</Text>
+                        {isOwner && (
+                          <TouchableOpacity
+                            style={styles.coachGearBadge}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={(e) => { e.stopPropagation(); setTimeOffCoach(c); }}
+                          >
+                            <Icon name="tune" size={12} color={Theme.limeAccentDark} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      <Text style={styles.coachChipText} numberOfLines={1}>{firstName(c.full_name)}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {isOwner && (
+                    <TouchableOpacity style={styles.coachChip} onPress={() => setAddCoachModalVisible(true)}>
+                      <View style={[styles.coachAvatar, styles.coachAvatarAdd]}>
+                        <Icon name="plus" size={22} color={Theme.eyebrowGreen} />
+                      </View>
+                      <Text style={styles.coachChipText} numberOfLines={1}>Add</Text>
+                    </TouchableOpacity>
+                  )}
+                </ScrollView>
+              </>
+            )}
+
             {/* ── Today's Classes ── */}
-            <Text style={styles.sectionLabel}>TODAY'S CLASSES</Text>
+            <Text style={[styles.sectionLabel, { marginTop: coaches.length > 0 ? 24 : 0 }]}>TODAY'S CLASSES</Text>
             {todaysGroupLessons.length === 0 && upcomingLessonSessions.length === 0 ? (
               <Text style={styles.emptyText} maxFontSizeMultiplier={1.3}>Nothing scheduled today.</Text>
             ) : (
@@ -537,24 +726,14 @@ export default function ClubDashboardScreen() {
               </>
             )}
 
-            {coaches.length > 0 && (
-              <>
-                <Text style={[styles.sectionLabel, { marginTop: 24 }]}>COACHES</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, marginBottom: 8 }}>
-                  {coaches.map((c) => (
-                    <TouchableOpacity key={c.id} style={styles.coachChip} onPress={() => openCoach(c)}>
-                      <View style={[styles.coachAvatar, { backgroundColor: colorForId(c.id).bg }]}>
-                        <Text style={[styles.coachAvatarText, { color: colorForId(c.id).fg }]}>{c.full_name.slice(0, 1).toUpperCase()}</Text>
-                      </View>
-                      <Text style={styles.coachChipText} numberOfLines={1}>{firstName(c.full_name)}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </>
-            )}
-
             {/* ── Player Roster ── */}
-            <Text style={[styles.hubLabel, { marginTop: 28 }]} maxFontSizeMultiplier={1.3}>PLAYER ROSTER</Text>
+            <View style={[styles.hubLabelRow, { marginTop: 28 }]}>
+              <Text style={styles.hubLabel} maxFontSizeMultiplier={1.3}>PLAYER ROSTER</Text>
+              <TouchableOpacity style={styles.newPlayerLink} onPress={openNewPlayerModal}>
+                <Icon name="account-plus-outline" size={16} color={Theme.eyebrowGreen} />
+                <Text style={styles.newPlayerLinkText} maxFontSizeMultiplier={1.3}>New Player</Text>
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity style={styles.rosterSummaryCard} onPress={() => setRosterModalVisible(true)}>
               <View style={styles.rosterSummaryTop}>
                 <View style={styles.rosterSummaryIconWrap}>
@@ -671,6 +850,20 @@ export default function ClubDashboardScreen() {
                   );
                 })
               )}
+
+              {isOwner && inactiveRoster.length > 0 && (
+                <>
+                  <Text style={styles.levelGroupLabel}>INACTIVE · {inactiveRoster.length}</Text>
+                  {inactiveRoster.map((r) => (
+                    <View key={r.id} style={styles.rosterRow}>
+                      <Text style={[styles.rosterName, styles.inactiveNameText]}>{firstName(r.full_name)}</Text>
+                      <TouchableOpacity style={styles.addBtn} onPress={() => reactivatePlayer(r)} disabled={deactivatingMemberId === r.id}>
+                        <Text style={styles.addBtnText}>{deactivatingMemberId === r.id ? '...' : 'Reactivate'}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -707,6 +900,92 @@ export default function ClubDashboardScreen() {
         </View>
       </Modal>
 
+      {/* New Player (walk-in registration) modal */}
+      <Modal visible={newPlayerModalVisible} transparent animationType="fade" onRequestClose={() => setNewPlayerModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>New Player</Text>
+              <TouchableOpacity onPress={() => setNewPlayerModalVisible(false)}>
+                <Icon name="close-circle-outline" size={26} color={Theme.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.hint} maxFontSizeMultiplier={1.3}>Register a walk-in who doesn't have the app yet — they'll be added to the active roster right away and sent an email to set up their login.</Text>
+
+              <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Full Name</Text>
+              <TextInput style={styles.formInput} value={newPlayerName} onChangeText={setNewPlayerName} placeholder="Player's name" placeholderTextColor={Theme.textSecondary} />
+
+              <Text style={[styles.formLabel, { marginTop: 12 }]} maxFontSizeMultiplier={1.3}>Email</Text>
+              <TextInput style={styles.formInput} value={newPlayerEmail} onChangeText={setNewPlayerEmail} placeholder="player@email.com" placeholderTextColor={Theme.textSecondary} keyboardType="email-address" autoCapitalize="none" />
+
+              <Text style={[styles.formLabel, { marginTop: 12 }]} maxFontSizeMultiplier={1.3}>Phone — optional</Text>
+              <TextInput style={styles.formInput} value={newPlayerPhone} onChangeText={setNewPlayerPhone} placeholder="Phone number" placeholderTextColor={Theme.textSecondary} keyboardType="phone-pad" />
+
+              <View style={[styles.segmentRow, { marginTop: 12 }]}>
+                <TouchableOpacity style={[styles.segment, newPlayerEnrollMode === 'group' && styles.segmentActive]} onPress={() => setNewPlayerEnrollMode('group')}>
+                  <Text style={[styles.segmentText, newPlayerEnrollMode === 'group' && styles.segmentTextActive]}>Group</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.segment, newPlayerEnrollMode === 'private' && styles.segmentActive]} onPress={() => setNewPlayerEnrollMode('private')}>
+                  <Text style={[styles.segmentText, newPlayerEnrollMode === 'private' && styles.segmentTextActive]}>Private</Text>
+                </TouchableOpacity>
+              </View>
+
+              {newPlayerEnrollMode === 'group' ? (
+                skillLevels.length > 0 && (
+                  <>
+                    <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Batch type — optional</Text>
+                    <View style={styles.pillWrapRow}>
+                      {skillLevels.map((level) => (
+                        <TouchableOpacity key={level} style={[styles.pill, newPlayerLevel === level && styles.pillActive]} onPress={() => setNewPlayerLevel(newPlayerLevel === level ? null : level)}>
+                          <Text style={[styles.pillText, newPlayerLevel === level && styles.pillTextActive]} maxFontSizeMultiplier={1.3}>{level}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )
+              ) : (
+                <Text style={styles.hint} maxFontSizeMultiplier={1.3}>You'll pick session count, days, coach, and time on the next screen.</Text>
+              )}
+
+              <TouchableOpacity style={[styles.addBtn, styles.newPlayerSubmitBtn, (creatingWalkIn || !newPlayerName.trim() || !newPlayerEmail.trim()) && styles.saveBtnDisabled]} onPress={submitNewPlayer} disabled={creatingWalkIn || !newPlayerName.trim() || !newPlayerEmail.trim()}>
+                <Text style={styles.addBtnText}>
+                  {creatingWalkIn ? 'Registering...' : newPlayerEnrollMode === 'group' ? 'Add to a Batch' : 'Register & Set Up Private Lessons'}
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Add Coach modal — same real-account flow as onboarding's "Add
+          coaches" step, for bringing on a coach who joins mid-season */}
+      <Modal visible={addCoachModalVisible} transparent animationType="fade" onRequestClose={() => setAddCoachModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Coach</Text>
+              <TouchableOpacity onPress={() => setAddCoachModalVisible(false)}>
+                <Icon name="close-circle-outline" size={26} color={Theme.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.hint} maxFontSizeMultiplier={1.3}>Just a name — email is optional. They'll be added as an active coach right away.</Text>
+
+              <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Name</Text>
+              <TextInput style={styles.formInput} value={addCoachName} onChangeText={setAddCoachName} placeholder="Coach's name" placeholderTextColor={Theme.textSecondary} />
+
+              <Text style={[styles.formLabel, { marginTop: 12 }]} maxFontSizeMultiplier={1.3}>Email — optional</Text>
+              <TextInput style={styles.formInput} value={addCoachEmail} onChangeText={setAddCoachEmail} placeholder="coach@email.com" placeholderTextColor={Theme.textSecondary} keyboardType="email-address" autoCapitalize="none" />
+
+              <TouchableOpacity style={[styles.addBtn, styles.newPlayerSubmitBtn, (addingCoach || !addCoachName.trim()) && styles.saveBtnDisabled]} onPress={submitAddCoach} disabled={addingCoach || !addCoachName.trim()}>
+                <Text style={styles.addBtnText}>{addingCoach ? 'Adding...' : 'Add Coach'}</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* Player folder modal */}
       <Modal visible={!!folderPlayer} transparent animationType="fade" onRequestClose={() => setFolderPlayer(null)}>
         <View style={styles.modalOverlay}>
@@ -723,6 +1002,21 @@ export default function ClubDashboardScreen() {
               ) : folder ? (
                 <>
                   {folder.mainCoachName && <Text style={styles.hint} maxFontSizeMultiplier={1.3}>Main coach: {folder.mainCoachName}</Text>}
+
+                  <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Phone</Text>
+                  <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
+                    <TextInput
+                      style={[styles.formInput, { flex: 1 }]}
+                      value={phoneDraft}
+                      onChangeText={setPhoneDraft}
+                      placeholder="Add a phone number"
+                      placeholderTextColor={Theme.textSecondary}
+                      keyboardType="phone-pad"
+                    />
+                    <TouchableOpacity onPress={savePhoneDraft} disabled={savingPhone}>
+                      <Icon name="check-circle-outline" size={24} color={Theme.eyebrowGreen} />
+                    </TouchableOpacity>
+                  </View>
 
                   {skillLevels.length > 0 && (
                     <>
@@ -757,7 +1051,36 @@ export default function ClubDashboardScreen() {
                     </>
                   )}
 
-                  <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Private lesson schedule</Text>
+                  {folderPlans.length > 0 && (
+                    <>
+                      <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Private lesson plans</Text>
+                      {folderPlans.map((p) => (
+                        <View key={p.id} style={styles.planRow}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.rosterName}>{p.coachName}{p.status === 'exhausted' ? ' · Exhausted' : ''}</Text>
+                            <Text style={styles.rosterEmail} maxFontSizeMultiplier={1.3}>{p.sessionsUsed} / {p.totalSessions} sessions used</Text>
+                          </View>
+                          {topUpPlanId === p.id ? (
+                            <View style={styles.topUpRow}>
+                              <TextInput style={styles.topUpInput} value={topUpAmount} onChangeText={setTopUpAmount} keyboardType="number-pad" maxLength={3} />
+                              <TouchableOpacity onPress={submitTopUp} disabled={savingTopUp}>
+                                <Icon name="check-circle-outline" size={22} color={Theme.eyebrowGreen} />
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => setTopUpPlanId(null)}>
+                                <Icon name="close-circle-outline" size={22} color={Theme.textMuted} />
+                              </TouchableOpacity>
+                            </View>
+                          ) : (
+                            <TouchableOpacity onPress={() => { setTopUpPlanId(p.id); setTopUpAmount('5'); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                              <Icon name="plus-circle-outline" size={22} color={Theme.eyebrowGreen} />
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      ))}
+                    </>
+                  )}
+
+                  <Text style={[styles.formLabel, { marginTop: folderPlans.length > 0 ? 16 : 0 }]} maxFontSizeMultiplier={1.3}>Private lesson schedule</Text>
                   {folder.privateLessons.length === 0 ? (
                     <Text style={styles.emptyText} maxFontSizeMultiplier={1.3}>No private lessons yet.</Text>
                   ) : (
@@ -765,6 +1088,29 @@ export default function ClubDashboardScreen() {
                       <View key={l.id} style={styles.rosterRow}>
                         <Text style={styles.rosterName}>{DAY_NAMES[l.day_of_week].slice(0, 3)} · {formatTime12h(l.start_time)}–{formatTime12h(l.end_time)}</Text>
                         <Text style={styles.rosterEmail} maxFontSizeMultiplier={1.3}>{l.coach_name}</Text>
+                      </View>
+                    ))
+                  )}
+
+                  <View style={[styles.hubLabelRow, { marginTop: 16 }]}>
+                    <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Lesson history</Text>
+                    {folderHistory.length > 0 && (
+                      <TouchableOpacity onPress={() => setHistoryExpanded((v) => !v)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Icon name={historyExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={Theme.textSecondary} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  {folderHistory.length === 0 ? (
+                    <Text style={styles.emptyText} maxFontSizeMultiplier={1.3}>No completed sessions yet.</Text>
+                  ) : !historyExpanded ? (
+                    <TouchableOpacity onPress={() => setHistoryExpanded(true)}>
+                      <Text style={styles.rosterEmail} maxFontSizeMultiplier={1.3}>{folderHistory.length} session{folderHistory.length === 1 ? '' : 's'} — tap to view</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    folderHistory.map((s) => (
+                      <View key={s.id} style={styles.rosterRow}>
+                        <Text style={styles.rosterName}>{formatDateLong(s.sessionDate)}</Text>
+                        <Text style={styles.rosterEmail} maxFontSizeMultiplier={1.3}>{s.coachName}</Text>
                       </View>
                     ))
                   )}
@@ -779,6 +1125,13 @@ export default function ClubDashboardScreen() {
                         {g.mainCoachName && <Text style={styles.rosterEmail} maxFontSizeMultiplier={1.3}>{g.mainCoachName}</Text>}
                       </View>
                     ))
+                  )}
+
+                  {isOwner && (
+                    <TouchableOpacity style={styles.deactivatePlayerBtn} onPress={deactivatePlayer} disabled={deactivatingMemberId === folderPlayer?.id}>
+                      <Icon name="account-remove-outline" size={20} color="#E74C3C" />
+                      <Text style={styles.deactivatePlayerBtnText}>{deactivatingMemberId === folderPlayer?.id ? 'Deactivating...' : 'Deactivate Player'}</Text>
+                    </TouchableOpacity>
                   )}
                 </>
               ) : null}
@@ -836,42 +1189,70 @@ export default function ClubDashboardScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.hint} maxFontSizeMultiplier={1.3}>
-                {approvalRequest?.signupSkillLevel
-                  ? `${firstName(approvalRequest.playerName)} selected "${approvalRequest.signupSkillLevel}" at signup. Confirm or pick a different batch for your club — they'll be added to that batch's lesson roster automatically.`
-                  : `${firstName(approvalRequest?.playerName)} didn't set a batch at signup — pick one for your club. They'll be added to that batch's lesson roster automatically.`}
-              </Text>
-              {skillLevels.length === 0 ? (
-                <Text style={styles.emptyText} maxFontSizeMultiplier={1.3}>This club has no batch types set up yet — add some in Settings first.</Text>
+              <View style={styles.segmentRow}>
+                <TouchableOpacity style={[styles.segment, approvalEnrollMode === 'group' && styles.segmentActive]} onPress={() => setApprovalEnrollMode('group')}>
+                  <Text style={[styles.segmentText, approvalEnrollMode === 'group' && styles.segmentTextActive]}>Group</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.segment, approvalEnrollMode === 'private' && styles.segmentActive]} onPress={() => setApprovalEnrollMode('private')}>
+                  <Text style={[styles.segmentText, approvalEnrollMode === 'private' && styles.segmentTextActive]}>Private</Text>
+                </TouchableOpacity>
+              </View>
+
+              {approvalEnrollMode === 'group' ? (
+                <>
+                  <Text style={styles.hint} maxFontSizeMultiplier={1.3}>
+                    {approvalRequest?.signupSkillLevel
+                      ? `${firstName(approvalRequest.playerName)} selected "${approvalRequest.signupSkillLevel}" at signup. Confirm or pick a different batch for your club — they'll be added to that batch's lesson roster automatically.`
+                      : `${firstName(approvalRequest?.playerName)} didn't set a batch at signup — pick one for your club. They'll be added to that batch's lesson roster automatically.`}
+                  </Text>
+                  {skillLevels.length === 0 ? (
+                    <Text style={styles.emptyText} maxFontSizeMultiplier={1.3}>This club has no batch types set up yet — add some in Settings first.</Text>
+                  ) : (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 8 }}>
+                      {skillLevels.map((level) => (
+                        <TouchableOpacity key={level} style={[styles.clubChip, approvalLevel === level && styles.clubChipActive]} onPress={() => setApprovalLevel(level)}>
+                          <Text style={[styles.clubChipText, approvalLevel === level && styles.clubChipTextActive]}>{level}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </>
               ) : (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 8 }}>
-                  {skillLevels.map((level) => (
-                    <TouchableOpacity key={level} style={[styles.clubChip, approvalLevel === level && styles.clubChipActive]} onPress={() => setApprovalLevel(level)}>
-                      <Text style={[styles.clubChipText, approvalLevel === level && styles.clubChipTextActive]}>{level}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                <Text style={styles.hint} maxFontSizeMultiplier={1.3}>{firstName(approvalRequest?.playerName)} will be rostered, then you'll pick session count, days, coach, and time on the next screen.</Text>
               )}
+
               <TouchableOpacity style={[styles.saveBtn, approving && { opacity: 0.6 }]} onPress={confirmApproval} disabled={approving}>
-                <Text style={styles.saveBtnText}>{approving ? 'Approving...' : 'Confirm & Add to Roster'}</Text>
+                <Text style={styles.saveBtnText}>{approving ? 'Approving...' : approvalEnrollMode === 'group' ? 'Confirm & Add to Roster' : 'Approve & Set Up Private Lessons'}</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
         </View>
       </Modal>
+
+      {timeOffCoach && clubId && (
+        <CoachTimeOffModal
+          clubId={clubId}
+          coach={timeOffCoach}
+          visible={!!timeOffCoach}
+          onClose={() => setTimeOffCoach(null)}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Theme.background },
-  header: { paddingHorizontal: 24, paddingTop: 60, paddingBottom: 16 },
+  header: { paddingLeft: 60, paddingRight: 24, paddingTop: 60, paddingBottom: 16 },
   eyebrow: { fontFamily: Fonts.sansSemiBold, fontSize: 14, color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 6 },
   title: { fontFamily: Fonts.serifMedium, fontSize: 32, color: Theme.textPrimary },
   scroll: { paddingHorizontal: 24, paddingBottom: 100 },
   muted: { fontFamily: Fonts.sansRegular, fontSize: 16, color: Theme.textSecondary, fontStyle: 'italic', marginTop: 20 },
   sectionLabel: { fontFamily: Fonts.sansSemiBold, fontSize: 15, color: Theme.eyebrowGreen, letterSpacing: 1, marginBottom: 12 },
   hubLabel: { fontFamily: Fonts.sansBold, fontSize: 13, color: Theme.textMuted, letterSpacing: 1.5, marginBottom: 10 },
+  hubLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  newPlayerLink: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 10 },
+  newPlayerLinkText: { fontFamily: Fonts.sansSemiBold, fontSize: 13, color: Theme.eyebrowGreen },
   emptyText: { fontFamily: Fonts.sansRegular, fontSize: 16, color: Theme.textSecondary, fontStyle: 'italic', marginBottom: 8 },
   hint: { fontFamily: Fonts.sansRegular, fontSize: 14, color: Theme.textSecondary, lineHeight: 19, marginBottom: 12 },
   scopeNote: { fontFamily: Fonts.sansSemiBold, fontSize: 13, color: Theme.eyebrowGreen, marginBottom: 10 },
@@ -880,9 +1261,20 @@ const styles = StyleSheet.create({
   clubChipActive: { backgroundColor: Theme.eyebrowGreen },
   clubChipText: { fontFamily: Fonts.sansSemiBold, fontSize: 13, color: Theme.eyebrowGreen },
   clubChipTextActive: { color: '#fff' },
+  segmentRow: { flexDirection: 'row', backgroundColor: Theme.cardTinted, borderRadius: 20, padding: 4, marginBottom: 14 },
+  segment: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 16 },
+  segmentActive: { backgroundColor: Theme.eyebrowGreen },
+  segmentText: { fontFamily: Fonts.sansSemiBold, fontSize: 14, color: Theme.textSecondary },
+  segmentTextActive: { color: '#fff' },
   coachChip: { alignItems: 'center', width: 72 },
-  coachAvatar: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  coachAvatar: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginBottom: 6, position: 'relative' },
+  coachAvatarAdd: { backgroundColor: Theme.cardTinted, borderWidth: 1.5, borderColor: Theme.eyebrowGreen, borderStyle: 'dashed' },
   coachAvatarText: { fontFamily: Fonts.sansBold, fontSize: 20 },
+  coachGearBadge: {
+    position: 'absolute', bottom: -2, right: -2, width: 20, height: 20, borderRadius: 10,
+    backgroundColor: Theme.limeAccent, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: Theme.background,
+  },
   coachChipText: { fontFamily: Fonts.sansSemiBold, fontSize: 13, color: Theme.textPrimary, textAlign: 'center' },
   card: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 18, marginBottom: 8 },
   setupCard: { backgroundColor: Theme.cardWhite, borderRadius: 20, padding: 32, alignItems: 'center', marginTop: 20 },
@@ -915,6 +1307,12 @@ const styles = StyleSheet.create({
   pendingActionText: { fontFamily: Fonts.sansRegular, fontSize: 16, color: Theme.textPrimary, flex: 1 },
   classSubLabel: { fontFamily: Fonts.sansBold, fontSize: 14, color: Theme.textMuted, letterSpacing: 1, marginBottom: 10 },
   rosterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderTopColor: Theme.divider, gap: 10 },
+  planRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderTopColor: Theme.divider, gap: 10 },
+  topUpRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  topUpInput: {
+    backgroundColor: Theme.background, borderRadius: 8, borderWidth: 1, borderColor: Theme.divider,
+    width: 44, height: 36, textAlign: 'center', fontFamily: Fonts.sansSemiBold, fontSize: 14, color: Theme.textPrimary,
+  },
   levelGroupLabel: { fontFamily: Fonts.sansBold, fontSize: 12, color: Theme.eyebrowGreen, letterSpacing: 1, marginTop: 14, marginBottom: 2 },
   saveBtn: { backgroundColor: Theme.eyebrowGreen, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 20 },
   saveBtnText: { fontFamily: Fonts.sansBold, fontSize: 15, color: '#fff' },
@@ -923,6 +1321,10 @@ const styles = StyleSheet.create({
   rosterEmail: { fontFamily: Fonts.sansRegular, fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
   addBtn: { backgroundColor: Theme.limeAccent, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
   addBtnText: { fontFamily: Fonts.sansBold, fontSize: 13, color: Theme.limeAccentDark },
+  newPlayerSubmitBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 20 },
+  saveBtnDisabled: { opacity: 0.5 },
+  deactivatePlayerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 20, paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(231,76,60,0.3)' },
+  deactivatePlayerBtnText: { fontFamily: Fonts.sansSemiBold, fontSize: 15, color: '#E74C3C' },
   makeupPreviewRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 10 },
   makeupPreviewDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Theme.flameOrange },
   makeupPreviewText: { flex: 1, fontFamily: Fonts.sansRegular, fontSize: 13, color: Theme.textSecondary },
@@ -937,4 +1339,14 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
   modalTitle: { fontFamily: Fonts.serifMedium, fontSize: 22, color: Theme.textPrimary, flexShrink: 1 },
   formLabel: { fontFamily: Fonts.sansSemiBold, fontSize: 15, color: Theme.textSecondary, marginBottom: 4, marginTop: 4 },
+  formInput: {
+    backgroundColor: Theme.cardWhite, borderRadius: 10, padding: 14, color: Theme.textPrimary,
+    fontSize: 16, borderWidth: 1, borderColor: Theme.divider,
+  },
+  pillWrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
+  pill: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, backgroundColor: Theme.cardWhite, borderWidth: 1, borderColor: Theme.divider },
+  pillActive: { backgroundColor: Theme.eyebrowGreen, borderColor: Theme.eyebrowGreen },
+  pillText: { fontSize: 15, color: Theme.textPrimary, fontWeight: '600' },
+  pillTextActive: { color: '#FFFFFF' },
+  inactiveNameText: { color: Theme.textSecondary },
 });

@@ -2,7 +2,7 @@ import React from 'react';
 import { ColorValue, StyleProp, ViewStyle } from 'react-native';
 import Svg, { Circle, Ellipse, G, Line, Path, Rect } from 'react-native-svg';
 
-// Hustler's own icon language: a hand-drawn, 24x24 line-icon set that
+// Smasho's own icon language: a hand-drawn, 24x24 line-icon set that
 // replaces the stock MaterialCommunityIcons glyphs used throughout the app.
 // Every glyph below is original artwork built from primitives (no icon
 // library assets) so the app stops looking like every other AI-scaffolded
@@ -195,6 +195,12 @@ const glyphs: Record<string, Glyph> = {
       <Path d="M10.5 20c0-3.3 2.2-5.6 5-5.6s5 2.3 5 5.6" {...stroke(p.c, p.w)} />
     </>
   ),
+  'account-child-outline': (p) => (
+    <>
+      {person(p, 9, 10.5, 0.85)}
+      {person(p, 17, 14, 0.48)}
+    </>
+  ),
   'clipboard-text': (p) => {
     const s = stroke(p.c, p.w);
     return (
@@ -216,6 +222,20 @@ const glyphs: Record<string, Glyph> = {
       {dot(17.5, 17.5, 1.1, p.c)}
     </>
   ),
+  'office-building-outline': (p) => {
+    const s = stroke(p.c, p.w);
+    return (
+      <>
+        <Rect x={5} y={3.5} width={14} height={17} rx={1} {...s} />
+        <Line x1={3.5} y1={20.5} x2={20.5} y2={20.5} {...s} />
+        <Line x1={8} y1={7.5} x2={10} y2={7.5} {...s} />
+        <Line x1={14} y1={7.5} x2={16} y2={7.5} {...s} />
+        <Line x1={8} y1={11.5} x2={10} y2={11.5} {...s} />
+        <Line x1={14} y1={11.5} x2={16} y2={11.5} {...s} />
+        <Rect x={10.5} y={15.5} width={3} height={5} {...s} />
+      </>
+    );
+  },
   'account-edit-outline': (p) => (
     <>
       {person(p, 10.5, 12, 0.85)}
@@ -281,6 +301,7 @@ const glyphs: Record<string, Glyph> = {
       {plus(p, 12, 12, 4.5)}
     </>
   ),
+  'plus-circle': (p) => glyphs['plus-circle-outline'](p),
   'pencil-outline': (p) => {
     const s = stroke(p.c, p.w);
     return (
@@ -399,6 +420,16 @@ const glyphs: Record<string, Glyph> = {
       </>
     );
   },
+  menu: (p) => {
+    const s = stroke(p.c, p.w);
+    return (
+      <>
+        <Line x1={4} y1={7} x2={20} y2={7} {...s} />
+        <Line x1={4} y1={12} x2={20} y2={12} {...s} />
+        <Line x1={4} y1={17} x2={20} y2={17} {...s} />
+      </>
+    );
+  },
   'chevron-down': (p) => chevron('M6 9 L12 15 L18 9', p),
   'chevron-left': (p) => chevron('M15 6 L9 12 L15 18', p),
   'chevron-right': (p) => chevron('M9 6 L15 12 L9 18', p),
@@ -416,6 +447,22 @@ const glyphs: Record<string, Glyph> = {
         {tips.map(([x, y], i) => (
           <Line key={i} x1={12 + (x - 12) * 0.4} y1={16} x2={x} y2={y} {...s} />
         ))}
+      </>
+    );
+  },
+  // A literal racquet — 'badminton' above is actually a shuttlecock (used
+  // for the workout/training category icon and the signup role picker).
+  'racquet-outline': (p) => {
+    const s = stroke(p.c, p.w);
+    return (
+      <>
+        {/* elongated oval head — taller than wide, unlike a round tennis face */}
+        <Ellipse cx={12} cy={6.5} rx={4.3} ry={5.7} {...s} />
+        <Line x1={12} y1={1.3} x2={12} y2={11.7} {...s} />
+        <Line x1={8.2} y1={6.5} x2={15.8} y2={6.5} {...s} />
+        {/* long thin shaft straight into a clearly rectangular handle — the proportion that reads as badminton rather than tennis */}
+        <Line x1={12} y1={12.2} x2={12} y2={17} {...s} />
+        <Rect x={10.2} y={17} width={3.6} height={5.5} rx={1.3} {...s} />
       </>
     );
   },
@@ -571,6 +618,13 @@ const glyphs: Record<string, Glyph> = {
     );
   },
   image: (p) => glyphs['image-outline'](p),
+  'image-plus': (p) => (
+    <>
+      {glyphs['image-outline'](p)}
+      <Circle cx={19.5} cy={6.5} r={3} fill="#fff" stroke={p.c} strokeWidth={p.w} />
+      {plus(p, 19.5, 6.5, 1.4)}
+    </>
+  ),
   'image-multiple-outline': (p) => {
     const s = stroke(p.c, p.w);
     return (

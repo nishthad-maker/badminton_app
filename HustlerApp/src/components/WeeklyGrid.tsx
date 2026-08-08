@@ -1,4 +1,5 @@
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { useRef } from 'react';
+import { View, StyleSheet, ScrollView, TouchableOpacity, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { Text } from '@/components/Text';
 import { Theme, Fonts } from '@/constants/theme';
 import { DAY_SHORT, timeToMinutes } from '../lib/scheduling';
@@ -22,6 +23,8 @@ type Props = {
   rangeEndHour?: number;
   hourHeight?: number;
   columnWidth?: number;
+  /** Caps the grid's own height and makes it internally scrollable, so the day-of-week header row stays pinned in view while hours scroll underneath instead of scrolling away with the page. */
+  maxHeight?: number;
 };
 
 const formatHour = (h: number) => {
@@ -70,6 +73,7 @@ export function WeeklyGrid({
   rangeEndHour: defaultEndHour = 22,
   hourHeight = 44,
   columnWidth,
+  maxHeight = 480,
 }: Props) {
   const colWidth = columnWidth ?? (days.length <= 1 ? 280 : 116);
   // 7am-10pm covers the normal day, but a block outside that (early-morning
@@ -94,15 +98,28 @@ export function WeeklyGrid({
     blocksByDay[d] = layoutDay(blocks.filter((b) => b.dayOfWeek === d), rangeStartHour, hourHeight);
   });
 
+  // The hour gutter and the grid body scroll vertically together (kept in
+  // sync here, since they're separate ScrollViews so the gutter can sit
+  // outside the horizontal ScrollView and stay put during a horizontal
+  // swipe), while the day-of-week header row lives above both — inside the
+  // horizontal ScrollView so it still tracks side-to-side scrolling, but
+  // outside the vertical one so it never scrolls out of view.
+  const gutterScrollRef = useRef<ScrollView>(null);
+  const onBodyScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    gutterScrollRef.current?.scrollTo({ y: e.nativeEvent.contentOffset.y, animated: false });
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.gutter}>
         <View style={styles.headerSpacer} />
-        {hours.map((h) => (
-          <View key={h} style={[styles.hourRow, { height: hourHeight }]}>
-            <Text style={styles.hourLabel} maxFontSizeMultiplier={1.3}>{formatHour(h)}</Text>
-          </View>
-        ))}
+        <ScrollView ref={gutterScrollRef} scrollEnabled={false} showsVerticalScrollIndicator={false} style={{ maxHeight }}>
+          {hours.map((h) => (
+            <View key={h} style={[styles.hourRow, { height: hourHeight }]}>
+              <Text style={styles.hourLabel} maxFontSizeMultiplier={1.3}>{formatHour(h)}</Text>
+            </View>
+          ))}
+        </ScrollView>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View>
@@ -113,37 +130,39 @@ export function WeeklyGrid({
               </View>
             ))}
           </View>
-          <View style={styles.bodyRow}>
-            {days.map((d) => (
-              <View key={d} style={[styles.dayColumn, { width: colWidth, height: totalHeight }]}>
-                {hours.map((h, i) => (
-                  <View key={h} style={[styles.gridLine, { top: i * hourHeight }]} />
-                ))}
-                {blocksByDay[d].map((b) => {
-                  const laneWidth = (colWidth - 4) / b.lanes;
-                  return (
-                    <TouchableOpacity
-                      key={b.id}
-                      onPress={() => onPressBlock?.(b)}
-                      style={[
-                        styles.block,
-                        {
-                          top: b.top,
-                          height: b.height,
-                          left: 2 + b.lane * laneWidth,
-                          width: laneWidth - 2,
-                          backgroundColor: b.color.bg,
-                        },
-                      ]}
-                    >
-                      <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={[styles.blockLabel, { color: b.color.fg }]}>{b.label}</Text>
-                      {b.sublabel && <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={[styles.blockSublabel, { color: b.color.fg }]}>{b.sublabel}</Text>}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ))}
-          </View>
+          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight }} onScroll={onBodyScroll} scrollEventThrottle={16}>
+            <View style={styles.bodyRow}>
+              {days.map((d) => (
+                <View key={d} style={[styles.dayColumn, { width: colWidth, height: totalHeight }]}>
+                  {hours.map((h, i) => (
+                    <View key={h} style={[styles.gridLine, { top: i * hourHeight }]} />
+                  ))}
+                  {blocksByDay[d].map((b) => {
+                    const laneWidth = (colWidth - 4) / b.lanes;
+                    return (
+                      <TouchableOpacity
+                        key={b.id}
+                        onPress={() => onPressBlock?.(b)}
+                        style={[
+                          styles.block,
+                          {
+                            top: b.top,
+                            height: b.height,
+                            left: 2 + b.lane * laneWidth,
+                            width: laneWidth - 2,
+                            backgroundColor: b.color.bg,
+                          },
+                        ]}
+                      >
+                        <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={[styles.blockLabel, { color: b.color.fg }]}>{b.label}</Text>
+                        {b.sublabel && <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={[styles.blockSublabel, { color: b.color.fg }]}>{b.sublabel}</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          </ScrollView>
         </View>
       </ScrollView>
     </View>

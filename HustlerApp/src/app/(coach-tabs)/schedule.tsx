@@ -6,7 +6,7 @@ import { useState, useCallback } from 'react';
 import { Icon } from '@/components/icons/Icon';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
-import { formatTime12h, firstName } from '../../lib/scheduling';
+import { formatTime12h, firstName, localDateStr } from '../../lib/scheduling';
 import { getMyClub, MyClub } from '../../lib/club';
 import ClubCalendarScreen from '../(club-admin)/club-calendar';
 
@@ -88,7 +88,7 @@ const showConfirm = (title: string, message: string, onConfirm: () => void) => {
 };
 
 const fmtDate = (dateStr: string) =>
-  new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
 export default function CoachScheduleScreen() {
   const [myId, setMyId] = useState<string | null>(null);
@@ -100,7 +100,7 @@ export default function CoachScheduleScreen() {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
-  const [selectedDate, setSelectedDate] = useState<string>(today.toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(localDateStr(today));
 
   const [showModal, setShowModal] = useState(false);
   const [formType, setFormType] = useState<'tournament' | 'private_lesson' | 'group_lesson' | 'other'>('private_lesson');
@@ -142,8 +142,8 @@ export default function CoachScheduleScreen() {
     }
     setRoster(playerIds.map((id: string) => ({ id, name: nameMap[id] ?? 'Player' })));
 
-    const startDate = new Date(viewYear, viewMonth - 1, 1).toISOString().split('T')[0];
-    const endDate = new Date(viewYear, viewMonth + 2, 0).toISOString().split('T')[0];
+    const startDate = localDateStr(new Date(viewYear, viewMonth - 1, 1));
+    const endDate = localDateStr(new Date(viewYear, viewMonth + 2, 0));
 
     if (playerIds.length) {
       const { data: tourneys } = await supabase
@@ -227,7 +227,7 @@ export default function CoachScheduleScreen() {
   const goToToday = () => {
     setViewYear(today.getFullYear());
     setViewMonth(today.getMonth());
-    setSelectedDate(today.toISOString().split('T')[0]);
+    setSelectedDate(localDateStr(today));
   };
 
   const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
@@ -253,7 +253,7 @@ export default function CoachScheduleScreen() {
   };
 
   const upcomingTournaments = tournaments
-    .filter(t => t.event_date >= today.toISOString().split('T')[0])
+    .filter(t => t.event_date >= localDateStr(today))
     .sort((a, b) => a.event_date === b.event_date
       ? parseTimeToMinutes(a.start_time) - parseTimeToMinutes(b.start_time)
       : a.event_date.localeCompare(b.event_date))
@@ -279,7 +279,7 @@ export default function CoachScheduleScreen() {
   const renderCalendarGrid = () => {
     const daysInMonth = getDaysInMonth(viewYear, viewMonth);
     const firstDay = getFirstDayOfMonth(viewYear, viewMonth);
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = localDateStr(today);
     const cells = [];
 
     for (let i = 0; i < firstDay; i++) cells.push(<View key={`empty-${i}`} style={styles.dayCell} />);
@@ -408,7 +408,7 @@ export default function CoachScheduleScreen() {
             <View style={styles.selectedDateCard}>
               <View style={styles.selectedDateHeader}>
                 <Text style={styles.selectedDateTitle}>
-                  {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                  {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
                 </Text>
                 <TouchableOpacity style={styles.addBtn} onPress={openAddModal}>
                   <Icon name="plus" size={24} color={Theme.limeAccentDark} />
@@ -460,7 +460,7 @@ export default function CoachScheduleScreen() {
               <View>
                 <Text style={styles.modalTitle}>Add to Schedule</Text>
                 <Text style={styles.modalDate}>
-                  {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setShowModal(false)}>

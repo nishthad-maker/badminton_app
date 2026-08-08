@@ -1,4 +1,4 @@
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -7,6 +7,8 @@ import { Icon } from '@/components/icons/Icon';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
 import { notifySharedNoteAdded } from '../lib/notifications';
+import { STRENGTH_CATEGORIES, WEAKNESS_CATEGORIES } from '@/constants/matchTags';
+import { TagChipSelector } from '@/components/TagChipSelector';
 
 // Always-visible note the coach writes for a specific player — unlike the
 // private note textarea (coach_player_notes), every row this screen creates
@@ -22,11 +24,15 @@ export default function CoachSharedNoteScreen() {
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [showTags, setShowTags] = useState(false);
+  const [strengthsTags, setStrengthsTags] = useState<string[]>([]);
+  const [weaknessesTags, setWeaknessesTags] = useState<string[]>([]);
 
   const coachIdRef = useRef<string | null>(null);
   const noteIdRef = useRef<string | null>(null);
   const notifiedRef = useRef(false);
   const textRef = useRef('');
+  const tagsRef = useRef<{ strengths: string[]; weaknesses: string[] }>({ strengths: [], weaknesses: [] });
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -50,14 +56,15 @@ export default function CoachSharedNoteScreen() {
       return;
     }
 
+    const tagsPayload = { strengths_tags: tagsRef.current.strengths, weaknesses_tags: tagsRef.current.weaknesses };
     setSaving(true);
     if (noteIdRef.current) {
       await supabase.from('coach_shared_notes')
-        .update({ note: trimmed, updated_at: new Date().toISOString() })
+        .update({ note: trimmed, ...tagsPayload, updated_at: new Date().toISOString() })
         .eq('id', noteIdRef.current);
     } else {
       const { data } = await supabase.from('coach_shared_notes')
-        .insert({ coach_id: coachId, player_id: playerId as string, note: trimmed })
+        .insert({ coach_id: coachId, player_id: playerId as string, note: trimmed, ...tagsPayload })
         .select().single();
       if (data) {
         noteIdRef.current = data.id;
@@ -78,6 +85,22 @@ export default function CoachSharedNoteScreen() {
     setSaved(false);
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
     saveTimeout.current = setTimeout(() => persist(t), 700);
+  };
+
+  const onChangeStrengthsTags = (tags: string[]) => {
+    setStrengthsTags(tags);
+    tagsRef.current = { ...tagsRef.current, strengths: tags };
+    setSaved(false);
+    if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    saveTimeout.current = setTimeout(() => persist(textRef.current), 700);
+  };
+
+  const onChangeWeaknessesTags = (tags: string[]) => {
+    setWeaknessesTags(tags);
+    tagsRef.current = { ...tagsRef.current, weaknesses: tags };
+    setSaved(false);
+    if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    saveTimeout.current = setTimeout(() => persist(textRef.current), 700);
   };
 
   const goBack = async () => {
@@ -105,16 +128,32 @@ export default function CoachSharedNoteScreen() {
           <Text style={styles.visibleText}>Visible to {playerName} — not private</Text>
         </View>
 
-        <TextInput
-          style={styles.input}
-          placeholder={`Write a note for ${playerName}...`}
-          placeholderTextColor={Theme.textSecondary}
-          value={text}
-          onChangeText={onChangeText}
-          multiline
-          autoFocus
-          textAlignVertical="top"
-        />
+        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <TextInput
+            style={styles.input}
+            placeholder={`Write a note for ${playerName}...`}
+            placeholderTextColor={Theme.textSecondary}
+            value={text}
+            onChangeText={onChangeText}
+            multiline
+            autoFocus
+            textAlignVertical="top"
+          />
+
+          {showTags ? (
+            <View style={styles.tagsSection}>
+              <Text style={styles.tagsSectionLabel}>STRENGTHS</Text>
+              <TagChipSelector categories={STRENGTH_CATEGORIES} selected={strengthsTags} onChange={onChangeStrengthsTags} />
+              <Text style={[styles.tagsSectionLabel, { marginTop: 16 }]}>WEAKNESSES</Text>
+              <TagChipSelector categories={WEAKNESS_CATEGORIES} selected={weaknessesTags} onChange={onChangeWeaknessesTags} />
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.addTagsBtn} onPress={() => setShowTags(true)}>
+              <Icon name="tag-outline" size={16} color={Theme.eyebrowGreen} />
+              <Text style={styles.addTagsBtnText}>Tag strengths/weaknesses (optional)</Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
 
         <View style={styles.footerRow}>
           {saving ? (
@@ -146,7 +185,7 @@ const styles = StyleSheet.create({
   visibleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14 },
   visibleText: { fontSize: 14, color: Theme.eyebrowGreen, fontWeight: '600' },
   input: {
-    flex: 1,
+    minHeight: 220,
     backgroundColor: Theme.cardWhite,
     borderRadius: 16,
     padding: 18,
@@ -154,6 +193,10 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 25,
   },
+  addTagsBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14, paddingVertical: 6 },
+  addTagsBtnText: { fontSize: 14, fontWeight: '600', color: Theme.eyebrowGreen },
+  tagsSection: { marginTop: 18, backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 18 },
+  tagsSectionLabel: { fontSize: 11, fontWeight: 'bold', color: Theme.textSecondary, letterSpacing: 1, marginBottom: 8 },
   footerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 24, marginTop: 12 },
   footerText: { fontSize: 13, color: Theme.textSecondary, fontStyle: 'italic' },
   doneBtn: { backgroundColor: Theme.limeAccent, borderRadius: 14, paddingVertical: 17, alignItems: 'center', marginTop: 10, marginBottom: 10 },

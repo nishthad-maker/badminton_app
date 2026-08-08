@@ -107,7 +107,7 @@ export function TimePicker({ value, onChange, placeholder }: Props) {
 const styles = StyleSheet.create({
   field: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Theme.cardWhite, borderRadius: 10, padding: 16, borderWidth: 1, borderColor: Theme.divider, marginBottom: 10 },
   fieldText: { fontFamily: Fonts.sansRegular, fontSize: 16, color: Theme.textPrimary },
-  fieldPlaceholder: { color: Theme.textSecondary },
+  fieldPlaceholder: { color: Theme.textMuted },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   sheet: { backgroundColor: Theme.background, borderRadius: 20, padding: 20, width: 300, maxHeight: '70%' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },

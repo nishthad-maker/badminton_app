@@ -10,6 +10,8 @@ import { notifyPlayerMessage, notifyProofUploaded } from '../../lib/notification
 import { uploadToCloudinary } from '../../lib/cloudinary';
 import { pickChatMedia, sendChatMediaMessage } from '../../lib/chatMedia';
 import { showAlert, showConfirm } from '../../lib/ui';
+import { getPlayerClubMembership } from '../../lib/club';
+import { getClubCoachesForPlayer } from '../../lib/playerClub';
 import { MessageBubble } from '@/components/MessageBubble';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -86,8 +88,21 @@ export default function CoachSectionScreen() {
     setMyId(userId);
     myIdRef.current = userId;
 
-    const { data: conns } = await supabase.from('coach_connections').select('id').eq('player_id', userId).limit(1);
-    setHasCoachConnection((conns ?? []).length > 0);
+    // "Has a coach" spans two independent relationship models: the old
+    // direct coach_connections (coach_username-based) AND a club-assigned
+    // coach (private lesson / group lesson) — a club-only player has none of
+    // the former but is very much coached, so both need checking or this
+    // screen wrongly claims "No coach yet" for every club player.
+    const [{ data: conns }, membership] = await Promise.all([
+      supabase.from('coach_connections').select('id').eq('player_id', userId).limit(1),
+      getPlayerClubMembership(userId),
+    ]);
+    let hasClubCoach = false;
+    if (membership) {
+      const clubCoaches = await getClubCoachesForPlayer(userId, membership.clubId);
+      hasClubCoach = clubCoaches.length > 0;
+    }
+    setHasCoachConnection((conns ?? []).length > 0 || hasClubCoach);
 
     await supabase.from('assignments').update({ seen: true }).eq('player_id', userId).eq('seen', false);
     await supabase.from('notifications').update({ seen: true }).eq('user_id', userId).eq('type', 'coach_feedback').eq('seen', false);
@@ -579,7 +594,7 @@ export default function CoachSectionScreen() {
               const coachName = plan.profiles?.full_name ?? 'Coach';
               const weekStart = new Date(plan.week_start);
               const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 6);
-              const fmtWeek = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+              const fmtWeek = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} – ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
               return (
                 <View key={plan.id} style={styles.planCard}>

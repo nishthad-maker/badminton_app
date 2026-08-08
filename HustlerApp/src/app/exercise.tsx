@@ -412,7 +412,7 @@ export default function ExerciseScreen() {
   };
 
   const formatVoiceDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   // ── Data loading ──
 
@@ -430,10 +430,10 @@ export default function ExerciseScreen() {
         if (data) { setSessions(sessionLogData); setSessionIds(data.map((row: any) => row.id)); setSessionCreatedAt(sessionCreated); }
         const { data: vnData } = await supabase.from('voice_notes').select('*').eq('user_id', currentUser.id).eq('exercise_name', name as string).order('created_at', { ascending: false }).limit(5);
         if (vnData) setVoiceNotes(vnData as VoiceNote[]);
-        const { data: noteData } = await supabase.from('exercise_notes').select('note').eq('user_id', currentUser.id).eq('exercise_name', name as string).single();
+        const { data: noteData } = await supabase.from('exercise_notes').select('note').eq('user_id', currentUser.id).eq('exercise_name', name as string).maybeSingle();
         if (noteData?.note) setGeneralNote(noteData.note);
         if (logType === 'strength') {
-          const { data: settings } = await supabase.from('exercise_settings').select('starting_weight').eq('user_id', currentUser.id).eq('exercise_name', name as string).single();
+          const { data: settings } = await supabase.from('exercise_settings').select('starting_weight').eq('user_id', currentUser.id).eq('exercise_name', name as string).maybeSingle();
           if (settings?.starting_weight) {
             setStartingWeight(settings.starting_weight);
             setStartingWeightInput(String(settings.starting_weight));

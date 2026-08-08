@@ -1,11 +1,37 @@
 import { View, StyleSheet, TouchableOpacity, Alert, Image, ScrollView } from 'react-native';
 import { TextInput } from '@/components/TextInput';
 import { Text } from '@/components/Text';
-import { router } from 'expo-router';
-import { useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from '@/components/icons/Icon';
 import { supabase } from '../lib/supabase';
 import { Theme, Fonts } from '@/constants/theme';
+
+type LocationSuggestion = { label: string };
+
+// Free, no-signup-required city search — Photon (komoot's OSM-based
+// geocoder), not Nominatim directly: Nominatim's usage policy actively
+// 403s browser-origin autocomplete requests (confirmed while building
+// this), while Photon is purpose-built for exactly this type-ahead case
+// and answers cross-origin fetches fine. Debounced client-side below.
+const searchLocations = async (query: string): Promise<LocationSuggestion[]> => {
+  if (query.trim().length < 3) return [];
+  try {
+    const res = await fetch(`https://photon.komoot.io/api/?limit=5&q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    const labels: string[] = (data?.features ?? []).map((f: any) => {
+      const p = f.properties ?? {};
+      const parts = [p.name, p.state, p.country].filter(Boolean);
+      return parts.join(', ');
+    }).filter(Boolean);
+    // Photon can return the same city more than once (e.g. matched by both
+    // its center point and a nearby boundary way) — same label, same row,
+    // so dedupe rather than show it twice.
+    return [...new Set(labels)].map((label) => ({ label }));
+  } catch {
+    return [];
+  }
+};
 
 const showAlert = (title: string, message: string) => {
   if (typeof window !== 'undefined') {
@@ -17,17 +43,47 @@ const showAlert = (title: string, message: string) => {
 
 type Role = 'player' | 'coach' | 'club' | 'parent';
 
+const VALID_ROLES: Role[] = ['player', 'coach', 'club', 'parent'];
+
 export default function SignUpScreen() {
+  const { role: presetRole } = useLocalSearchParams<{ role?: string }>();
+  const roleLocked = VALID_ROLES.includes(presetRole as Role);
+  const initialRole = roleLocked ? (presetRole as Role) : null;
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<Role>('player');
+  const [role, setRole] = useState<Role | null>(initialRole);
+  // Role picker is its own "Get Started" step so arriving at /signup with
+  // no preset role (e.g. from the login screen) doesn't dump you straight
+  // into the full account form — you pick a role, tap Next, then fill it in.
+  const [step, setStep] = useState<0 | 1>(roleLocked ? 1 : 0);
   const [username, setUsername] = useState('');
   const [clubName, setClubName] = useState('');
   const [clubLocation, setClubLocation] = useState('');
+  const [locationSuggestions, setLocationSuggestions] = useState<LocationSuggestion[]>([]);
+  const [locationPicked, setLocationPicked] = useState(false);
+  const locationDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [coachClub, setCoachClub] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Debounced search as the club owner types — skipped once they've tapped
+  // a suggestion (locationPicked) so the list doesn't reappear under an
+  // already-chosen value if they touch the field again (e.g. tab away/back).
+  useEffect(() => {
+    if (locationPicked) return;
+    if (locationDebounce.current) clearTimeout(locationDebounce.current);
+    locationDebounce.current = setTimeout(async () => {
+      setLocationSuggestions(await searchLocations(clubLocation));
+    }, 400);
+    return () => { if (locationDebounce.current) clearTimeout(locationDebounce.current); };
+  }, [clubLocation, locationPicked]);
+
+  const pickLocation = (label: string) => {
+    setClubLocation(label);
+    setLocationPicked(true);
+    setLocationSuggestions([]);
+  };
 
   // Typing "None" (any casing) is the one thing that reveals the username
   // field — leaving the club field blank doesn't, so there's no ambiguous
@@ -66,6 +122,10 @@ export default function SignUpScreen() {
     // Club-specific requirements
     if (role === 'club' && !clubName.trim()) {
       showAlert('Missing club name', 'Please enter your club name.');
+      return;
+    }
+    if (role === 'club' && !clubLocation.trim()) {
+      showAlert('Missing location', 'Please enter your club\'s location.');
       return;
     }
 
@@ -189,7 +249,89 @@ export default function SignUpScreen() {
         />
 
         <View style={styles.card}>
+          {step === 0 ? (
+            <>
+              <Text style={styles.eyebrow}>GET STARTED</Text>
+              <Text style={styles.title}>How will you use smasho?</Text>
+              <Text style={styles.subtitle}>We'll take you to the right sign-up next.</Text>
+
+              <Text style={styles.label}>I am a...</Text>
+              <View style={styles.roleRow}>
+                <TouchableOpacity
+                  style={[styles.roleBtn, role === 'player' && styles.roleBtnActive]}
+                  onPress={() => setRole('player')}
+                >
+                  <Icon
+                    name="badminton"
+                    size={26}
+                    color={role === 'player' ? '#FFFFFF' : Theme.textSecondary}
+                  />
+                  <Text style={[styles.roleBtnText, role === 'player' && styles.roleBtnTextActive]}>Player</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.roleBtn, role === 'coach' && styles.roleBtnActive]}
+                  onPress={() => setRole('coach')}
+                >
+                  <Icon
+                    name="whistle"
+                    size={26}
+                    color={role === 'coach' ? '#FFFFFF' : Theme.textSecondary}
+                  />
+                  <Text style={[styles.roleBtnText, role === 'coach' && styles.roleBtnTextActive]}>Coach</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.roleRow}>
+                <TouchableOpacity
+                  style={[styles.roleBtn, role === 'club' && styles.roleBtnActive]}
+                  onPress={() => setRole('club')}
+                >
+                  <Icon
+                    name="office-building-outline"
+                    size={26}
+                    color={role === 'club' ? '#FFFFFF' : Theme.textSecondary}
+                  />
+                  <Text style={[styles.roleBtnText, role === 'club' && styles.roleBtnTextActive]}>Club</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.roleBtn, role === 'parent' && styles.roleBtnActive]}
+                  onPress={() => setRole('parent')}
+                >
+                  <Icon
+                    name="account-child-outline"
+                    size={26}
+                    color={role === 'parent' ? '#FFFFFF' : Theme.textSecondary}
+                  />
+                  <Text style={[styles.roleBtnText, role === 'parent' && styles.roleBtnTextActive]}>Parent</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.button, !role && styles.buttonDisabled]}
+                onPress={() => role && setStep(1)}
+                disabled={!role}
+              >
+                <Text style={styles.buttonText}>Next</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => router.push('/login' as any)}>
+                <Text style={styles.linkText}>
+                  Already have an account? <Text style={styles.link}>Log In</Text>
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+          <>
+          {!roleLocked && (
+            <TouchableOpacity style={styles.backLink} onPress={() => setStep(0)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Icon name="chevron-left" size={18} color={Theme.textSecondary} />
+              <Text style={styles.backLinkText}>Change role</Text>
+            </TouchableOpacity>
+          )}
+          <Text style={styles.eyebrow}>GET STARTED</Text>
           <Text style={styles.title}>Create Account</Text>
+          <Text style={styles.subtitle}>
+            {role ? `Setting up your ${role.charAt(0).toUpperCase()}${role.slice(1)} account.` : 'Set up your account to get started.'}
+          </Text>
 
           <Text style={styles.label}>Full Name</Text>
           <TextInput
@@ -200,57 +342,6 @@ export default function SignUpScreen() {
             onChangeText={setFullName}
             autoCapitalize="words"
           />
-
-          {/* Role picker */}
-          <Text style={styles.label}>I am a...</Text>
-          <View style={styles.roleRow}>
-            <TouchableOpacity
-              style={[styles.roleBtn, role === 'player' && styles.roleBtnActive]}
-              onPress={() => setRole('player')}
-            >
-              <Icon
-                name="badminton"
-                size={22}
-                color={role === 'player' ? '#FFFFFF' : Theme.textSecondary}
-              />
-              <Text style={[styles.roleBtnText, role === 'player' && styles.roleBtnTextActive]}>Player</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.roleBtn, role === 'coach' && styles.roleBtnActive]}
-              onPress={() => setRole('coach')}
-            >
-              <Icon
-                name="whistle"
-                size={22}
-                color={role === 'coach' ? '#FFFFFF' : Theme.textSecondary}
-              />
-              <Text style={[styles.roleBtnText, role === 'coach' && styles.roleBtnTextActive]}>Coach</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.roleRow}>
-            <TouchableOpacity
-              style={[styles.roleBtn, role === 'club' && styles.roleBtnActive]}
-              onPress={() => setRole('club')}
-            >
-              <Icon
-                name="account-badge"
-                size={22}
-                color={role === 'club' ? '#FFFFFF' : Theme.textSecondary}
-              />
-              <Text style={[styles.roleBtnText, role === 'club' && styles.roleBtnTextActive]}>Club</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.roleBtn, role === 'parent' && styles.roleBtnActive]}
-              onPress={() => setRole('parent')}
-            >
-              <Icon
-                name="account-group"
-                size={22}
-                color={role === 'parent' ? '#FFFFFF' : Theme.textSecondary}
-              />
-              <Text style={[styles.roleBtnText, role === 'parent' && styles.roleBtnTextActive]}>Parent</Text>
-            </TouchableOpacity>
-          </View>
 
           {/* Club name + location */}
           {role === 'club' && (
@@ -265,17 +356,29 @@ export default function SignUpScreen() {
                 autoCapitalize="words"
               />
 
-              <Text style={styles.label}>
-                Location <Text style={styles.optional}>(optional)</Text>
-              </Text>
+              <Text style={styles.label}>Location</Text>
               <TextInput
-                style={styles.input}
-                placeholder="e.g. Toronto, ON"
+                style={[styles.input, locationSuggestions.length > 0 && styles.inputConnected]}
+                placeholder="Start typing a city..."
                 placeholderTextColor={Theme.textSecondary}
                 value={clubLocation}
-                onChangeText={setClubLocation}
+                onChangeText={(t) => { setClubLocation(t); setLocationPicked(false); }}
                 autoCapitalize="words"
               />
+              {locationSuggestions.length > 0 && (
+                <View style={styles.suggestionList}>
+                  {locationSuggestions.map((s, i) => (
+                    <TouchableOpacity
+                      key={`${s.label}_${i}`}
+                      style={[styles.suggestionRow, i > 0 && styles.suggestionRowDivider]}
+                      onPress={() => pickLocation(s.label)}
+                    >
+                      <Icon name="map-marker-outline" size={15} color={Theme.textSecondary} />
+                      <Text style={styles.suggestionText}>{s.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
               <Text style={styles.usernameHint}>
                 Coaches and parents will see this to know which physical club this is.
               </Text>
@@ -368,6 +471,8 @@ export default function SignUpScreen() {
               Already have an account? <Text style={styles.link}>Log In</Text>
             </Text>
           </TouchableOpacity>
+          </>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -377,21 +482,53 @@ export default function SignUpScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Theme.background },
   scroll: { flexGrow: 1, padding: 24, alignItems: 'center', justifyContent: 'center' },
-  logo: { width: 160, height: 60, marginBottom: 32 },
-  card: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 24, width: '100%' },
-  title: { fontFamily: Fonts.serifMedium, fontSize: 22, color: Theme.textPrimary, marginBottom: 24 },
-  label: { fontSize: 13, color: Theme.textSecondary, marginBottom: 8 },
-  optional: { fontSize: 13, color: Theme.textSecondary, fontStyle: 'italic' },
+  logo: { width: 190, height: 72, marginBottom: 36 },
+  card: {
+    backgroundColor: Theme.cardWhite,
+    borderRadius: 22,
+    padding: 28,
+    width: '100%',
+    maxWidth: 440,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  backLink: { flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', marginBottom: 14 },
+  backLinkText: { fontSize: 14, color: Theme.textSecondary, fontWeight: '600' },
+  eyebrow: { fontFamily: Fonts.sansBold, fontSize: 13, color: Theme.eyebrowGreen, letterSpacing: 1.5, marginBottom: 8 },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 32, color: Theme.textPrimary, marginBottom: 8 },
+  subtitle: { fontSize: 15, color: Theme.textSecondary, lineHeight: 21, marginBottom: 26 },
+  label: { fontSize: 15, fontWeight: '600', color: Theme.textSecondary, marginBottom: 8 },
+  // Sits flush against the input above it — same side borders, square top
+  // corners so the two read as one connected control, rounded only at the
+  // bottom. Rows are divided by a hairline rather than each being its own
+  // bordered pill, so the whole thing scans as a single dropdown.
+  suggestionList: {
+    marginBottom: 18,
+    backgroundColor: Theme.background,
+    borderWidth: 1,
+    borderColor: Theme.divider,
+    borderTopWidth: 0,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    overflow: 'hidden',
+  },
+  suggestionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 13 },
+  suggestionRowDivider: { borderTopWidth: 1, borderTopColor: Theme.divider },
+  suggestionText: { flex: 1, fontSize: 14, color: Theme.textPrimary },
   input: {
     backgroundColor: Theme.background,
-    borderRadius: 10,
-    padding: 14,
+    borderRadius: 12,
+    padding: 16,
     color: Theme.textPrimary,
-    fontSize: 15,
-    marginBottom: 16,
+    fontSize: 17,
+    marginBottom: 18,
     borderWidth: 1,
     borderColor: Theme.divider,
   },
+  inputConnected: { marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
   roleRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   roleBtn: {
     flex: 1,
@@ -399,26 +536,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: 16,
+    borderRadius: 14,
     backgroundColor: Theme.background,
     borderWidth: 1,
     borderColor: Theme.divider,
   },
   roleBtnActive: { backgroundColor: Theme.eyebrowGreen, borderColor: Theme.eyebrowGreen },
-  roleBtnText: { fontSize: 14, color: Theme.textSecondary, fontWeight: '600' },
+  roleBtnText: { fontSize: 15, color: Theme.textSecondary, fontWeight: '600' },
   roleBtnTextActive: { color: '#FFFFFF' },
-  usernameHint: { fontSize: 13, color: Theme.textSecondary, lineHeight: 18, marginTop: -8, marginBottom: 16 },
+  usernameHint: { fontSize: 14, color: Theme.textSecondary, lineHeight: 19, marginTop: -8, marginBottom: 18 },
   button: {
     backgroundColor: Theme.limeAccent,
     borderRadius: 30,
-    paddingVertical: 14,
+    paddingVertical: 16,
     alignItems: 'center',
     marginTop: 8,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 15 },
-  linkText: { color: Theme.textSecondary, fontSize: 13, textAlign: 'center' },
+  buttonText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 17 },
+  linkText: { color: Theme.textSecondary, fontSize: 16, textAlign: 'center' },
   link: { color: Theme.eyebrowGreen, fontWeight: 'bold' },
 });

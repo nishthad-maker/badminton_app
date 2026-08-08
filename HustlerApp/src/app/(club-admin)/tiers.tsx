@@ -5,27 +5,29 @@ import { Icon } from '@/components/icons/Icon';
 import { MiniDatePicker } from '@/components/MiniDatePicker';
 import { TimePicker } from '@/components/TimePicker';
 import { useState, useCallback, useEffect } from 'react';
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
 import { showAlert, showConfirm } from '../../lib/ui';
 import { getMyClub } from '../../lib/club';
 import { getClubCourts, findCourtConflicts, formatCourtConflicts, Court } from '../../lib/courts';
 import { colorForId } from '../../lib/colors';
-import { DAY_NAMES, formatTime12h, firstName } from '../../lib/scheduling';
+import { DAY_NAMES, formatTime12h, formatDateLong, firstName, addMinutesToTime, localDateStr } from '../../lib/scheduling';
 import {
   getClubMakeupCredits, scheduleMakeup, markMakeupDone, approveMakeupRequest, declineMakeupRequest,
   getClubTournamentBlocks, getMakeupSuggestions, proposeMakeupSlot, withdrawMakeupProposal,
   MakeupCredit, ClubTournamentBlock, MakeupSuggestion,
 } from '../../lib/makeup';
 import {
-  getGroupLessons, createGroupLesson, assignLessonCoaches, renameGroupLesson, deleteGroupLesson,
+  getGroupLessons, createGroupLesson, assignLessonCoaches, renameGroupLesson, updateTierDetails, deleteGroupLesson,
   addTimeSlot, updateTimeSlot, deleteTimeSlot, setMainCoach, addAssistantCoach, removeLessonCoach,
   getRoster, addPlayerToLesson, removePlayerFromLesson, getPlayerFolder,
   getCourtOverrides, setCourtOverride, clearCourtOverride,
   GroupLesson, RosterPlayer, SlotDraft, CourtOverride, PlayerFolder,
 } from '../../lib/lessons';
 import { searchClubRosterPlayers, addPlayerToRoster, skipPrivateLessonCard, PlayerSearchResult } from '../../lib/club';
+import { getAttendanceForDate, statusFor, AttendanceStatus } from '../../lib/attendance';
+import { getPlayerPrivateLessonPlans, addSessionsToPlan, PrivateLessonPlan } from '../../lib/privateLessonPlans';
 import { NoClubPrompt } from '@/components/NoClubPrompt';
 import { SetupLockedPlaceholder } from '@/components/SetupLockedPlaceholder';
 import { SearchInput } from '@/components/SearchInput';
@@ -35,18 +37,29 @@ type ClubRosterEntry = { id: string; player_id: string; full_name: string; level
 type PrivateSlotDraft = { coachId: string | null; day: number; start: string; end: string; isRecurring: boolean; oneTimeDate: string | null; courtId: string | null };
 type PrivateWizardEntry = { coachId: string | null; start: string; end: string };
 
-const todayStr = () => new Date().toISOString().split('T')[0];
+const todayStr = () => localDateStr(new Date());
+
+const formatDurationMinutes = (minutes: number): string => {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h && m) return `${h}h ${m}m`;
+  if (h) return `${h}h`;
+  return `${m}m`;
+};
 
 const emptySlot = (): SlotDraft => ({ day: 1, start: '16:00', end: '17:00', isRecurring: true, oneTimeDate: null, courtIds: [] });
 const emptyPrivateSlot = (coachId: string | null = null): PrivateSlotDraft => ({ coachId, day: 1, start: '16:00', end: '17:00', isRecurring: true, oneTimeDate: null, courtId: null });
 
 const slotSummary = (slot: { day_of_week: number; start_time: string; end_time: string; is_recurring: boolean; one_time_date: string | null }) => {
   const time = `${formatTime12h(slot.start_time)}–${formatTime12h(slot.end_time)}`;
-  if (!slot.is_recurring && slot.one_time_date) return `${slot.one_time_date} · ${time} (one-time)`;
+  if (!slot.is_recurring && slot.one_time_date) return `${formatDateLong(slot.one_time_date)} · ${time} (one-time)`;
   return `${DAY_NAMES[slot.day_of_week].slice(0, 3)} · ${time}`;
 };
 
-export default function GroupLessonsScreen() {
+// embedded: true when rendered inside training.tsx's Manage tab rather than
+// as its own (club-admin) route — skips the redundant "Lessons" title since
+// the host screen already supplies its own header above this.
+export default function GroupLessonsScreen({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useLocalSearchParams<{ view?: string }>();
   const [hasClub, setHasClub] = useState(true);
   const [onboardingCompleted, setOnboardingCompleted] = useState(true);
@@ -62,6 +75,7 @@ export default function GroupLessonsScreen() {
 
   // ── Tournament Makeups tab ──
   const [makeupCredits, setMakeupCredits] = useState<MakeupCredit[]>([]);
+  const [makeupAtt, setMakeupAtt] = useState<Record<string, AttendanceStatus>>({});
   const [makeupFilter, setMakeupFilter] = useState<'all' | 'confirmed' | 'needs-approval' | 'needs-slot'>('all');
   const [tournamentBlocks, setTournamentBlocks] = useState<ClubTournamentBlock[]>([]);
   const [scheduleCredit, setScheduleCredit] = useState<MakeupCredit | null>(null);
@@ -81,6 +95,10 @@ export default function GroupLessonsScreen() {
   const [privatePlayer, setPrivatePlayer] = useState<ClubRosterEntry | null>(null);
   const [privateFolder, setPrivateFolder] = useState<PlayerFolder | null>(null);
   const [privateFolderLoading, setPrivateFolderLoading] = useState(false);
+  const [privatePlans, setPrivatePlans] = useState<PrivateLessonPlan[]>([]);
+  const [privateTopUpPlanId, setPrivateTopUpPlanId] = useState<string | null>(null);
+  const [privateTopUpAmount, setPrivateTopUpAmount] = useState('5');
+  const [savingPrivateTopUp, setSavingPrivateTopUp] = useState(false);
   const [schedulingOpen, setSchedulingOpen] = useState(false);
   const [schedSlots, setSchedSlots] = useState<PrivateSlotDraft[]>([]);
   const [schedDraft, setSchedDraft] = useState<PrivateSlotDraft>(emptyPrivateSlot());
@@ -112,6 +130,10 @@ export default function GroupLessonsScreen() {
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
   const [nameDraft, setNameDraft] = useState('');
   const [savingName, setSavingName] = useState(false);
+  const [capacityDraft, setCapacityDraft] = useState('');
+  const [ageGroupDraft, setAgeGroupDraft] = useState('');
+  const [savingCapacity, setSavingCapacity] = useState(false);
+  const [savingAgeGroup, setSavingAgeGroup] = useState(false);
   const [addingSlot, setAddingSlot] = useState(false);
   const [newSlot, setNewSlot] = useState<SlotDraft>(emptySlot());
   const [playerQuery, setPlayerQuery] = useState('');
@@ -131,6 +153,8 @@ export default function GroupLessonsScreen() {
   const [showWizard, setShowWizard] = useState(false);
   const [step, setStep] = useState(1);
   const [wName, setWName] = useState('');
+  const [wCapacity, setWCapacity] = useState('');
+  const [wAgeGroup, setWAgeGroup] = useState('');
   const [wMainCoachId, setWMainCoachId] = useState<string | null>(null);
   const [wAssistantIds, setWAssistantIds] = useState<string[]>([]);
   const [wDays, setWDays] = useState<number[]>([]);
@@ -158,7 +182,18 @@ export default function GroupLessonsScreen() {
 
     setCourts(await getClubCourts(club.clubId));
     setLessons(await getGroupLessons(club.clubId));
-    setMakeupCredits(await getClubMakeupCredits(club.clubId));
+    const credits = await getClubMakeupCredits(club.clubId);
+    setMakeupCredits(credits);
+    const scheduled = credits.filter((m) => m.status === 'scheduled' && m.scheduledDate);
+    const attEntries = await Promise.all(scheduled.map(async (m) => {
+      const map = await getAttendanceForDate({
+        scheduleAssignmentId: m.scheduleAssignmentId ?? undefined,
+        groupTierId: m.groupTierId ?? undefined,
+        lessonDate: m.scheduledDate!,
+      });
+      return [`${m.kind}_${m.id}`, statusFor(map, m.playerId)] as const;
+    }));
+    setMakeupAtt(Object.fromEntries(attEntries));
     setTournamentBlocks(await getClubTournamentBlocks(club.clubId));
 
     const { data: memberRows } = await supabase
@@ -188,6 +223,8 @@ export default function GroupLessonsScreen() {
   const openWizard = () => {
     setStep(1);
     setWName('');
+    setWCapacity('');
+    setWAgeGroup('');
     setWMainCoachId(coaches[0]?.id ?? null);
     setWAssistantIds([]);
     setWDays([]);
@@ -269,7 +306,12 @@ export default function GroupLessonsScreen() {
       oneTimeDate: null,
       courtIds: wTimes[day]?.courtIds ?? [],
     }));
-    const result = await createGroupLesson({ clubId, name: wName.trim(), mainCoachId: wMainCoachId, assistantCoachIds: wAssistantIds, slots });
+    const capacity = parseInt(wCapacity, 10);
+    const result = await createGroupLesson({
+      clubId, name: wName.trim(), mainCoachId: wMainCoachId, assistantCoachIds: wAssistantIds, slots,
+      capacity: Number.isFinite(capacity) && capacity > 0 ? capacity : null,
+      ageGroup: wAgeGroup.trim() || null,
+    });
     if (!result.ok) {
       setWSaving(false);
       showAlert('Error', result.message);
@@ -280,6 +322,12 @@ export default function GroupLessonsScreen() {
     }
     setWSaving(false);
     setShowWizard(false);
+    // Never blocks — capacity is advisory, so the enrollment above always
+    // goes through. This is just a heads-up if the initial roster already
+    // runs past what was set.
+    if (Number.isFinite(capacity) && capacity > 0 && wPlayers.length > capacity) {
+      showAlert('Over capacity', `${wPlayers.length} players were added, which is over this class's capacity of ${capacity}.`);
+    }
     load();
   };
 
@@ -296,11 +344,30 @@ export default function GroupLessonsScreen() {
     setPrivateWizardDays([]);
     setPrivateWizardEntries({});
     setPrivateFolderLoading(true);
-    setPrivateFolder(await getPlayerFolder(clubId, entry.player_id));
+    setPrivateTopUpPlanId(null);
+    const [folderData, plans] = await Promise.all([
+      getPlayerFolder(clubId, entry.player_id),
+      getPlayerPrivateLessonPlans(clubId, entry.player_id),
+    ]);
+    setPrivateFolder(folderData);
+    setPrivatePlans(plans);
     setPrivateFolderLoading(false);
   };
 
   const closePrivatePlayer = () => setPrivatePlayer(null);
+
+  const submitPrivateTopUp = async () => {
+    if (!privateTopUpPlanId) return;
+    const n = parseInt(privateTopUpAmount, 10);
+    if (!Number.isFinite(n) || n <= 0) { showAlert('Invalid amount', 'Enter how many sessions to add.'); return; }
+    setSavingPrivateTopUp(true);
+    const res = await addSessionsToPlan(privateTopUpPlanId, n);
+    setSavingPrivateTopUp(false);
+    if (!res.ok) { showAlert('Error', res.message ?? 'Could not add sessions.'); return; }
+    setPrivateTopUpPlanId(null);
+    setPrivateTopUpAmount('5');
+    if (clubId && privatePlayer) setPrivatePlans(await getPlayerPrivateLessonPlans(clubId, privatePlayer.player_id));
+  };
 
   const handleSkipPrivateLesson = (entry: ClubRosterEntry) => {
     showConfirm('Hide from Private tab?', `${firstName(entry.full_name)} won't show up here again. They stay on the roster and any group lessons — this only hides the private-lesson card.`, async () => {
@@ -476,6 +543,8 @@ export default function GroupLessonsScreen() {
   const openDetail = async (lesson: GroupLesson) => {
     setDetailId(lesson.id);
     setNameDraft(lesson.name);
+    setCapacityDraft(lesson.capacity != null ? String(lesson.capacity) : '');
+    setAgeGroupDraft(lesson.age_group ?? '');
     setRoster(await getRoster(lesson.id));
     setPlayerQuery('');
     setPlayerResults([]);
@@ -568,6 +637,23 @@ export default function GroupLessonsScreen() {
     load();
   };
 
+  const saveCapacityDraft = async () => {
+    if (!detail) return;
+    const parsed = parseInt(capacityDraft, 10);
+    setSavingCapacity(true);
+    await updateTierDetails(detail.id, { capacity: Number.isFinite(parsed) && parsed > 0 ? parsed : null });
+    setSavingCapacity(false);
+    load();
+  };
+
+  const saveAgeGroupDraft = async () => {
+    if (!detail) return;
+    setSavingAgeGroup(true);
+    await updateTierDetails(detail.id, { ageGroup: ageGroupDraft.trim() || null });
+    setSavingAgeGroup(false);
+    load();
+  };
+
   const handleDeleteLesson = () => {
     if (!detail) return;
     showConfirm('Delete this lesson?', `This removes "${detail.name}" — its time slots, roster, and coach assignments.`, async () => {
@@ -582,6 +668,17 @@ export default function GroupLessonsScreen() {
   const openScheduleMakeup = (credit: MakeupCredit) => {
     setScheduleCredit(credit);
     setScheduleDate(null); setScheduleStart(null); setScheduleEnd(null); setScheduleCourtId(null);
+  };
+
+  // Defaults the end time to the missed lesson's own length (a private
+  // lesson can be 1hr or 2hr depending on the club) the moment a start time
+  // is picked, so the club doesn't have to remember/compute it — still
+  // editable afterward via its own field if this makeup should run shorter.
+  const handleScheduleStartChange = (t: string) => {
+    setScheduleStart(t);
+    if (scheduleCredit?.originalDurationMinutes) {
+      setScheduleEnd(addMinutesToTime(t, scheduleCredit.originalDurationMinutes));
+    }
   };
 
   const submitScheduleMakeup = async () => {
@@ -707,7 +804,7 @@ export default function GroupLessonsScreen() {
   };
 
   const removeSlotOverride = (override: CourtOverride) => {
-    showConfirm('Remove this override?', `${override.date} goes back to the slot's usual courts.`, async () => {
+    showConfirm('Remove this override?', `${formatDateLong(override.date)} goes back to the slot's usual courts.`, async () => {
       await clearCourtOverride(override.id);
       if (overrideSlot) setSlotOverrides(await getCourtOverrides(overrideSlot.id));
     });
@@ -728,7 +825,13 @@ export default function GroupLessonsScreen() {
     if (!result.ok) { showAlert('Error', result.message ?? 'Could not add player.'); return; }
     setPlayerQuery('');
     setPlayerResults([]);
-    setRoster(await getRoster(detail.id));
+    const updatedRoster = await getRoster(detail.id);
+    setRoster(updatedRoster);
+    // Never blocks — capacity is advisory, so the enrollment above already
+    // went through regardless. Just a heads-up if it's now over.
+    if (detail.capacity != null && updatedRoster.length > detail.capacity) {
+      showAlert('Over capacity', `${updatedRoster.length} players enrolled, which is over this class's capacity of ${detail.capacity}.`);
+    }
     load();
   };
 
@@ -786,8 +889,8 @@ export default function GroupLessonsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Lessons</Text>
+      <View style={[styles.header, embedded && styles.headerEmbedded]}>
+        {embedded ? <View /> : <Text style={styles.title}>Lessons</Text>}
         {screenTab === 'group' && (
           <TouchableOpacity style={styles.addBtn} onPress={openWizard}>
             <Icon name="plus-circle-outline" size={30} color={Theme.limeAccentDark} />
@@ -835,7 +938,7 @@ export default function GroupLessonsScreen() {
                         lesson.slots.map((s) => (
                           <View key={s.id} style={styles.slotSummaryRow}>
                             <Text style={[styles.lessonMeta, styles.slotDayLabel]} maxFontSizeMultiplier={1.3}>
-                              {!s.is_recurring && s.one_time_date ? s.one_time_date : DAY_NAMES[s.day_of_week].slice(0, 3)}
+                              {!s.is_recurring && s.one_time_date ? formatDateLong(s.one_time_date) : DAY_NAMES[s.day_of_week].slice(0, 3)}
                             </Text>
                             <Text style={styles.lessonMeta} maxFontSizeMultiplier={1.3}>
                               {formatTime12h(s.start_time)}–{formatTime12h(s.end_time)}{!s.is_recurring && s.one_time_date ? ' (one-time)' : ''}
@@ -844,8 +947,11 @@ export default function GroupLessonsScreen() {
                         ))
                       )}
                       {lesson.coaches.length > 0 && <Text style={styles.lessonMeta} maxFontSizeMultiplier={1.3}>Coach: {lesson.coaches.map((c) => c.full_name).join(', ')}</Text>}
-                      <View style={styles.rosterChip}>
-                        <Text style={styles.rosterChipText}>{lesson.roster_count} player{lesson.roster_count === 1 ? '' : 's'}</Text>
+                      {lesson.age_group && <Text style={styles.lessonMeta} maxFontSizeMultiplier={1.3}>Age group: {lesson.age_group}</Text>}
+                      <View style={[styles.rosterChip, lesson.capacity != null && lesson.roster_count > lesson.capacity && styles.rosterChipOver]}>
+                        <Text style={[styles.rosterChipText, lesson.capacity != null && lesson.roster_count > lesson.capacity && styles.rosterChipTextOver]}>
+                          {lesson.capacity != null ? `${lesson.roster_count} / ${lesson.capacity} players` : `${lesson.roster_count} player${lesson.roster_count === 1 ? '' : 's'}`}
+                        </Text>
                       </View>
                     </View>
                     <Icon name="chevron-right" size={22} color={Theme.textMuted} />
@@ -891,7 +997,7 @@ export default function GroupLessonsScreen() {
                   <View key={tb.id} style={styles.awayRow}>
                     <Icon name="trophy-outline" size={16} color={Theme.textPrimary} />
                     <Text style={styles.awayRowText} maxFontSizeMultiplier={1.3}>
-                      {firstName(tb.playerName)} — {tb.startDate} to {tb.endDate}
+                      {firstName(tb.playerName)} — {formatDateLong(tb.startDate)} to {formatDateLong(tb.endDate)}
                     </Text>
                   </View>
                 ))}
@@ -943,16 +1049,26 @@ export default function GroupLessonsScreen() {
                   </View>
                   <Text style={styles.makeupLabel} maxFontSizeMultiplier={1.3}>{credit.label}</Text>
                   <View style={styles.makeupTimeRow}>
-                    <Text style={styles.makeupOldTime} maxFontSizeMultiplier={1.3}>Missed {credit.missedDate}</Text>
+                    <Text style={styles.makeupOldTime} maxFontSizeMultiplier={1.3}>
+                      Missed {formatDateLong(credit.missedDate)}{credit.originalDurationMinutes ? ` · ${formatDurationMinutes(credit.originalDurationMinutes)}` : ''}
+                    </Text>
                     <Icon name="chevron-right" size={16} color={Theme.textMuted} />
                     {credit.status === 'scheduled' || credit.status === 'pending_approval' || credit.status === 'proposed' ? (
                       <Text style={styles.makeupNewTime} maxFontSizeMultiplier={1.3}>
-                        {credit.scheduledDate} · {credit.scheduledStartTime ? formatTime12h(credit.scheduledStartTime) : ''}{credit.scheduledCourtName ? ` · ${credit.scheduledCourtName}` : ''}
+                        {formatDateLong(credit.scheduledDate!)} · {credit.scheduledStartTime ? formatTime12h(credit.scheduledStartTime) : ''}{credit.scheduledEndTime ? `–${formatTime12h(credit.scheduledEndTime)}` : ''}{credit.scheduledCourtName ? ` · ${credit.scheduledCourtName}` : ''}
                       </Text>
                     ) : (
                       <Text style={styles.makeupNotPicked} maxFontSizeMultiplier={1.3}>Not yet picked</Text>
                     )}
                   </View>
+                  {credit.status === 'scheduled' && (() => {
+                    const att = statusFor(makeupAtt, `${credit.kind}_${credit.id}`);
+                    return (
+                      <Text style={[styles.makeupOldTime, { color: att.attending ? Theme.eyebrowGreen : '#c0392b', marginTop: 2 }]} maxFontSizeMultiplier={1.3}>
+                        {att.attending ? 'Attending' : 'Not attending'}
+                      </Text>
+                    );
+                  })()}
                   <View style={styles.makeupCardBottom}>
                     {credit.status === 'scheduled' && (
                       <View style={styles.notifiedTag}>
@@ -1017,6 +1133,12 @@ export default function GroupLessonsScreen() {
                 <>
                   <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Name</Text>
                   <TextInput style={styles.formInput} value={wName} onChangeText={setWName} placeholder="e.g. High Performance 1" placeholderTextColor={Theme.textSecondary} />
+
+                  <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Capacity — optional</Text>
+                  <TextInput style={styles.formInput} value={wCapacity} onChangeText={setWCapacity} placeholder="e.g. 12" placeholderTextColor={Theme.textSecondary} keyboardType="number-pad" />
+
+                  <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Age group — optional</Text>
+                  <TextInput style={styles.formInput} value={wAgeGroup} onChangeText={setWAgeGroup} placeholder="e.g. U12, Adult" placeholderTextColor={Theme.textSecondary} />
 
                   <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Main coach</Text>
                   <View style={styles.pillWrapRow}>
@@ -1115,6 +1237,8 @@ export default function GroupLessonsScreen() {
                   <Text style={styles.hint} maxFontSizeMultiplier={1.3}>Nothing here can be edited on this screen — go back if something needs to change.</Text>
                   <View style={styles.reviewCard}>
                     <Text style={styles.reviewName}>{wName}</Text>
+                    {wAgeGroup.trim() && <Text style={styles.reviewLine} maxFontSizeMultiplier={1.3}>Age group: {wAgeGroup.trim()}</Text>}
+                    {wCapacity.trim() && <Text style={styles.reviewLine} maxFontSizeMultiplier={1.3}>Capacity: {wCapacity.trim()}</Text>}
                     <Text style={styles.reviewLine} maxFontSizeMultiplier={1.3}>Coach: {coaches.find((c) => c.id === wMainCoachId)?.full_name}</Text>
                     {wAssistantIds.length > 0 && <Text style={styles.reviewLine} maxFontSizeMultiplier={1.3}>Assistants: {wAssistantIds.map((id) => coaches.find((c) => c.id === id)?.full_name).join(', ')}</Text>}
                     {wDays.map((day) => (
@@ -1299,6 +1423,27 @@ export default function GroupLessonsScreen() {
                   </TouchableOpacity>
                 </View>
 
+                <Text style={[styles.formLabel, { marginTop: 16 }]} maxFontSizeMultiplier={1.3}>Capacity — optional</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TextInput style={[styles.formInput, { flex: 1 }]} value={capacityDraft} onChangeText={setCapacityDraft} placeholder="e.g. 12" placeholderTextColor={Theme.textSecondary} keyboardType="number-pad" />
+                  <TouchableOpacity onPress={saveCapacityDraft} disabled={savingCapacity}>
+                    <Icon name="check-circle-outline" size={24} color={Theme.eyebrowGreen} />
+                  </TouchableOpacity>
+                </View>
+                {detail.capacity != null && detail.roster_count > detail.capacity && (
+                  <Text style={[styles.hint, styles.overCapacityHint]} maxFontSizeMultiplier={1.3}>
+                    {detail.roster_count} enrolled — over this class's capacity of {detail.capacity}.
+                  </Text>
+                )}
+
+                <Text style={[styles.formLabel, { marginTop: 16 }]} maxFontSizeMultiplier={1.3}>Age group — optional</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TextInput style={[styles.formInput, { flex: 1 }]} value={ageGroupDraft} onChangeText={setAgeGroupDraft} placeholder="e.g. U12, Adult" placeholderTextColor={Theme.textSecondary} />
+                  <TouchableOpacity onPress={saveAgeGroupDraft} disabled={savingAgeGroup}>
+                    <Icon name="check-circle-outline" size={24} color={Theme.eyebrowGreen} />
+                  </TouchableOpacity>
+                </View>
+
                 <Text style={[styles.formLabel, { marginTop: 16 }]} maxFontSizeMultiplier={1.3}>Coaches</Text>
                 {detail.coaches.map((c) => (
                   <View key={c.id} style={styles.searchResultRow}>
@@ -1363,7 +1508,7 @@ export default function GroupLessonsScreen() {
                         </View>
                       </>
                     ) : (
-                      <MiniDatePicker value={newSlot.oneTimeDate} onChange={(d) => setNewSlot((s) => ({ ...s, oneTimeDate: d }))} minDate={new Date().toISOString().split('T')[0]} />
+                      <MiniDatePicker value={newSlot.oneTimeDate} onChange={(d) => setNewSlot((s) => ({ ...s, oneTimeDate: d }))} minDate={localDateStr(new Date())} />
                     )}
                     <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Start</Text>
                     <TimePicker value={newSlot.start} onChange={(t) => setNewSlot((s) => ({ ...s, start: t }))} />
@@ -1447,7 +1592,7 @@ export default function GroupLessonsScreen() {
                     <Text style={[styles.formLabel, { marginTop: 12 }]} maxFontSizeMultiplier={1.3}>Existing overrides</Text>
                     {slotOverrides.map((o) => (
                       <View key={o.id} style={styles.searchResultRow}>
-                        <Text style={styles.playerName}>{o.date}{o.courtNames.length ? ` · ${o.courtNames.join(', ')}` : ' · no courts'}</Text>
+                        <Text style={styles.playerName}>{formatDateLong(o.date)}{o.courtNames.length ? ` · ${o.courtNames.join(', ')}` : ' · no courts'}</Text>
                         <TouchableOpacity onPress={() => removeSlotOverride(o)}>
                           <Icon name="close-circle-outline" size={20} color="#FF6B6B" />
                         </TouchableOpacity>
@@ -1457,7 +1602,7 @@ export default function GroupLessonsScreen() {
                 )}
 
                 <Text style={[styles.formLabel, { marginTop: 16 }]} maxFontSizeMultiplier={1.3}>Date</Text>
-                <MiniDatePicker value={overrideDate} onChange={setOverrideDate} minDate={new Date().toISOString().split('T')[0]} />
+                <MiniDatePicker value={overrideDate} onChange={setOverrideDate} minDate={localDateStr(new Date())} />
 
                 {courts.length > 0 && (
                   <>
@@ -1496,7 +1641,50 @@ export default function GroupLessonsScreen() {
                 <Text style={styles.muted} maxFontSizeMultiplier={1.3}>Loading...</Text>
               ) : (
                 <>
-                  <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Group lessons</Text>
+                  {privatePlans.length > 0 && (
+                    <>
+                      <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Private lesson sessions</Text>
+                      {privatePlans.map((p) => (
+                        <View key={p.id} style={styles.planRow}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.playerName}>{p.coachName}{p.status === 'exhausted' ? ' · Exhausted' : ''}</Text>
+                            <Text style={styles.playerEmail} maxFontSizeMultiplier={1.3}>
+                              {p.sessionsUsed} / {p.totalSessions} used · {Math.max(0, p.totalSessions - p.sessionsUsed)} remaining
+                            </Text>
+                          </View>
+                          {privateTopUpPlanId === p.id ? (
+                            <View style={styles.topUpRow}>
+                              <TextInput style={styles.topUpInput} value={privateTopUpAmount} onChangeText={setPrivateTopUpAmount} keyboardType="number-pad" maxLength={3} />
+                              <TouchableOpacity onPress={submitPrivateTopUp} disabled={savingPrivateTopUp}>
+                                <Icon name="check-circle-outline" size={22} color={Theme.eyebrowGreen} />
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => setPrivateTopUpPlanId(null)}>
+                                <Icon name="close-circle-outline" size={22} color={Theme.textMuted} />
+                              </TouchableOpacity>
+                            </View>
+                          ) : (
+                            <TouchableOpacity onPress={() => { setPrivateTopUpPlanId(p.id); setPrivateTopUpAmount('5'); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                              <Icon name="plus-circle-outline" size={22} color={Theme.eyebrowGreen} />
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      ))}
+                    </>
+                  )}
+
+                  <Text style={[styles.formLabel, { marginTop: privatePlans.length > 0 ? 16 : 0 }]} maxFontSizeMultiplier={1.3}>Private lesson schedule</Text>
+                  {privateFolder && privateFolder.privateLessons.length > 0 ? (
+                    privateFolder.privateLessons.map((l) => (
+                      <View key={l.id} style={styles.searchResultRow}>
+                        <Text style={styles.playerName}>{DAY_NAMES[l.day_of_week].slice(0, 3)} · {formatTime12h(l.start_time)}–{formatTime12h(l.end_time)}</Text>
+                        <Text style={styles.playerEmail} maxFontSizeMultiplier={1.3}>{l.coach_name}</Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.emptyText} maxFontSizeMultiplier={1.3}>No private lessons yet.</Text>
+                  )}
+
+                  <Text style={[styles.formLabel, { marginTop: 16 }]} maxFontSizeMultiplier={1.3}>Group lessons</Text>
                   {privateFolder && privateFolder.groupLessons.length > 0 ? (
                     privateFolder.groupLessons.map((g) => (
                       <View key={g.id} style={styles.searchResultRow}>
@@ -1653,7 +1841,7 @@ export default function GroupLessonsScreen() {
                             {schedSlots.map((s, i) => (
                               <View key={i} style={styles.slotSummaryCard}>
                                 <View style={{ flex: 1 }}>
-                                  <Text style={styles.slotSummaryTitle}>{s.isRecurring ? DAY_NAMES[s.day].slice(0, 3) : s.oneTimeDate} · {formatTime12h(s.start)}–{formatTime12h(s.end)}</Text>
+                                  <Text style={styles.slotSummaryTitle}>{s.isRecurring ? DAY_NAMES[s.day].slice(0, 3) : formatDateLong(s.oneTimeDate!)} · {formatTime12h(s.start)}–{formatTime12h(s.end)}</Text>
                                   <Text style={styles.slotSummarySub} maxFontSizeMultiplier={1.3}>{coaches.find((c) => c.id === s.coachId)?.full_name ?? 'Coach'}{s.courtId ? ` · ${courts.find((c) => c.id === s.courtId)?.name}` : ''}</Text>
                                 </View>
                                 <TouchableOpacity onPress={() => removeSchedSlot(i)}>
@@ -1674,10 +1862,27 @@ export default function GroupLessonsScreen() {
                         </TouchableOpacity>
                       </View>
                     )
+                  ) : isFirstPrivateLesson ? (
+                    // A brand-new private-lesson plan always goes through the
+                    // one unified wizard (session count, days, coach + real
+                    // open availability per day, recurring) — not a second,
+                    // simpler system living here too. "Add another time slot"
+                    // below (for a player who already has a plan) stays as
+                    // its own lighter flow since it isn't creating a new plan.
+                    <TouchableOpacity
+                      style={styles.addRowBtn}
+                      onPress={() => clubId && privatePlayer && router.push({
+                        pathname: '/(club-admin)/enroll-private',
+                        params: { clubId, playerId: privatePlayer.player_id, playerName: privatePlayer.full_name },
+                      } as any)}
+                    >
+                      <Icon name="plus-circle-outline" size={20} color={Theme.eyebrowGreen} />
+                      <Text style={styles.addRowText}>Schedule Private Lesson</Text>
+                    </TouchableOpacity>
                   ) : (
                     <TouchableOpacity style={styles.addRowBtn} onPress={openScheduling}>
                       <Icon name="plus-circle-outline" size={20} color={Theme.eyebrowGreen} />
-                      <Text style={styles.addRowText}>Schedule Private Lesson</Text>
+                      <Text style={styles.addRowText}>Add Another Time Slot</Text>
                     </TouchableOpacity>
                   )}
                 </>
@@ -1699,10 +1904,15 @@ export default function GroupLessonsScreen() {
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.hint} maxFontSizeMultiplier={1.3}>{firstName(scheduleCredit?.playerName)} — {scheduleCredit?.label}</Text>
+              {!!scheduleCredit?.originalDurationMinutes && (
+                <Text style={styles.hint} maxFontSizeMultiplier={1.3}>
+                  Original lesson was {formatDurationMinutes(scheduleCredit.originalDurationMinutes)} — end time defaults to match.
+                </Text>
+              )}
               <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Date</Text>
               <MiniDatePicker value={scheduleDate} onChange={setScheduleDate} minDate={todayStr()} />
               <Text style={[styles.formLabel, { marginTop: 12 }]} maxFontSizeMultiplier={1.3}>Start time</Text>
-              <TimePicker value={scheduleStart} onChange={setScheduleStart} />
+              <TimePicker value={scheduleStart} onChange={handleScheduleStartChange} />
               <Text style={[styles.formLabel, { marginTop: 12 }]} maxFontSizeMultiplier={1.3}>End time</Text>
               <TimePicker value={scheduleEnd} onChange={setScheduleEnd} />
               {courts.length > 0 && (
@@ -1752,11 +1962,12 @@ export default function GroupLessonsScreen() {
                       <View key={key} style={styles.suggestSlotRow}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.makeupNewTime} maxFontSizeMultiplier={1.3}>
-                            {s.date} · {formatTime12h(s.startTime)}–{formatTime12h(s.endTime)}
+                            {formatDateLong(s.date)} · {formatTime12h(s.startTime)}–{formatTime12h(s.endTime)}
                           </Text>
                           <Text style={styles.lessonMeta} maxFontSizeMultiplier={1.3}>
                             {s.courtName ? `${s.courtName} · ` : ''}{s.coachName}{s.isBestFit ? ' · Best fit' : ''}
                           </Text>
+                          <Text style={styles.lessonMeta} maxFontSizeMultiplier={1.3}>{s.reason}</Text>
                         </View>
                         <TouchableOpacity
                           style={[styles.makeupActionBtn, sendingSlot === key && { opacity: 0.6 }]}
@@ -1780,7 +1991,8 @@ export default function GroupLessonsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Theme.background },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingTop: 60, paddingBottom: 16 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingLeft: 60, paddingRight: 24, paddingTop: 60, paddingBottom: 16 },
+  headerEmbedded: { paddingLeft: 24, paddingTop: 8, paddingBottom: 8 },
   title: { fontFamily: Fonts.serifMedium, fontSize: 30, color: Theme.textPrimary },
   addBtn: { padding: 4 },
   tabRow: { flexDirection: 'row', gap: 14, paddingHorizontal: 24, paddingBottom: 20 },
@@ -1795,6 +2007,9 @@ const styles = StyleSheet.create({
   lessonMeta: { fontFamily: Fonts.sansRegular, fontSize: 15, color: Theme.textSecondary, marginTop: 3 },
   rosterChip: { alignSelf: 'flex-start', backgroundColor: Theme.cardTinted, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, marginTop: 10 },
   rosterChipText: { fontFamily: Fonts.sansSemiBold, fontSize: 14, color: Theme.eyebrowGreen },
+  rosterChipOver: { backgroundColor: '#FBDAB3' },
+  rosterChipTextOver: { color: '#854F0B' },
+  overCapacityHint: { color: '#854F0B', marginTop: -8 },
   makeupCard: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 16, marginBottom: 14, gap: 6 },
   makeupCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   makeupPlayerName: { flex: 1, fontFamily: Fonts.sansSemiBold, fontSize: 16, color: Theme.textPrimary },
@@ -1863,6 +2078,8 @@ const styles = StyleSheet.create({
   slotSummaryCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: Theme.cardTinted, borderRadius: 12, padding: 14, marginBottom: 10, gap: 10 },
   slotSummaryTitle: { fontFamily: Fonts.sansSemiBold, fontSize: 15, color: Theme.textPrimary },
   slotSummarySub: { fontFamily: Fonts.sansRegular, fontSize: 13, color: Theme.textSecondary, marginTop: 3 },
+  slotSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 },
+  slotDayLabel: { fontFamily: Fonts.sansSemiBold, color: Theme.textPrimary },
   slotForm: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 14, marginTop: 8, marginBottom: 10, borderWidth: 1, borderColor: Theme.divider },
   addRowBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, marginBottom: 16, alignSelf: 'flex-start' },
   addRowText: { fontFamily: Fonts.sansSemiBold, fontSize: 15, color: Theme.eyebrowGreen },
@@ -1876,6 +2093,12 @@ const styles = StyleSheet.create({
   playerName: { fontFamily: Fonts.sansSemiBold, fontSize: 16, color: Theme.textPrimary },
   playerEmail: { fontFamily: Fonts.sansRegular, fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
   smallLink: { fontFamily: Fonts.sansSemiBold, fontSize: 13, color: Theme.eyebrowGreen },
+  planRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderTopColor: Theme.divider, gap: 10 },
+  topUpRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  topUpInput: {
+    backgroundColor: Theme.background, borderRadius: 8, borderWidth: 1, borderColor: Theme.divider,
+    width: 44, height: 36, textAlign: 'center', fontFamily: Fonts.sansSemiBold, fontSize: 14, color: Theme.textPrimary,
+  },
   reviewCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 16, marginBottom: 10, gap: 6 },
   reviewName: { fontFamily: Fonts.serifMedium, fontSize: 18, color: Theme.textPrimary, marginBottom: 4 },
   reviewLine: { fontFamily: Fonts.sansRegular, fontSize: 14, color: Theme.textSecondary },

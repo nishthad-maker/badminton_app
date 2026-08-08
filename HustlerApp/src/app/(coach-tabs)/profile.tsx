@@ -8,6 +8,8 @@ import { supabase } from '../../lib/supabase';
 import { Theme, Fonts } from '@/constants/theme';
 import { Icon } from '@/components/icons/Icon';
 import { getMyClubs, getActiveClubId, getPendingCoachRequest, requestJoinClubAsCoach, setActiveClubId, MyClub, PendingClubRequest } from '../../lib/club';
+import { setPreferredViewMode } from '../../lib/viewMode';
+import { CoachTimeOffModal } from '@/components/CoachTimeOffModal';
 
 const showConfirm = (title: string, message: string, onConfirm: () => void) => {
   if (typeof window !== 'undefined') {
@@ -35,6 +37,7 @@ export default function CoachProfileScreen() {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [joiningClub, setJoiningClub] = useState(false);
+  const [showTimeOff, setShowTimeOff] = useState(false);
 
   useFocusEffect(useCallback(() => { loadProfile(); }, []));
 
@@ -76,6 +79,10 @@ export default function CoachProfileScreen() {
   const enterClub = async (club: MyClub) => {
     await setActiveClubId(club.clubId);
     setActiveClubIdState(club.clubId);
+    // Only meaningful for a dual-role account (owner who also coaches) —
+    // keeps the next login/deep-link landing on whichever view was used
+    // last instead of always defaulting back to Coach (see roleRouting.ts).
+    if (club.role === 'owner') await setPreferredViewMode('club');
     goTo('/(club-admin)/dashboard');
   };
 
@@ -258,6 +265,11 @@ export default function CoachProfileScreen() {
                   ))}
                 </ScrollView>
               )}
+              <TouchableOpacity style={styles.option} onPress={() => setShowTimeOff(true)}>
+                <Icon name="calendar-blank-outline" size={24} color={Theme.eyebrowGreen} />
+                <Text style={styles.optionText}>My Time Off / Vacation</Text>
+                <Icon name="chevron-right" size={24} color={Theme.textMuted} />
+              </TouchableOpacity>
               <View style={styles.divider} />
             </>
           ) : pendingClub ? (
@@ -306,7 +318,7 @@ export default function CoachProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.appVersion}>Hustler · Built for badminton coaches</Text>
+        <Text style={styles.appVersion}>smasho · Every Shuttle Counts</Text>
 
       </ScrollView>
 
@@ -336,6 +348,15 @@ export default function CoachProfileScreen() {
           </View>
         </View>
       </Modal>
+
+      {showTimeOff && activeClubId && user && (
+        <CoachTimeOffModal
+          clubId={activeClubId}
+          coach={{ id: user.id, full_name: profile?.full_name ?? 'You' }}
+          visible={showTimeOff}
+          onClose={() => setShowTimeOff(false)}
+        />
+      )}
     </View>
   );
 }

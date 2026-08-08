@@ -8,15 +8,19 @@ import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { cancelTournamentReminder, scheduleTournamentReminder } from '@/lib/tournamentReminders';
 import { MiniDatePicker } from '@/components/MiniDatePicker';
-import { getPlayerClubMembership, PlayerClubMembership } from '@/lib/club';
+import { getPlayerClubMembership, getClubHours, PlayerClubMembership } from '@/lib/club';
 import {
   getMyLessons, getMyGroupLessons, getGroupLessonRoster, markTournamentDates, ChildLesson, ChildGroupLesson,
   getCoachesForScheduling, getCoachAvailability, isSlotOpen, requestReschedule, ClubCoach,
   joinCoachWaitlist, getMyWaitlist, leaveCoachWaitlist, MyWaitlistEntry,
+  getCourtAvailability, isAnyCourtOpen, ClubCourtAvailability,
+  getMyPayments, submitPlayerPaymentReport, ChildPayment,
 } from '@/lib/playerClub';
+import { getLinkedParents } from '@/lib/parentLink';
 import { RosterPlayer } from '@/lib/lessons';
-import { DAY_NAMES, formatTime12h, firstName } from '@/lib/scheduling';
+import { DAY_NAMES, formatTime12h, formatDateLong, firstName } from '@/lib/scheduling';
 import { getAttendanceForDate, setAttendance, statusFor, nextOccurrenceDate, AttendanceStatus } from '@/lib/attendance';
+import { LESSON_DOT_COLOR } from '@/lib/colors';
 import { maybeRemindUpcoming } from '@/lib/lessonReminders';
 import { getPlayerMakeupCredits, getMakeupSuggestions, requestMakeupSlot, confirmProposedMakeupSlot, declineProposedMakeupSlot, MakeupCredit, MakeupSuggestion } from '@/lib/makeup';
 import { JournalSheet, localDateStr } from '@/components/JournalSheet';
@@ -45,15 +49,18 @@ const EVENT_TYPES = [
 ];
 
 const DEADLINE_COLOR = '#F39C12';
+// Matches the vivid strength/footwork blue+green already used in the parent
+// dashboard's Progress > Category Breakdown chart, so the same lesson-type
+// colors read consistently across both the player's and parent's calendars.
 
 const addDays = (dateStr: string, days: number) => {
   const d = new Date(`${dateStr}T00:00:00`);
   d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
+  return localDateStr(d);
 };
 
 const formatShortDate = (dateStr: string) =>
-  new Date(`${dateStr}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  new Date(`${dateStr}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
 // Relative pill options for the (optional) multi-day end date — the
 // registration deadline uses an exact calendar date via MiniDatePicker
@@ -74,6 +81,10 @@ const MONTH_NAMES = [
 ];
 
 const DAY_HEADERS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const PAYMENT_METHODS: { key: 'cash' | 'card' | 'e_transfer' | 'other'; label: string }[] = [
+  { key: 'cash', label: 'Cash' }, { key: 'card', label: 'Card' }, { key: 'e_transfer', label: 'E-transfer' }, { key: 'other', label: 'Other' },
+];
 
 const showAlert = (title: string, message: string) => {
   if (typeof window !== 'undefined') {
@@ -103,7 +114,7 @@ export default function CalendarScreen() {
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [selectedDate, setSelectedDate] = useState<string>(
-    today.toISOString().split('T')[0]
+    localDateStr(today)
   );
 
   const [showModal, setShowModal] = useState(false);
@@ -127,19 +138,26 @@ export default function CalendarScreen() {
   // week via the generate_tournament_exceptions() DB trigger) don't stay two
   // disconnected actions the player has to remember to do separately.
   const [showTournamentSyncModal, setShowTournamentSyncModal] = useState(false);
-  const [tournamentSyncRange, setTournamentSyncRange] = useState<{ start: string; end: string } | null>(null);
+  const [tournamentSyncRange, setTournamentSyncRange] = useState<{ name: string; start: string; end: string } | null>(null);
   const [syncingTournament, setSyncingTournament] = useState(false);
 
   // Club schedule (private/group lessons + makeup credits) — moved here from
   // the Train tab so a player's actual schedule lives alongside their
   // personal calendar, where they'd look for "when is my next thing."
   const [myId, setMyId] = useState<string | null>(null);
+  // A linked parent owns scheduling (reschedule/coach-times/makeup-slot
+  // picking) to avoid both sides submitting conflicting requests for the
+  // same lesson — payment self-report stays available either way (no
+  // conflict risk there). See getLinkedParents in lib/parentLink.ts.
+  const [hasLinkedParent, setHasLinkedParent] = useState(false);
   const [membership, setMembership] = useState<PlayerClubMembership | null>(null);
+  const [clubHours, setClubHours] = useState<{ openTime: string | null; closeTime: string | null }>({ openTime: null, closeTime: null });
   const [myLessons, setMyLessons] = useState<ChildLesson[]>([]);
   const [myGroupLessons, setMyGroupLessons] = useState<ChildGroupLesson[]>([]);
   const [privateAtt, setPrivateAtt] = useState<Record<string, AttendanceStatus>>({});
   const [groupAtt, setGroupAtt] = useState<Record<string, AttendanceStatus>>({});
   const [makeupCredits, setMakeupCredits] = useState<MakeupCredit[]>([]);
+  const [makeupAtt, setMakeupAtt] = useState<Record<string, AttendanceStatus>>({});
   const [rosterLesson, setRosterLesson] = useState<ChildGroupLesson | null>(null);
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
   const [postLessonPrompt, setPostLessonPrompt] = useState(false);
@@ -159,10 +177,16 @@ export default function CalendarScreen() {
   // bouncing Home -> Profile -> Calendar. Tournament dates reuses the
   // existing add-event flow (openAddModal below) rather than a second
   // calendar-range picker stacked on top of the calendar screen itself.
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [payments, setPayments] = useState<ChildPayment[]>([]);
+  const [paymentNote, setPaymentNote] = useState('');
+  const [payMethod, setPayMethod] = useState<'cash' | 'card' | 'e_transfer' | 'other'>('cash');
+  const [savingPayment, setSavingPayment] = useState(false);
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [rescheduleLesson, setRescheduleLesson] = useState<ChildLesson | null>(null);
   const [rescheduleDay, setRescheduleDay] = useState<number | null>(null);
   const [rescheduleBusy, setRescheduleBusy] = useState<{ start: string; end: string }[]>([]);
+  const [rescheduleCourts, setRescheduleCourts] = useState<ClubCourtAvailability>({ courtIds: [], busyByCourtId: {} });
   const [loadingRescheduleBusy, setLoadingRescheduleBusy] = useState(false);
   const [submittingReschedule, setSubmittingReschedule] = useState<string | null>(null);
 
@@ -174,6 +198,8 @@ export default function CalendarScreen() {
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [myWaitlist, setMyWaitlist] = useState<MyWaitlistEntry[]>([]);
   const [joiningWaitlist, setJoiningWaitlist] = useState(false);
+  const [waitlistNoteModal, setWaitlistNoteModal] = useState(false);
+  const [waitlistNote, setWaitlistNote] = useState('');
 
   useEffect(() => {
     loadUser();
@@ -189,11 +215,13 @@ export default function CalendarScreen() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) return;
     setMyId(session.user.id);
+    getLinkedParents(session.user.id).then((parents) => setHasLinkedParent(parents.length > 0));
     const active = await getPlayerClubMembership(session.user.id);
     setMembership(active);
+    setClubHours(active ? await getClubHours(active.clubId) : { openTime: null, closeTime: null });
 
     if (!active) {
-      setMyLessons([]); setMyGroupLessons([]); setPrivateAtt({}); setGroupAtt({}); setMakeupCredits([]);
+      setMyLessons([]); setMyGroupLessons([]); setPrivateAtt({}); setGroupAtt({}); setMakeupCredits([]); setMakeupAtt({});
       return;
     }
 
@@ -216,7 +244,18 @@ export default function CalendarScreen() {
     ]);
     setPrivateAtt(Object.fromEntries(privEntries));
     setGroupAtt(Object.fromEntries(groupEntries));
-    setMakeupCredits(await getPlayerMakeupCredits(session.user.id));
+    const credits = await getPlayerMakeupCredits(session.user.id);
+    setMakeupCredits(credits);
+    const scheduled = credits.filter((m) => m.status === 'scheduled' && m.scheduledDate);
+    const makeupEntries = await Promise.all(scheduled.map(async (m) => {
+      const map = await getAttendanceForDate({
+        scheduleAssignmentId: m.scheduleAssignmentId ?? undefined,
+        groupTierId: m.groupTierId ?? undefined,
+        lessonDate: m.scheduledDate!,
+      });
+      return [`${m.kind}_${m.id}`, statusFor(map, session.user.id)] as const;
+    }));
+    setMakeupAtt(Object.fromEntries(makeupEntries));
 
     maybeRemindUpcoming(session.user.id, [
       ...lessons.map((l) => ({ id: l.id, day_of_week: l.day_of_week, start_time: l.start_time, label: `Private lesson with ${l.coach_name}` })),
@@ -258,7 +297,7 @@ export default function CalendarScreen() {
       setPrivateAtt((prev) => ({ ...prev, [l.id]: { attending: nextVal, coachOverride: false, toggledBy: 'player', exists: true } }));
     };
     if (att.attending) {
-      showConfirm('Mark not attending?', `Confirm you won't be at this lesson on ${date}.`, apply);
+      showConfirm('Mark not attending?', `Confirm you won't be at this lesson on ${formatDateLong(date)}.`, apply);
     } else {
       apply();
     }
@@ -276,7 +315,34 @@ export default function CalendarScreen() {
       setGroupAtt((prev) => ({ ...prev, [g.id]: { attending: nextVal, coachOverride: false, toggledBy: 'player', exists: true } }));
     };
     if (att.attending) {
-      showConfirm('Mark not attending?', `Confirm you won't be at ${g.name} on ${date}.`, apply);
+      showConfirm('Mark not attending?', `Confirm you won't be at ${g.name} on ${formatDateLong(date)}.`, apply);
+    } else {
+      apply();
+    }
+  };
+
+  // Same table/RPC as a regular lesson, just keyed by the makeup's own
+  // one-off scheduledDate — marking not-attending sends this specific
+  // credit back to 'owed' (20260803230000_makeup_attendance_toggle.sql)
+  // rather than leaving a stale "confirmed" entry around.
+  const toggleMakeupAttendance = (m: MakeupCredit) => {
+    if (!myId || !m.scheduledDate) return;
+    const key = `${m.kind}_${m.id}`;
+    const att = statusFor(makeupAtt, key);
+    if (att.coachOverride) { showAlert('Locked', "This makeup's attendance was set by the coach — contact them to change it."); return; }
+    const nextVal = !att.attending;
+    const apply = async () => {
+      const res = await setAttendance({
+        scheduleAssignmentId: m.scheduleAssignmentId ?? undefined,
+        groupTierId: m.groupTierId ?? undefined,
+        playerId: myId, lessonDate: m.scheduledDate!, attending: nextVal, actorRole: 'player',
+      });
+      if (!res.ok) { showAlert('Could not update attendance', res.message || ''); return; }
+      setMakeupAtt((prev) => ({ ...prev, [key]: { attending: nextVal, coachOverride: false, toggledBy: 'player', exists: true } }));
+      if (!nextVal) loadClubSchedule();
+    };
+    if (att.attending) {
+      showConfirm('Mark not attending?', `Confirm you won't be at this makeup on ${formatDateLong(m.scheduledDate!)}.`, apply);
     } else {
       apply();
     }
@@ -306,13 +372,13 @@ export default function CalendarScreen() {
     setRequestingSlot(null);
     if (!res.ok) { showAlert('Error', res.message || 'Could not request that slot.'); return; }
     setMakeupSlotCredit(null);
-    showAlert('Sent to your coach', `Your requested time — ${suggestion.date} at ${formatTime12h(suggestion.startTime)} with ${suggestion.coachName} — is waiting on approval.`);
+    showAlert('Sent to your coach', `Your requested time — ${formatDateLong(suggestion.date)} at ${formatTime12h(suggestion.startTime)} with ${suggestion.coachName} — is waiting on approval.`);
     loadClubSchedule();
   };
 
   const confirmProposedSlot = (credit: MakeupCredit) => {
     if (!credit.scheduledDate || !credit.scheduledStartTime) return;
-    showConfirm('Confirm this time?', `${credit.label} — ${credit.scheduledDate} at ${formatTime12h(credit.scheduledStartTime)}.`, async () => {
+    showConfirm('Confirm this time?', `${credit.label} — ${formatDateLong(credit.scheduledDate)} at ${formatTime12h(credit.scheduledStartTime)}.`, async () => {
       const res = await confirmProposedMakeupSlot(credit);
       if (!res.ok) { showAlert('Error', 'Could not confirm this makeup time.'); return; }
       loadClubSchedule();
@@ -325,6 +391,27 @@ export default function CalendarScreen() {
       if (!res.ok) { showAlert('Error', 'Could not decline this makeup time.'); return; }
       loadClubSchedule();
     });
+  };
+
+  // ── Report a Payment — always available, regardless of a linked parent
+  // (unlike scheduling, two reports of the same payment isn't a conflict —
+  // the club just sees it twice and reviews either).
+  const openPayModal = async () => {
+    if (!membership) return;
+    setPaymentNote('');
+    setPayMethod('cash');
+    setShowPayModal(true);
+    if (myId) setPayments(await getMyPayments(myId, membership.clubId));
+  };
+
+  const submitPayment = async () => {
+    if (!myId || !membership || !paymentNote.trim()) { showAlert('Missing info', 'Write what this payment is for.'); return; }
+    setSavingPayment(true);
+    const result = await submitPlayerPaymentReport({ clubId: membership.clubId, playerId: myId, note: paymentNote, method: payMethod });
+    setSavingPayment(false);
+    if (!result.ok) { showAlert('Error', result.message ?? 'Could not submit.'); return; }
+    setShowPayModal(false);
+    showAlert('Sent', 'Your club will review this payment report.');
   };
 
   // ── Manage Schedule: reschedule an existing private lesson -----------------
@@ -351,7 +438,12 @@ export default function CalendarScreen() {
     if (!rescheduleLesson || !membership) return;
     setRescheduleDay(dow);
     setLoadingRescheduleBusy(true);
-    setRescheduleBusy(await getCoachAvailability(membership.clubId, rescheduleLesson.coach_id, dow));
+    const [busy, courts] = await Promise.all([
+      getCoachAvailability(membership.clubId, rescheduleLesson.coach_id, dow),
+      getCourtAvailability(membership.clubId, dow),
+    ]);
+    setRescheduleBusy(busy);
+    setRescheduleCourts(courts);
     setLoadingRescheduleBusy(false);
   };
 
@@ -362,7 +454,7 @@ export default function CalendarScreen() {
     for (let m = RESCHEDULE_WINDOW_START_MIN; m + duration <= RESCHEDULE_WINDOW_END_MIN; m += 30) {
       const start = minToTime(m);
       const end = minToTime(m + duration);
-      if (isSlotOpen(rescheduleBusy, start, end)) opts.push({ start, end });
+      if (isSlotOpen(rescheduleBusy, start, end) && isAnyCourtOpen(rescheduleCourts, start, end)) opts.push({ start, end });
     }
     return opts;
   })();
@@ -419,9 +511,11 @@ export default function CalendarScreen() {
   const joinWaitlistForCoach = async () => {
     if (!myId || !membership || !availabilityCoachId) return;
     setJoiningWaitlist(true);
-    const res = await joinCoachWaitlist(membership.clubId, myId, availabilityCoachId);
+    const res = await joinCoachWaitlist(membership.clubId, myId, availabilityCoachId, waitlistNote);
     setJoiningWaitlist(false);
     if (!res.ok) { showAlert('Error', res.message || 'Could not join the waitlist.'); return; }
+    setWaitlistNoteModal(false);
+    setWaitlistNote('');
     setMyWaitlist(await getMyWaitlist(myId));
     showAlert('Added', "You're on the waitlist — your club will offer you a slot when one opens up.");
   };
@@ -453,8 +547,8 @@ export default function CalendarScreen() {
   const loadEvents = async () => {
     if (!user) return;
 
-    const startDate = new Date(viewYear, viewMonth - 1, 1).toISOString().split('T')[0];
-    const endDate = new Date(viewYear, viewMonth + 2, 0).toISOString().split('T')[0];
+    const startDate = localDateStr(new Date(viewYear, viewMonth - 1, 1));
+    const endDate = localDateStr(new Date(viewYear, viewMonth + 2, 0));
 
     // A tournament's own start date might fall outside the viewed range while
     // its end date or registration deadline falls inside it (e.g. a deadline
@@ -515,6 +609,10 @@ export default function CalendarScreen() {
       showAlert('Location required', 'Please enter a location for this tournament.');
       return;
     }
+    if (formType === 'tournament' && formRegistrationDeadline && formRegistrationDeadline >= selectedDate) {
+      showAlert('Invalid deadline', 'Registration deadline must be before the tournament starts.');
+      return;
+    }
     if (!user) return;
 
     const isTournament = formType === 'tournament';
@@ -560,7 +658,7 @@ export default function CalendarScreen() {
     loadEvents();
 
     if (isTournament && membership) {
-      setTournamentSyncRange({ start: selectedDate, end: formEndDate || selectedDate });
+      setTournamentSyncRange({ name: formTitle.trim(), start: selectedDate, end: formEndDate || selectedDate });
       setShowTournamentSyncModal(true);
     }
   };
@@ -573,7 +671,7 @@ export default function CalendarScreen() {
     const endD = new Date(`${end}T00:00:00`);
     let guard = 0;
     while (d <= endD && guard < 60) {
-      dates.push(d.toISOString().split('T')[0]);
+      dates.push(localDateStr(d));
       d.setDate(d.getDate() + 1);
       guard++;
     }
@@ -592,7 +690,7 @@ export default function CalendarScreen() {
   const confirmTournamentSync = async () => {
     if (!myId || !tournamentSyncRange) return;
     setSyncingTournament(true);
-    const res = await markTournamentDates(myId, tournamentSyncRange.start, tournamentSyncRange.end);
+    const res = await markTournamentDates(myId, tournamentSyncRange.name, tournamentSyncRange.start, tournamentSyncRange.end);
     setSyncingTournament(false);
     if (!res.ok) { showAlert('Error', res.message || 'Could not save the tournament dates.'); return; }
     setShowTournamentSyncModal(false);
@@ -636,7 +734,7 @@ export default function CalendarScreen() {
   const goToToday = () => {
     setViewYear(today.getFullYear());
     setViewMonth(today.getMonth());
-    setSelectedDate(today.toISOString().split('T')[0]);
+    setSelectedDate(localDateStr(today));
   };
 
   const getEventsForDate = (dateStr: string) => {
@@ -669,15 +767,24 @@ export default function CalendarScreen() {
   // row — so "does this date have a lesson" is a day-of-week match, not a
   // date lookup, and every date sharing that weekday counts (not just the
   // "next occurrence" used for attendance).
-  const hasClubLessonOnDate = (dateStr: string) => {
+  const hasPrivateLessonOnDate = (dateStr: string) => {
     const dow = new Date(`${dateStr}T00:00:00`).getDay();
-    return myLessons.some((l) => l.day_of_week === dow) || myGroupLessons.some((g) => g.day_of_week === dow);
+    return myLessons.some((l) => l.day_of_week === dow);
   };
+  const hasGroupLessonOnDate = (dateStr: string) => {
+    const dow = new Date(`${dateStr}T00:00:00`).getDay();
+    return myGroupLessons.some((g) => g.day_of_week === dow);
+  };
+  // Unlike the recurring day-of-week checks above, a scheduled makeup is a
+  // one-off — it lives on the exact calendar date the coach/club booked it
+  // for, not a recurring weekday.
+  const hasMakeupOnDate = (dateStr: string) => makeupCredits.some((m) => m.status === 'scheduled' && m.scheduledDate === dateStr);
 
   type DayItem =
     | { kind: 'personal'; time: string | null; event: CalendarEvent }
     | { kind: 'private'; time: string; lesson: ChildLesson }
-    | { kind: 'group'; time: string; lesson: ChildGroupLesson };
+    | { kind: 'group'; time: string; lesson: ChildGroupLesson }
+    | { kind: 'makeup'; time: string; credit: MakeupCredit };
 
   // Merges the player's own events with any club lesson that recurs on this
   // date's weekday, so a lesson shows up as "training" right in the day's
@@ -687,7 +794,10 @@ export default function CalendarScreen() {
     const personal: DayItem[] = selectedEvents.map((event) => ({ kind: 'personal', time: event.start_time, event }));
     const priv: DayItem[] = myLessons.filter((l) => l.day_of_week === dow).map((l) => ({ kind: 'private', time: l.start_time, lesson: l }));
     const grp: DayItem[] = myGroupLessons.filter((g) => g.day_of_week === dow).map((g) => ({ kind: 'group', time: g.start_time, lesson: g }));
-    return [...personal, ...priv, ...grp].sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
+    const makeup: DayItem[] = makeupCredits
+      .filter((m) => m.status === 'scheduled' && m.scheduledDate === selectedDate)
+      .map((m) => ({ kind: 'makeup', time: m.scheduledStartTime ?? '', credit: m }));
+    return [...personal, ...priv, ...grp, ...makeup].sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
   })();
 
   const pendingMakeupCredits = makeupCredits.filter((m) => m.status !== 'done');
@@ -695,14 +805,14 @@ export default function CalendarScreen() {
   const formatSelectedDate = () => {
     const d = new Date(selectedDate + 'T00:00:00');
     return d.toLocaleDateString('en-US', {
-      weekday: 'long', month: 'long', day: 'numeric',
+      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     });
   };
 
   const renderCalendarGrid = () => {
     const daysInMonth = getDaysInMonth(viewYear, viewMonth);
     const firstDay = getFirstDayOfMonth(viewYear, viewMonth);
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = localDateStr(today);
 
     const cells = [];
 
@@ -716,7 +826,9 @@ export default function CalendarScreen() {
       const isSelected = dateStr === selectedDate;
       const dayEvents = getEventsForDate(dateStr);
       const dayDeadlines = getDeadlinesForDate(dateStr);
-      const dayHasLesson = hasClubLessonOnDate(dateStr);
+      const dayHasPrivate = hasPrivateLessonOnDate(dateStr);
+      const dayHasGroup = hasGroupLessonOnDate(dateStr);
+      const dayHasMakeup = hasMakeupOnDate(dateStr);
 
       cells.push(
         <TouchableOpacity
@@ -744,17 +856,17 @@ export default function CalendarScreen() {
           ]}>
             {day}
           </Text>
-          {(dayEvents.length > 0 || dayHasLesson) && (
+          {(dayEvents.length > 0 || dayHasPrivate || dayHasGroup || dayHasMakeup) && (
             <View style={styles.dotRow}>
-              {dayEvents.slice(0, 3).map((e, i) => (
+              {dayEvents.slice(0, 2).map((e, i) => (
                 <View
                   key={i}
                   style={[styles.eventDot, { backgroundColor: getEventColor(e.event_type) }]}
                 />
               ))}
-              {dayHasLesson && dayEvents.length < 3 && (
-                <View style={[styles.eventDot, { backgroundColor: getEventColor('training') }]} />
-              )}
+              {dayHasPrivate && <View style={[styles.eventDot, { backgroundColor: LESSON_DOT_COLOR.private }]} />}
+              {dayHasGroup && <View style={[styles.eventDot, { backgroundColor: LESSON_DOT_COLOR.group }]} />}
+              {dayHasMakeup && <View style={[styles.eventDot, { backgroundColor: LESSON_DOT_COLOR.makeup }]} />}
             </View>
           )}
         </TouchableOpacity>
@@ -791,42 +903,60 @@ export default function CalendarScreen() {
           <View style={styles.clubBanner}>
             <View style={styles.clubBannerRow}>
               <View style={styles.clubBannerIconWrap}>
-                <Icon name="account-group" size={22} color={Theme.textPrimary} />
+                <Icon name="office-building-outline" size={22} color={Theme.textPrimary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.clubBannerTitle}>{membership.clubName} Schedule</Text>
                 <Text style={styles.clubBannerDesc}>Training days are highlighted below</Text>
               </View>
             </View>
+            {hasLinkedParent && (
+              <View style={styles.parentHandlesRow}>
+                <Icon name="information-outline" size={14} color={Theme.textSecondary} />
+                <Text style={styles.parentHandlesText}>Your parent manages scheduling and payments for you</Text>
+              </View>
+            )}
             <View style={styles.manageActionsRow}>
               <TouchableOpacity style={styles.manageActionBtn} onPress={() => openAddModal(selectedDate, 'tournament')}>
                 <Icon name="trophy-outline" size={14} color={Theme.textPrimary} />
                 <Text style={styles.manageActionText}>Tournament</Text>
               </TouchableOpacity>
-              {myLessons.length > 0 && (
+              {!hasLinkedParent && myLessons.length > 0 && (
                 <TouchableOpacity style={styles.manageActionBtn} onPress={openRescheduleModal}>
                   <Icon name="calendar-sync-outline" size={14} color={Theme.textPrimary} />
                   <Text style={styles.manageActionText}>Reschedule</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={styles.manageActionBtn} onPress={openAvailabilityModal}>
-                <Icon name="account-clock-outline" size={14} color={Theme.textPrimary} />
-                <Text style={styles.manageActionText}>Coach times</Text>
-              </TouchableOpacity>
+              {!hasLinkedParent && (
+                <TouchableOpacity style={styles.manageActionBtn} onPress={openAvailabilityModal}>
+                  <Icon name="account-clock-outline" size={14} color={Theme.textPrimary} />
+                  <Text style={styles.manageActionText}>Coach times</Text>
+                </TouchableOpacity>
+              )}
+              {!hasLinkedParent && (
+                <TouchableOpacity style={styles.manageActionBtn} onPress={openPayModal}>
+                  <Icon name="clipboard-text-outline" size={14} color={Theme.textPrimary} />
+                  <Text style={styles.manageActionText}>Report Payment</Text>
+                </TouchableOpacity>
+              )}
             </View>
-            {pendingMakeupCredits.map((m) => (
+            {/* Makeup scheduling (find a slot, confirm a proposed time, chase
+                a missed lesson) is the parent's job once one's linked — see
+                parentHandlesText above. Once a credit is actually scheduled
+                it moves onto the calendar itself (gold dot, tap the date) —
+                same convention as the parent's own dashboard — so this list
+                only ever needs to show things still awaiting action. */}
+            {!hasLinkedParent && pendingMakeupCredits.filter((m) => m.status !== 'scheduled').map((m) => (
               <View key={`${m.kind}_${m.id}`}>
                 <View style={styles.clubBannerMakeupRow}>
                   <Icon name="refresh" size={13} color={Theme.textPrimary} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.clubBannerMakeupText}>
-                      {m.label} {m.status === 'scheduled'
-                        ? `— confirmed ${m.scheduledDate} at ${m.scheduledStartTime ? formatTime12h(m.scheduledStartTime) : ''}`
-                        : m.status === 'pending_approval'
-                          ? `— waiting on your coach's approval (${m.scheduledDate} at ${m.scheduledStartTime ? formatTime12h(m.scheduledStartTime) : ''})`
-                          : m.status === 'proposed'
-                            ? `— your coach suggested ${m.scheduledDate} at ${m.scheduledStartTime ? formatTime12h(m.scheduledStartTime) : ''}`
-                            : '— needs a makeup slot'}
+                      {m.label} {m.status === 'pending_approval'
+                        ? `— waiting on your coach's approval (${formatDateLong(m.scheduledDate!)} at ${m.scheduledStartTime ? formatTime12h(m.scheduledStartTime) : ''})`
+                        : m.status === 'proposed'
+                          ? `— your coach suggested ${formatDateLong(m.scheduledDate!)} at ${m.scheduledStartTime ? formatTime12h(m.scheduledStartTime) : ''}`
+                          : `— needs a makeup slot (missed ${formatDateLong(m.missedDate)})`}
                     </Text>
                   </View>
                   {m.status === 'owed' && m.kind === 'private' && (
@@ -878,12 +1008,30 @@ export default function CalendarScreen() {
           <View style={styles.calendarDivider} />
 
           <View style={styles.legendRow}>
-            {EVENT_TYPES.map(t => (
+            {EVENT_TYPES.filter(t => t.key !== 'training').map(t => (
               <View key={t.key} style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: t.color }]} />
                 <Text style={styles.legendLabel}>{t.label}</Text>
               </View>
             ))}
+            {myLessons.length > 0 && (
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: LESSON_DOT_COLOR.private }]} />
+                <Text style={styles.legendLabel}>Private</Text>
+              </View>
+            )}
+            {myGroupLessons.length > 0 && (
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: LESSON_DOT_COLOR.group }]} />
+                <Text style={styles.legendLabel}>Group</Text>
+              </View>
+            )}
+            {makeupCredits.some((m) => m.status === 'scheduled') && (
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: LESSON_DOT_COLOR.makeup }]} />
+                <Text style={styles.legendLabel}>Makeup</Text>
+              </View>
+            )}
             <View style={styles.legendItem}>
               <View style={[styles.legendDot, styles.legendDeadlineDot]}>
                 <Icon name="clock-outline" size={7} color="#FFFFFF" />
@@ -1016,6 +1164,33 @@ export default function CalendarScreen() {
                 );
               }
 
+              if (item.kind === 'makeup') {
+                const m = item.credit;
+                const att = statusFor(makeupAtt, `${m.kind}_${m.id}`);
+                return (
+                  <View key={`makeup_${m.kind}_${m.id}`} style={styles.eventCard}>
+                    <View style={[styles.eventColorBar, { backgroundColor: LESSON_DOT_COLOR.makeup }]} />
+                    <View style={styles.eventContent}>
+                      <View style={styles.eventTopRow}>
+                        <View style={styles.eventTitleRow}>
+                          <Icon name="refresh" size={18} color={LESSON_DOT_COLOR.makeup} />
+                          <Text style={styles.eventTitle}>Makeup: {m.label}</Text>
+                        </View>
+                        <TouchableOpacity onPress={() => toggleMakeupAttendance(m)}>
+                          <Icon name={att.attending ? 'check-circle' : 'close-circle'} size={18} color={att.attending ? Theme.eyebrowGreen : '#c0392b'} />
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.eventDetailRow}>
+                        <Icon name="clock-outline" size={13} color={Theme.textSecondary} />
+                        <Text style={styles.eventDetailText}>
+                          {m.scheduledStartTime ? formatTime12h(m.scheduledStartTime) : ''} — {m.scheduledEndTime ? formatTime12h(m.scheduledEndTime) : ''}{m.scheduledCourtName ? ` · ${m.scheduledCourtName}` : ''}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              }
+
               const g = item.lesson;
               const att = statusFor(groupAtt, g.id);
               const isNextOccurrence = selectedDate === nextOccurrenceDate(g.day_of_week);
@@ -1025,24 +1200,29 @@ export default function CalendarScreen() {
                   <View style={styles.eventContent}>
                     <View style={styles.eventTopRow}>
                       <TouchableOpacity style={styles.eventTitleRow} onPress={() => openRoster(g)}>
-                        <Icon name="lightning-bolt" size={16} color={getEventColor('training')} />
+                        <Icon name="lightning-bolt" size={18} color={getEventColor('training')} />
                         <Text style={styles.eventTitle}>{g.name}</Text>
                       </TouchableOpacity>
                       {isNextOccurrence ? (
                         <TouchableOpacity onPress={() => toggleGroupAttendance(g)}>
-                          <Icon name={att.attending ? 'check-circle' : 'close-circle'} size={18} color={att.attending ? Theme.eyebrowGreen : '#c0392b'} />
+                          <Icon name={att.attending ? 'check-circle' : 'close-circle'} size={20} color={att.attending ? Theme.eyebrowGreen : '#c0392b'} />
                         </TouchableOpacity>
                       ) : (
                         <Text style={styles.recurringTag}>Recurring</Text>
                       )}
                     </View>
-                    <TouchableOpacity onPress={() => openRoster(g)}>
-                      <View style={styles.eventDetailRow}>
-                        <Icon name="clock-outline" size={13} color={Theme.textSecondary} />
-                        <Text style={styles.eventDetailText}>
-                          {formatTime12h(g.start_time)} — {formatTime12h(g.end_time)}{g.coach_name ? ` · ${g.coach_name}` : ''} · Tap to see who's attending
-                        </Text>
-                      </View>
+                    <View style={styles.eventDetailRow}>
+                      <Icon name="clock-outline" size={14} color={Theme.textSecondary} />
+                      <Text style={styles.eventDetailText}>
+                        {formatTime12h(g.start_time)} — {formatTime12h(g.end_time)}
+                      </Text>
+                    </View>
+                    <TouchableOpacity style={styles.eventRosterRow} onPress={() => openRoster(g)}>
+                      <Icon name="account-multiple" size={14} color={Theme.textSecondary} />
+                      <Text style={styles.eventDetailText} numberOfLines={1}>
+                        {g.coach_name || 'Coach TBD'}
+                      </Text>
+                      <Icon name="chevron-right" size={16} color={Theme.textMuted} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1071,6 +1251,57 @@ export default function CalendarScreen() {
                   </View>
                 ))
               )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showPayModal} transparent animationType="fade" onRequestClose={() => setShowPayModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Report a Payment</Text>
+              <TouchableOpacity onPress={() => setShowPayModal(false)}>
+                <Icon name="close" size={24} color={Theme.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.syncIntro}>What's this for?</Text>
+              <TextInput
+                style={styles.paymentInput}
+                value={paymentNote}
+                onChangeText={setPaymentNote}
+                placeholder="e.g. October payment"
+                placeholderTextColor={Theme.textSecondary}
+              />
+
+              <Text style={[styles.syncIntro, { marginTop: 14 }]}>Method</Text>
+              <View style={styles.dayPillRow}>
+                {PAYMENT_METHODS.map((m) => (
+                  <TouchableOpacity key={m.key} style={[styles.dayPill, payMethod === m.key && styles.dayPillActive]} onPress={() => setPayMethod(m.key)}>
+                    <Text style={styles.dayPillText}>{m.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={[styles.syncIntro, { marginTop: 14 }]}>Payment history</Text>
+              {payments.length === 0 ? (
+                <Text style={styles.paymentEmptyText}>No payment records yet.</Text>
+              ) : (
+                payments.map((p) => (
+                  <View key={p.id} style={styles.paymentRow}>
+                    <Text style={styles.slotCardTitle}>{p.label}</Text>
+                    <Text style={styles.slotCardSub}>
+                      {p.payment_status === 'paid' ? 'Paid' : p.payment_status === 'pending' ? 'Pending review' : p.payment_status === 'rejected' ? 'Not confirmed' : 'Unpaid'}
+                      {p.payment_method ? ` · ${p.payment_method}` : ''}
+                    </Text>
+                  </View>
+                ))
+              )}
+
+              <TouchableOpacity style={[styles.saveBtn, { marginTop: 16 }, savingPayment && { opacity: 0.6 }]} onPress={submitPayment} disabled={savingPayment}>
+                <Text style={styles.saveBtnText}>{savingPayment ? 'Submitting...' : 'Submit Report'}</Text>
+              </TouchableOpacity>
             </ScrollView>
           </View>
         </View>
@@ -1167,7 +1398,9 @@ export default function CalendarScreen() {
                   {loadingAvailability ? (
                     <Text style={styles.muted}>Loading...</Text>
                   ) : availabilityBusy.length === 0 ? (
-                    <Text style={styles.muted}>Wide open all day (8am–8pm).</Text>
+                    <Text style={styles.muted}>
+                      Wide open all day ({clubHours.openTime && clubHours.closeTime ? `${formatTime12h(clubHours.openTime)}–${formatTime12h(clubHours.closeTime)}` : '8am–8pm'}).
+                    </Text>
                   ) : (
                     [...availabilityBusy].sort((a, b) => a.start.localeCompare(b.start)).map((w, i) => (
                       <View key={i} style={styles.slotCard}>
@@ -1178,7 +1411,7 @@ export default function CalendarScreen() {
                   {isOnWaitlistFor(availabilityCoachId) ? (
                     <Text style={[styles.muted, { marginTop: 12 }]}>You're already on this coach's waitlist.</Text>
                   ) : (
-                    <TouchableOpacity style={[styles.saveBtn, joiningWaitlist && { opacity: 0.6 }]} onPress={joinWaitlistForCoach} disabled={joiningWaitlist}>
+                    <TouchableOpacity style={[styles.saveBtn, joiningWaitlist && { opacity: 0.6 }]} onPress={() => setWaitlistNoteModal(true)} disabled={joiningWaitlist}>
                       <Text style={styles.saveBtnText}>{joiningWaitlist ? 'Joining...' : 'Join Waitlist for This Coach'}</Text>
                     </TouchableOpacity>
                   )}
@@ -1204,6 +1437,33 @@ export default function CalendarScreen() {
                 </>
               )}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={waitlistNoteModal} transparent animationType="fade" onRequestClose={() => setWaitlistNoteModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Join the Waitlist</Text>
+              <TouchableOpacity onPress={() => setWaitlistNoteModal(false)}>
+                <Icon name="close" size={24} color={Theme.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.syncIntro}>
+              The waitlist isn't tied to a specific day — it just puts you in line for this coach. Your club reaches out when a slot opens up. Add a note below so they know what to offer.
+            </Text>
+            <Text style={[styles.formLabel, { marginTop: 12 }]}>Preferred day/time (optional)</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="e.g. Monday afternoons"
+              placeholderTextColor={Theme.textSecondary}
+              value={waitlistNote}
+              onChangeText={setWaitlistNote}
+            />
+            <TouchableOpacity style={[styles.saveBtn, { marginTop: 16 }, joiningWaitlist && { opacity: 0.6 }]} onPress={joinWaitlistForCoach} disabled={joiningWaitlist}>
+              <Text style={styles.saveBtnText}>{joiningWaitlist ? 'Joining...' : 'Join Waitlist'}</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1333,7 +1593,7 @@ export default function CalendarScreen() {
                 </Text>
                 <Text style={styles.modalDate}>
                   {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
-                    weekday: 'short', month: 'short', day: 'numeric',
+                    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
                   })}
                 </Text>
               </View>
@@ -1459,6 +1719,7 @@ export default function CalendarScreen() {
                       <MiniDatePicker
                         value={formRegistrationDeadline || null}
                         onChange={setFormRegistrationDeadline}
+                        maxDate={addDays(selectedDate, -1)}
                         accentColor={DEADLINE_COLOR}
                       />
 
@@ -1635,18 +1896,19 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   eventColorBar: { width: 4 },
-  eventContent: { flex: 1, padding: 12 },
+  eventContent: { flex: 1, padding: 14 },
   eventTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 6,
   },
-  eventTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
-  eventTitle: { fontSize: 15, fontWeight: '600', color: Theme.textPrimary },
+  eventTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  eventTitle: { fontSize: 17, fontWeight: '700', color: Theme.textPrimary },
   eventActions: { flexDirection: 'row', gap: 12 },
-  eventDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
-  eventDetailText: { fontSize: 13, color: Theme.textSecondary },
+  eventDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 6 },
+  eventDetailText: { fontSize: 15, color: Theme.textSecondary },
+  eventRosterRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 6 },
   eventNotes: { fontSize: 13, color: Theme.textSecondary, marginTop: 6, fontStyle: 'italic' },
   eventDeadlineText: { color: DEADLINE_COLOR, fontWeight: '600' },
   signUpBtn: {
@@ -1736,15 +1998,20 @@ const styles = StyleSheet.create({
   clubBanner: { backgroundColor: Theme.cardTinted, borderRadius: 16, padding: 16, marginBottom: 16 },
   clubBannerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   clubBannerIconWrap: { width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.5)', alignItems: 'center', justifyContent: 'center' },
-  clubBannerTitle: { fontFamily: Fonts.sansSemiBold, fontSize: 16, color: Theme.textPrimary, marginBottom: 3 },
-  clubBannerDesc: { fontFamily: Fonts.sansRegular, fontSize: 14, color: Theme.textSecondary },
+  clubBannerTitle: { fontFamily: Fonts.sansSemiBold, fontSize: 17, color: Theme.textPrimary, marginBottom: 3 },
+  clubBannerDesc: { fontFamily: Fonts.sansRegular, fontSize: 15, color: Theme.textSecondary },
   clubBannerMakeupRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
-  clubBannerMakeupText: { fontSize: 13, color: Theme.textPrimary, fontWeight: '500', flex: 1 },
+  clubBannerMakeupText: { fontSize: 14, color: Theme.textPrimary, fontWeight: '500', flex: 1 },
   recurringTag: { fontSize: 11, fontWeight: '600', color: Theme.textMuted },
 
   manageActionsRow: { flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' },
   manageActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.6)', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7 },
-  manageActionText: { fontSize: 12, fontWeight: '700', color: Theme.textPrimary },
+  manageActionText: { fontSize: 13, fontWeight: '700', color: Theme.textPrimary },
+  parentHandlesRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  parentHandlesText: { fontSize: 13, color: Theme.textSecondary, flex: 1 },
+  paymentInput: { backgroundColor: Theme.cardTinted, borderRadius: 10, padding: 14, color: Theme.textPrimary, fontSize: 15 },
+  paymentEmptyText: { fontSize: 13, color: Theme.textSecondary, fontStyle: 'italic' },
+  paymentRow: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: Theme.divider },
 
   dayPillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
   dayPill: { backgroundColor: Theme.cardTinted, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },

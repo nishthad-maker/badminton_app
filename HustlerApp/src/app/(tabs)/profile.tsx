@@ -383,7 +383,7 @@ export default function ProfileScreen() {
           {clubMembership ? (
             <>
               <View style={styles.option}>
-                <Icon name="account-badge" size={24} color={Theme.eyebrowGreen} />
+                <Icon name="office-building-outline" size={24} color={Theme.eyebrowGreen} />
                 <Text style={styles.optionText}>Member of {clubMembership.clubName}</Text>
               </View>
               <View style={styles.divider} />
@@ -443,7 +443,7 @@ export default function ProfileScreen() {
                 <View key={request.linkId}>
                   {i > 0 && <View style={styles.divider} />}
                   <View style={styles.option}>
-                    <Icon name="account-alert-outline" size={24} color={Theme.eyebrowGreen} />
+                    <Icon name="account-child-outline" size={24} color={Theme.eyebrowGreen} />
                     <Text style={styles.optionText}>{request.parentName} wants to link</Text>
                   </View>
                   <View style={{ flexDirection: 'row', gap: 16, paddingBottom: 14, paddingLeft: 38 }}>
@@ -523,7 +523,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.appVersion}>Hustler · Built for badminton athletes</Text>
+        <Text style={styles.appVersion}>smasho · Every Shuttle Counts</Text>
 
       </ScrollView>
 

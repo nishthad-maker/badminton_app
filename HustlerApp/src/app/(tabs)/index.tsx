@@ -7,9 +7,13 @@ import { Icon } from '@/components/icons/Icon';
 import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { getDailyQuote } from '@/constants/dailyQuotes';
 import { supabase } from '../../lib/supabase';
-import { formatTime12h } from '../../lib/scheduling';
+import { formatTime12h, localDateStr } from '../../lib/scheduling';
 import { getPendingParentRequests, acceptLink, declineLink, PendingRequest } from '../../lib/parentLink';
 import { getPlayerClubMembership, getPendingClubJoinRequest, PlayerClubMembership, PendingClubJoinRequest } from '../../lib/club';
+import { getMyLessons, getMyGroupLessons } from '../../lib/playerClub';
+import { ChildLesson, ChildGroupLesson } from '../../lib/parentDashboard';
+import { getPlayerMakeupCredits, MakeupCredit } from '../../lib/makeup';
+import { LESSON_DOT_COLOR } from '../../lib/colors';
 import { NotificationBell } from '@/components/NotificationBell';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -130,6 +134,9 @@ export default function HomeScreen() {
   const [user, setUser] = useState<any>(null);
   const [clubMembership, setClubMembership] = useState<PlayerClubMembership | null>(null);
   const [clubPendingRequest, setClubPendingRequest] = useState<PendingClubJoinRequest | null>(null);
+  const [myClubLessons, setMyClubLessons] = useState<ChildLesson[]>([]);
+  const [myClubGroupLessons, setMyClubGroupLessons] = useState<ChildGroupLesson[]>([]);
+  const [myMakeupCredits, setMyMakeupCredits] = useState<MakeupCredit[]>([]);
 
   // Calendar
   const [weekEvents, setWeekEvents] = useState<CalendarEvent[]>([]);
@@ -199,7 +206,7 @@ export default function HomeScreen() {
 
   const today = new Date();
   const todayDayIndex = today.getDay() === 0 ? 6 : today.getDay() - 1;
-  const todayEyebrow = `${today.toLocaleDateString('en-US', { weekday: 'long' })}, ${today.getDate()} ${today.toLocaleDateString('en-US', { month: 'long' })}`.toUpperCase();
+  const todayEyebrow = `${today.toLocaleDateString('en-US', { weekday: 'long' })}, ${today.toLocaleDateString('en-US', { month: 'long' })} ${today.getDate()}, ${today.getFullYear()}`.toUpperCase();
   const dailyQuote = getDailyQuote(today);
 
   const getWeekDates = () => {
@@ -209,7 +216,7 @@ export default function HomeScreen() {
     for (let i = 0; i < 7; i++) {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
-      dates.push({ date: d.getDate(), full: d.toISOString().split('T')[0] });
+      dates.push({ date: d.getDate(), full: localDateStr(d) });
     }
     return dates;
   };
@@ -218,6 +225,23 @@ export default function HomeScreen() {
   const getEventsForDate = (dateStr: string) => weekEvents.filter(e => e.event_date === dateStr);
   const getDotsForDate = (dateStr: string) =>
     [...new Set(getEventsForDate(dateStr).map(e => e.event_type))].slice(0, 3);
+
+  // Recurring club lessons aren't calendar_events rows, so they need their
+  // own day-of-week match (same trick (tabs)/calendar.tsx's
+  // hasClubLessonOnDate uses) to show up on this Home-screen strip at all —
+  // previously only manually-added personal events ever appeared here.
+  type DayLesson = { id: string; kind: 'private' | 'group'; label: string; startTime: string; endTime: string };
+  const getLessonsForDate = (dateStr: string): DayLesson[] => {
+    const dow = new Date(`${dateStr}T00:00:00`).getDay();
+    return [
+      ...myClubLessons.filter(l => l.day_of_week === dow).map(l => ({
+        id: `p-${l.id}`, kind: 'private' as const, label: `Private with ${l.coach_name}`, startTime: l.start_time, endTime: l.end_time,
+      })),
+      ...myClubGroupLessons.filter(g => g.day_of_week === dow).map(g => ({
+        id: `g-${g.id}`, kind: 'group' as const, label: g.name, startTime: g.start_time, endTime: g.end_time,
+      })),
+    ];
+  };
 
   const countUniqueSessions = (data: any[]) =>
     new Set(data.map(s => `${new Date(s.created_at).toDateString()}_${s.category}`)).size;
@@ -256,6 +280,18 @@ export default function HomeScreen() {
       const activeMembership = await getPlayerClubMembership(currentUser.id);
       setClubMembership(activeMembership);
       setClubPendingRequest(activeMembership ? null : await getPendingClubJoinRequest(currentUser.id));
+      if (activeMembership) {
+        const [lessons, groupLessons] = await Promise.all([
+          getMyLessons(currentUser.id, activeMembership.clubId),
+          getMyGroupLessons(currentUser.id, activeMembership.clubId),
+        ]);
+        setMyClubLessons(lessons);
+        setMyClubGroupLessons(groupLessons);
+      } else {
+        setMyClubLessons([]);
+        setMyClubGroupLessons([]);
+      }
+      setMyMakeupCredits(await getPlayerMakeupCredits(currentUser.id));
 
       const { data } = await supabase
         .from('session_logs').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false });
@@ -379,7 +415,7 @@ export default function HomeScreen() {
   };
 
   const formatQuickAddDate = () =>
-    new Date(quickAddDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    new Date(quickAddDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 
   const maxCount = Math.max(strengthCount, footworkCount, enduranceCount, recoveryCount, 1);
   const activeRange = ACTIVITY_RANGES.find((r) => r.key === activityRange) ?? ACTIVITY_RANGES[3];
@@ -407,11 +443,26 @@ export default function HomeScreen() {
           <NotificationBell />
         </View>
 
+        {myMakeupCredits.some((m) => m.status === 'proposed') && (
+          <TouchableOpacity style={styles.makeupBanner} onPress={() => router.push('/(tabs)/calendar' as any)} activeOpacity={0.85}>
+            <Icon name="calendar-edit" size={22} color="#8A6200" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.makeupBannerTitle}>
+                {myMakeupCredits.filter((m) => m.status === 'proposed').length > 1
+                  ? `${myMakeupCredits.filter((m) => m.status === 'proposed').length} makeup times need your response`
+                  : 'A makeup time needs your response'}
+              </Text>
+              <Text style={styles.makeupBannerSub}>Your coach suggested a time — confirm or decline it</Text>
+            </View>
+            <Icon name="chevron-right" size={20} color="#8A6200" />
+          </TouchableOpacity>
+        )}
+
         {/* Club status */}
         {clubMembership ? (
           <TouchableOpacity style={styles.tintedBanner} onPress={() => router.push('/(tabs)/calendar' as any)} activeOpacity={0.85}>
             <View style={styles.bannerIconWrap}>
-              <Icon name="account-group" size={22} color={Theme.textPrimary} />
+              <Icon name="office-building-outline" size={22} color={Theme.textPrimary} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.bannerTitle}>{clubMembership.clubName}</Text>
@@ -460,7 +511,7 @@ export default function HomeScreen() {
         {parentRequests.length > 0 && (
           <TouchableOpacity style={styles.tintedBanner} onPress={() => setShowParentModal(true)} activeOpacity={0.85}>
             <View style={styles.bannerIconWrap}>
-              <Icon name="account-alert-outline" size={22} color={Theme.textPrimary} />
+              <Icon name="account-child-outline" size={22} color={Theme.textPrimary} />
             </View>
             <View style={styles.bannerTextWrap}>
               <Text style={styles.bannerTitle}>{parentRequests.length > 1 ? `${parentRequests.length} parents want to link` : 'A parent wants to link'}</Text>
@@ -499,6 +550,9 @@ export default function HomeScreen() {
               const isDone = weekDonedays.includes(String(i));
               const dateInfo = weekDates[i];
               const dots = getDotsForDate(dateInfo.full);
+              const dayLessons = getLessonsForDate(dateInfo.full);
+              const hasPrivate = dayLessons.some(l => l.kind === 'private');
+              const hasGroup = dayLessons.some(l => l.kind === 'group');
               return (
                 <TouchableOpacity key={day} style={styles.dayCol} onPress={() => openQuickAdd(dateInfo.full)} activeOpacity={0.7}>
                   <Text style={[styles.dayLabel, isToday && styles.dayLabelActive]}>{day}</Text>
@@ -508,7 +562,9 @@ export default function HomeScreen() {
                       : <Text style={[styles.dayNum, isToday && styles.dayNumActive]}>{dateInfo.date}</Text>}
                   </View>
                   <View style={styles.eventDotsRow}>
-                    {dots.map((type, di) => <View key={di} style={[styles.eventDot, { backgroundColor: getEventColor(type) }]} />)}
+                    {dots.map((type, di) => <View key={`e-${di}`} style={[styles.eventDot, { backgroundColor: getEventColor(type) }]} />)}
+                    {hasPrivate && <View key="p" style={[styles.eventDot, { backgroundColor: LESSON_DOT_COLOR.private }]} />}
+                    {hasGroup && <View key="g" style={[styles.eventDot, { backgroundColor: LESSON_DOT_COLOR.group }]} />}
                   </View>
                 </TouchableOpacity>
               );
@@ -517,11 +573,19 @@ export default function HomeScreen() {
           {(() => {
             const todayStr = weekDates[todayDayIndex].full;
             const todayEvents = getEventsForDate(todayStr);
-            if (todayEvents.length === 0) return null;
+            const todayLessons = getLessonsForDate(todayStr);
+            if (todayEvents.length === 0 && todayLessons.length === 0) return null;
             return (
               <View style={styles.todayEventsSection}>
                 <View style={styles.todayEventsDivider} />
                 <Text style={styles.todayEventsLabel}>TODAY</Text>
+                {todayLessons.map(lesson => (
+                  <View key={lesson.id} style={styles.todayEventRow}>
+                    <View style={[styles.todayEventDot, { backgroundColor: LESSON_DOT_COLOR[lesson.kind] }]} />
+                    <Text style={styles.todayEventTitle} numberOfLines={1}>{lesson.label}</Text>
+                    <Text style={styles.todayEventTime}>{formatTime12h(lesson.startTime)}</Text>
+                  </View>
+                ))}
                 {todayEvents.slice(0, 2).map(event => (
                   <View key={event.id} style={styles.todayEventRow}>
                     <View style={[styles.todayEventDot, { backgroundColor: getEventColor(event.event_type) }]} />
@@ -904,6 +968,9 @@ const styles = StyleSheet.create({
   bannerTextWrap: { flex: 1 },
   bannerTitle: { fontFamily: Fonts.sansSemiBold, fontSize: 16, color: Theme.textPrimary, marginBottom: 3 },
   bannerDesc: { fontFamily: Fonts.sansRegular, fontSize: 15, color: Theme.textSecondary, lineHeight: 20 },
+  makeupBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#FDE7A8', borderRadius: 16, padding: 16, marginBottom: 16 },
+  makeupBannerTitle: { fontFamily: Fonts.sansSemiBold, fontSize: 15, color: '#8A6200' },
+  makeupBannerSub: { fontFamily: Fonts.sansRegular, fontSize: 13, color: '#8A6200', marginTop: 2 },
 
   // Section headers
   eyebrowSection: { fontFamily: Fonts.sansMedium, fontSize: 11, color: '#0B7D62', letterSpacing: 1, marginBottom: 4 },

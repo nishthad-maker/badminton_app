@@ -13,6 +13,7 @@ import { showAlert } from '../lib/ui';
 import { STRENGTH_CATEGORIES, WEAKNESS_CATEGORIES } from '@/constants/matchTags';
 import { TagChipSelector } from '@/components/TagChipSelector';
 import { getShareableCoaches, ShareableCoach } from '../lib/coachSharing';
+import { getAllTournaments, UpcomingTournament } from '../lib/parentDashboard';
 
 type Result = 'win' | 'loss' | 'unsure';
 type MatchType = 'singles' | 'doubles';
@@ -64,6 +65,8 @@ export default function LogMatchScreen() {
   const [weaknessesText, setWeaknessesText] = useState('');
   const [nextTimeText, setNextTimeText] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
+  const [myTournaments, setMyTournaments] = useState<UpcomingTournament[]>([]);
+  const [tournamentBlockId, setTournamentBlockId] = useState<string | null>(null);
   const [shareableCoaches, setShareableCoaches] = useState<ShareableCoach[]>([]);
   const [selectedCoachIds, setSelectedCoachIds] = useState<string[]>([]);
   const [previousSharedIds, setPreviousSharedIds] = useState<string[]>([]);
@@ -87,6 +90,7 @@ export default function LogMatchScreen() {
       const { data: opps } = await supabase.from('opponents').select('id, name, wins, losses').eq('player_id', session.user.id);
       setAllOpponents(opps ?? []);
       getShareableCoaches(session.user.id).then(setShareableCoaches);
+      getAllTournaments(session.user.id).then(setMyTournaments);
 
       if (editingLogId) {
         const { data: existing } = await supabase.from('opponent_logs').select('*').eq('id', editingLogId).single();
@@ -101,6 +105,7 @@ export default function LogMatchScreen() {
           setWeaknessesText(existing.weaknesses_text ?? '');
           setNextTimeText(existing.next_time_text ?? '');
           setVideoUrl(existing.video_url ?? '');
+          setTournamentBlockId(existing.tournament_block_id ?? null);
           setVoiceNoteUrl(existing.voice_note_url ?? null);
           setVoiceNoteDuration(existing.voice_note_duration_seconds ?? 0);
           const sharedIds: string[] = existing.shared_with_coach_ids ?? [];
@@ -208,6 +213,7 @@ export default function LogMatchScreen() {
       weaknesses_text: weaknessesText.trim() || null,
       next_time_text: nextTimeText.trim() || null,
       video_url: videoUrl.trim() || null,
+      tournament_block_id: tournamentBlockId,
       voice_note_url: finalVoiceUrl,
       voice_note_duration_seconds: finalVoiceUrl ? finalVoiceDuration : null,
       shared_with_coach: selectedCoachIds.length > 0,
@@ -444,6 +450,28 @@ export default function LogMatchScreen() {
           <TextInput style={[styles.input, styles.multiline]} placeholder="e.g. Attack the backhand more, mix up serve length..." placeholderTextColor={Theme.textSecondary} value={nextTimeText} onChangeText={setNextTimeText} multiline autoFocus />
           <Text style={[styles.label, { marginTop: 16 }]}>Match video link (optional)</Text>
           <TextInput style={styles.input} placeholder="Paste a link to your match video" placeholderTextColor={Theme.textSecondary} value={videoUrl} onChangeText={setVideoUrl} autoCapitalize="none" keyboardType="url" />
+          {myTournaments.length > 0 && (
+            <>
+              <Text style={[styles.label, { marginTop: 16 }]}>Tournament (optional)</Text>
+              <View style={[styles.resultRow, { flexWrap: 'wrap' }]}>
+                <TouchableOpacity
+                  style={[styles.resultChip, !tournamentBlockId && styles.resultChipActive]}
+                  onPress={() => setTournamentBlockId(null)}
+                >
+                  <Text style={[styles.resultChipText, !tournamentBlockId && styles.resultChipTextActive]}>None</Text>
+                </TouchableOpacity>
+                {myTournaments.map((t) => (
+                  <TouchableOpacity
+                    key={t.id}
+                    style={[styles.resultChip, tournamentBlockId === t.id && styles.resultChipActive]}
+                    onPress={() => setTournamentBlockId(t.id)}
+                  >
+                    <Text style={[styles.resultChipText, tournamentBlockId === t.id && styles.resultChipTextActive]}>{t.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
           {renderVoiceNoteControl()}
         </>
       );

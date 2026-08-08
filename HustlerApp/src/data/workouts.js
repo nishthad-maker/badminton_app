@@ -683,6 +683,38 @@ const workouts = {
 
     },
 
+    {
+
+      name: 'Wrist Curl',
+
+      subcategory: 'upper',
+
+      logType: 'strength',
+
+      description: 'Builds forearm and wrist strength for racket control and a faster wrist snap. Start with a very light weight — this one is harder than it looks.',
+
+      muscles: ['Forearms', 'Wrists'],
+
+      videoUrl: `${VIDEOS}/Strength/wrist-curl.mp4`,
+
+      imageUrl: null,
+
+      steps: [
+
+        'Sit and rest your forearm on your thigh or a bench, palm facing up.',
+
+        'Hold a light weight and let your wrist drop down.',
+
+        'Curl your wrist up as far as it comfortably goes.',
+
+        'Lower back down slowly.',
+
+        'Start light — this one fatigues fast.',
+
+      ],
+
+    },
+
   ],
 
   footwork: [
@@ -910,6 +942,102 @@ const workouts = {
         'Do a push-up, then jump your feet back up to your hands.',
 
         'Explode up into a jump, then land softly and go straight into the next rep.',
+
+      ],
+
+    },
+
+    {
+
+      name: 'Fast Feet',
+
+      subcategory: 'agility',
+
+      logType: 'footwork',
+
+      description: 'Trains quick, light steps for faster court movement. Beginner: 30 sec x 5 sets.',
+
+      muscles: ['Feet', 'Calves', 'Ankles'],
+
+      videoUrl: `${VIDEOS}/footwork/fast-feet.mp4`,
+
+      imageUrl: null,
+
+      steps: [
+
+        'Stand tall with your feet hip-width apart.',
+
+        'Quickly tap your feet up and down in place.',
+
+        'Stay light on the balls of your feet.',
+
+        'Keep your steps small and fast.',
+
+        'Keep your core braced and arms driving.',
+
+      ],
+
+    },
+
+    {
+
+      name: 'Lateral Hops',
+
+      subcategory: 'plyometrics',
+
+      logType: 'reps-sets',
+
+      description: 'Builds side-to-side spring and ankle strength for quick lateral movement on court.',
+
+      muscles: ['Calves', 'Ankles', 'Quads'],
+
+      videoUrl: `${VIDEOS}/footwork/lateral-hops.mp4`,
+
+      imageUrl: null,
+
+      steps: [
+
+        'Stand on one or both feet next to a line on the floor.',
+
+        'Hop sideways over the line.',
+
+        'Land softly with bent knees.',
+
+        'Hop back the other way.',
+
+        'Keep a quick, controlled rhythm.',
+
+      ],
+
+    },
+
+    {
+
+      name: 'Karaoke',
+
+      subcategory: 'agility',
+
+      logType: 'reps-sets',
+
+      description: 'Trains hip rotation and quick lateral steps used for sidestepping around the court.',
+
+      muscles: ['Hips', 'Calves', 'Ankles'],
+
+      videoUrl: `${VIDEOS}/footwork/karaoke.mp4`,
+
+      imageUrl: null,
+
+      steps: [
+
+        'Stand sideways to the direction you will move.',
+
+        'Cross one foot over the other, then step the trail foot out.',
+
+        'Cross the other foot behind, then step out again.',
+
+        'Move continuously in one direction, then switch sides.',
+
+        'Keep your hips loose and steps quick.',
 
       ],
 

@@ -7,8 +7,8 @@ import { Audio } from 'expo-av';
 import { Icon } from '@/components/icons/Icon';
 import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { supabase } from '../lib/supabase';
-import { notifyCoachMessage } from '../lib/notifications';
-import { pickChatMedia, sendChatMediaMessage } from '../lib/chatMedia';
+import { notifyCoachMessage, notifyMatchCoachFeedback } from '../lib/notifications';
+import { pickChatMedia, sendChatMediaMessage, sendMatchVoiceMessage } from '../lib/chatMedia';
 import { showAlert, showConfirm } from '../lib/ui';
 import { MessageBubble } from '@/components/MessageBubble';
 import AssignChoiceModal from '@/components/AssignChoiceModal';
@@ -77,6 +77,11 @@ export default function CoachPlayerScreen() {
   const [opponentSearch, setOpponentSearch] = useState('');
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const voiceSoundRef = useRef<Audio.Sound | null>(null);
+  const [isRecordingMatchVoice, setIsRecordingMatchVoice] = useState<Record<string, boolean>>({});
+  const [matchRecordingDuration, setMatchRecordingDuration] = useState<Record<string, number>>({});
+  const matchRecordingRef = useRef<Audio.Recording | null>(null);
+  const matchRecordingTimerRef = useRef<any>(null);
+  const [sendingMatchVoice, setSendingMatchVoice] = useState<Record<string, boolean>>({});
 
   // Shared journal entries
   const [journalEntries, setJournalEntries] = useState<any[]>([]);
@@ -181,8 +186,8 @@ export default function CoachPlayerScreen() {
 
       // Load private note
       const { data: noteData } = await supabase
-        .from('coach_player_notes').select('note').eq('coach_id', coachId).eq('player_id', playerId as string).single();
-      if (noteData) setPrivateNote(noteData.note ?? '');
+        .from('coach_player_notes').select('notes').eq('coach_id', coachId).eq('player_id', playerId as string).maybeSingle();
+      if (noteData) setPrivateNote(noteData.notes ?? '');
 
       // Load notes shared with the player
       const { data: shared } = await supabase
@@ -355,7 +360,7 @@ export default function CoachPlayerScreen() {
       await supabase.from('coach_player_notes').upsert({
         coach_id: coachId,
         player_id: playerId as string,
-        note: text,
+        notes: text,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'coach_id,player_id' });
       setSavingNote(false);
@@ -483,11 +488,56 @@ export default function CoachPlayerScreen() {
     if (error) { showAlert('Error', 'Could not send your message. Please try again.'); return; }
 
     const { data: coachProfile } = await supabase.from('profiles').select('full_name').eq('id', coachId).single();
-    await notifyCoachMessage(playerId as string, coachProfile?.full_name ?? 'Your coach', msg);
+    await notifyMatchCoachFeedback(playerId as string, coachProfile?.full_name ?? 'Your coach', msg);
     setMatchMsgInputs(prev => ({ ...prev, [log.id]: '' }));
     setOpponentLogs(prev => prev.map(l =>
       l.id === log.id ? { ...l, messages: [...l.messages, inserted] } : l
     ));
+  };
+
+  const startMatchVoiceRecording = async (logId: string) => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) { showAlert('Permission needed', 'Please allow microphone access to record a voice note.'); return; }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      matchRecordingRef.current = recording;
+      setIsRecordingMatchVoice(prev => ({ ...prev, [logId]: true }));
+      setMatchRecordingDuration(prev => ({ ...prev, [logId]: 0 }));
+      matchRecordingTimerRef.current = setInterval(() => {
+        setMatchRecordingDuration(prev => ({ ...prev, [logId]: (prev[logId] ?? 0) + 1 }));
+      }, 1000);
+    } catch {
+      showAlert('Error', 'Could not start recording. Please try again.');
+    }
+  };
+
+  const stopAndSendMatchVoiceRecording = async (log: any) => {
+    if (!matchRecordingRef.current) return;
+    clearInterval(matchRecordingTimerRef.current);
+    setIsRecordingMatchVoice(prev => ({ ...prev, [log.id]: false }));
+    const coachId = myIdRef.current;
+    try {
+      await matchRecordingRef.current.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      const uri = matchRecordingRef.current.getURI();
+      matchRecordingRef.current = null;
+      if (!uri || !coachId) { showAlert('Error', 'Recording failed — no audio captured.'); return; }
+      const duration = matchRecordingDuration[log.id] ?? 0;
+      setSendingMatchVoice(prev => ({ ...prev, [log.id]: true }));
+      const result = await sendMatchVoiceMessage({ opponentLogId: log.id, senderId: coachId, uri, durationSeconds: duration });
+      setSendingMatchVoice(prev => ({ ...prev, [log.id]: false }));
+      if (!result) { showAlert('Upload failed', 'Please try again.'); return; }
+      const { data: coachProfile } = await supabase.from('profiles').select('full_name').eq('id', coachId).single();
+      await notifyMatchCoachFeedback(playerId as string, coachProfile?.full_name ?? 'Your coach', '🎤 Sent a voice note');
+      setOpponentLogs(prev => prev.map(l =>
+        l.id === log.id
+          ? { ...l, messages: [...l.messages, { id: Date.now().toString(), opponent_log_id: log.id, sender_id: coachId, message: '', media_url: result.url, media_type: 'audio', media_duration_seconds: duration, created_at: new Date().toISOString() }] }
+          : l
+      ));
+    } catch {
+      showAlert('Error', 'Could not save recording.');
+    }
   };
 
   // opponentLogs is already ordered most-recent-first, so a Set preserves
@@ -773,6 +823,14 @@ export default function CoachPlayerScreen() {
                               </View>
                             )}
 
+                            {(log.parent_strengths_text || log.parent_weaknesses_text) && (
+                              <View style={styles.logSection}>
+                                <Text style={styles.logSectionLabel}>PARENT'S NOTES</Text>
+                                {log.parent_strengths_text && <Text style={styles.sessionMeta}>Strengths: {log.parent_strengths_text}</Text>}
+                                {log.parent_weaknesses_text && <Text style={styles.sessionMeta}>Weaknesses: {log.parent_weaknesses_text}</Text>}
+                              </View>
+                            )}
+
                             {log.next_time_text && (
                               <View style={styles.logSection}>
                                 <Text style={styles.logSectionLabel}>NEXT TIME</Text>
@@ -808,8 +866,9 @@ export default function CoachPlayerScreen() {
                                         isMine={m.sender_id === myIdRef.current}
                                         senderLabel={playerName}
                                         message={m.message}
-                                        mediaUrl={null}
-                                        mediaType={null}
+                                        mediaUrl={m.media_url}
+                                        mediaType={m.media_type}
+                                        mediaDurationSeconds={m.media_duration_seconds}
                                         timeLabel={fmtTime(m.created_at)}
                                         onDelete={() => deleteMatchMessage(log, m.id)}
                                         deletable={!m.seen_at}
@@ -820,12 +879,24 @@ export default function CoachPlayerScreen() {
                                 <View style={styles.inputRow}>
                                   <TextInput
                                     style={styles.input}
-                                    placeholder="Leave feedback on this match..."
+                                    placeholder={isRecordingMatchVoice[log.id] ? `Recording... ${matchRecordingDuration[log.id] ?? 0}s` : 'Leave feedback on this match...'}
                                     placeholderTextColor={Theme.textSecondary}
                                     value={matchMsgInputs[log.id] ?? ''}
                                     onChangeText={(t) => setMatchMsgInputs(prev => ({ ...prev, [log.id]: t }))}
+                                    editable={!isRecordingMatchVoice[log.id]}
                                     multiline
                                   />
+                                  <TouchableOpacity
+                                    style={[styles.sendBtn, isRecordingMatchVoice[log.id] && styles.sendBtnDisabled]}
+                                    onPress={() => isRecordingMatchVoice[log.id] ? stopAndSendMatchVoiceRecording(log) : startMatchVoiceRecording(log.id)}
+                                    disabled={sendingMatchVoice[log.id]}
+                                  >
+                                    {sendingMatchVoice[log.id] ? (
+                                      <ActivityIndicator size="small" color="#fff" />
+                                    ) : (
+                                      <Icon name={isRecordingMatchVoice[log.id] ? 'stop' : 'microphone-outline'} size={16} color="#fff" />
+                                    )}
+                                  </TouchableOpacity>
                                   <TouchableOpacity
                                     style={[styles.sendBtn, (!matchMsgInputs[log.id]?.trim() || sendingMatchMsg[log.id]) && styles.sendBtnDisabled]}
                                     onPress={() => sendMatchMessage(log)}

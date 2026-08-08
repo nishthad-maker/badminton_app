@@ -41,3 +41,11 @@ const LESSON_TYPE_COLORS: { private: { bg: string; fg: string }; group: { bg: st
 export function colorForLessonType(type: 'private' | 'group'): { bg: string; fg: string } {
   return LESSON_TYPE_COLORS[type];
 }
+
+// Brighter, dedicated dot colors for calendar-style event indicators, where
+// the dot itself needs to read as vivid/legible at a tiny size — distinct
+// from LESSON_TYPE_COLORS.fg above, which is tuned for on-light-background
+// TEXT (label chips) rather than a small filled dot. Shared across every
+// screen with a lesson-dot calendar strip so private/group/makeup/tournament
+// always mean the same color everywhere.
+export const LESSON_DOT_COLOR = { private: '#2E86DE', group: '#7CB342', makeup: '#8A6200', tournament: '#E74C3C' };

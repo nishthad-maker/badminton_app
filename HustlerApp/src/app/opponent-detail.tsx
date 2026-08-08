@@ -221,14 +221,22 @@ export default function OpponentDetailScreen() {
                     <Text style={styles.logDate}>{fmtDate(log.created_at)}</Text>
                     <View style={styles.logTopRowRight}>
                       {log.is_quick_log && <View style={styles.quickBadge}><Text style={styles.quickBadgeText}>Quick log</Text></View>}
-                      <TouchableOpacity onPress={() => editLog(log)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <Icon name="pencil-outline" size={18} color={Theme.textSecondary} />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => deleteLog(log)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <Icon name="trash-can-outline" size={18} color="#FF6B6B" />
-                      </TouchableOpacity>
+                      {/* A parent-authored log is theirs to edit/delete, not the
+                          player's — editLog would also route into /log-match,
+                          which assumes the logged-in account IS the author. */}
+                      {!log.logged_by_parent_id && (
+                        <>
+                          <TouchableOpacity onPress={() => editLog(log)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Icon name="pencil-outline" size={18} color={Theme.textSecondary} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => deleteLog(log)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Icon name="trash-can-outline" size={18} color="#FF6B6B" />
+                          </TouchableOpacity>
+                        </>
+                      )}
                     </View>
                   </View>
+                  {!!log.logged_by_parent_id && <Text style={styles.logNote}>Logged by a parent</Text>}
 
                   {(log.score || (log.result && log.result !== 'unsure')) && (
                     <View style={styles.scoreResultRow}>
@@ -257,6 +265,14 @@ export default function OpponentDetailScreen() {
                         </View>
                       )}
                       {log.weaknesses_text && <Text style={styles.logNote}>{log.weaknesses_text}</Text>}
+                    </View>
+                  )}
+
+                  {(log.parent_strengths_text || log.parent_weaknesses_text) && (
+                    <View style={styles.logSection}>
+                      <Text style={[styles.logNote, { fontWeight: '600' }]}>A parent added notes to this match:</Text>
+                      {log.parent_strengths_text && <Text style={styles.logNote}>Strengths: {log.parent_strengths_text}</Text>}
+                      {log.parent_weaknesses_text && <Text style={styles.logNote}>Weaknesses: {log.parent_weaknesses_text}</Text>}
                     </View>
                   )}
 
@@ -325,8 +341,9 @@ export default function OpponentDetailScreen() {
                                   isMine={m.sender_id === myId}
                                   senderLabel="Coach"
                                   message={m.message}
-                                  mediaUrl={null}
-                                  mediaType={null}
+                                  mediaUrl={m.media_url}
+                                  mediaType={m.media_type}
+                                  mediaDurationSeconds={m.media_duration_seconds}
                                   timeLabel={fmtTime(m.created_at)}
                                 />
                               ))}

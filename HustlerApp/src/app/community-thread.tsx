@@ -76,7 +76,7 @@ export default function ThreadScreen() {
         .from('usernames')
         .select('username')
         .eq('user_id', uid)
-        .single();
+        .maybeSingle();
       if (u?.username) namesMap[uid] = u.username;
     }
     setUsernames(namesMap);

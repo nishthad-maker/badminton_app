@@ -1,4 +1,6 @@
 import { View, TouchableOpacity, Image, Linking, StyleSheet } from 'react-native';
+import { useState, useRef, useEffect } from 'react';
+import { Audio } from 'expo-av';
 import { Text } from '@/components/Text';
 import { Icon } from '@/components/icons/Icon';
 import { Theme } from '@/constants/theme';
@@ -9,6 +11,7 @@ export function MessageBubble({
   message,
   mediaUrl,
   mediaType,
+  mediaDurationSeconds,
   timeLabel,
   onDelete,
   deletable = true,
@@ -17,11 +20,34 @@ export function MessageBubble({
   senderLabel?: string;
   message?: string;
   mediaUrl?: string | null;
-  mediaType?: 'photo' | 'video' | null;
+  mediaType?: 'photo' | 'video' | 'audio' | null;
+  mediaDurationSeconds?: number | null;
   timeLabel: string;
   onDelete?: () => void;
   deletable?: boolean;
 }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const soundRef = useRef<Audio.Sound | null>(null);
+
+  useEffect(() => () => { soundRef.current?.unloadAsync(); }, []);
+
+  const toggleAudio = async () => {
+    if (!mediaUrl) return;
+    if (isPlaying) {
+      await soundRef.current?.stopAsync();
+      await soundRef.current?.unloadAsync();
+      soundRef.current = null;
+      setIsPlaying(false);
+      return;
+    }
+    const { sound } = await Audio.Sound.createAsync({ uri: mediaUrl }, { shouldPlay: true });
+    soundRef.current = sound;
+    setIsPlaying(true);
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.isLoaded && status.didJustFinish) setIsPlaying(false);
+    });
+  };
+
   return (
     <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
       {!isMine && senderLabel ? <Text style={styles.sender}>{senderLabel}</Text> : null}
@@ -30,6 +56,13 @@ export function MessageBubble({
           <TouchableOpacity style={styles.video} onPress={() => Linking.openURL(mediaUrl)}>
             <Icon name="play-circle-outline" size={26} color={isMine ? '#fff' : Theme.todayBlue} />
             <Text style={[styles.videoText, isMine ? styles.textMine : styles.textOther]}>Tap to watch</Text>
+          </TouchableOpacity>
+        ) : mediaType === 'audio' ? (
+          <TouchableOpacity style={styles.video} onPress={toggleAudio}>
+            <Icon name={isPlaying ? 'pause-circle' : 'play-circle'} size={26} color={isMine ? '#fff' : Theme.todayBlue} />
+            <Text style={[styles.videoText, isMine ? styles.textMine : styles.textOther]}>
+              Voice note{mediaDurationSeconds ? ` · ${mediaDurationSeconds}s` : ''}
+            </Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity onPress={() => Linking.openURL(mediaUrl)}>

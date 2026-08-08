@@ -1,15 +1,22 @@
-import { Tabs, router } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
 import { useEffect, useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { Icon } from '@/components/icons/Icon';
 import { Theme } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
 import { getMyClub } from '../../lib/club';
+import { resolveMyRole, ROLE_HOME_ROUTE } from '../../lib/roleRouting';
+import { setPreferredViewMode } from '../../lib/viewMode';
+import { SwitchBackBanner } from '@/components/SwitchBackBanner';
+import { ClubAdminSideMenu } from '@/components/ClubAdminSideMenu';
 
-export default function ClubAdminTabLayout() {
+export default function ClubAdminLayout() {
   const [checked, setChecked] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
+  // Only set once this owner has also flipped on "I also coach lessons
+  // here" in club-settings.tsx — a plain owner with no coach side has
+  // nothing to switch back to.
+  const [isAlsoCoach, setIsAlsoCoach] = useState(false);
 
   const checkClub = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -17,17 +24,32 @@ export default function ClubAdminTabLayout() {
       router.replace('/login' as any);
       return;
     }
+    // A staff coach legitimately reaches these screens too (via the "My
+    // Club" link), not just a role='club' owner account — only a player or
+    // parent account has no business here at all.
+    const role = await resolveMyRole();
+    if (role === 'player' || role === 'parent') {
+      router.replace(ROLE_HOME_ROUTE[role] as any);
+      return;
+    }
     const club = await getMyClub();
     // No club yet: only a not-yet-set-up 'club' account reaches this screen
     // (a staff coach only gets here via the "My Club" link, which already
     // requires getMyClub() to resolve) — treat them as a would-be owner so
-    // every tab (including Club, to finish setup) stays reachable.
+    // every nav item (including Settings, to finish setup) stays reachable.
     setIsOwner(club ? club.role === 'owner' : true);
+    const { data: profile } = await supabase.from('profiles').select('is_coach').eq('id', session.user.id).maybeSingle();
+    setIsAlsoCoach(!!profile?.is_coach);
     setChecked(true);
   }, []);
 
   useEffect(() => { checkClub(); }, [checkClub]);
   useFocusEffect(useCallback(() => { checkClub(); }, [checkClub]));
+
+  const backToCoach = async () => {
+    await setPreferredViewMode('coach');
+    router.replace('/(coach-tabs)/players' as any);
+  };
 
   if (!checked) {
     return (
@@ -37,45 +59,18 @@ export default function ClubAdminTabLayout() {
     );
   }
 
+  // A hamburger + slide-out side menu in place of the old bottom Tabs bar
+  // (same 4 destinations, Settings still owner-gated) — see
+  // ClubAdminSideMenu.tsx for why this is a floating overlay rather than a
+  // persistent header: it needs zero changes to any of the screens below.
+  // Stack (not Tabs) drives routing now, so there's no tab bar to hide
+  // hidden routes (payments/club-setup/club-onboarding/enroll-private)
+  // from — every file in this directory is just a plain stack screen.
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: Theme.background,
-          borderTopColor: Theme.divider,
-          borderTopWidth: 1,
-          height: 96,
-          paddingBottom: 20,
-          paddingTop: 12,
-        },
-        tabBarActiveTintColor: Theme.todayBlue,
-        tabBarInactiveTintColor: Theme.textMuted,
-        tabBarLabelStyle: { fontSize: 13, fontWeight: '600', marginTop: 2 },
-      }}
-    >
-      <Tabs.Screen
-        name="dashboard"
-        options={{ title: 'Dashboard', tabBarIcon: ({ color }) => <Icon name="view-dashboard" size={29} color={color} /> }}
-      />
-      <Tabs.Screen
-        name="tiers"
-        options={{ title: 'Lessons', tabBarIcon: ({ color }) => <Icon name="whistle-outline" size={29} color={color} /> }}
-      />
-      <Tabs.Screen
-        name="club-calendar"
-        options={{ title: 'Calendar', tabBarIcon: ({ color }) => <Icon name="calendar-week" size={29} color={color} /> }}
-      />
-      <Tabs.Screen
-        name="club-settings"
-        options={{ title: 'Settings', href: isOwner ? undefined : null, tabBarIcon: ({ color }) => <Icon name="account-badge" size={29} color={color} /> }}
-      />
-      {/* Payments is reached from a link inside Settings now, not its own
-          tab — the spec's Phase 1 club nav is exactly 4 tabs (Dashboard,
-          Lessons, Calendar, Settings). */}
-      <Tabs.Screen name="payments" options={{ href: null }} />
-      <Tabs.Screen name="club-setup" options={{ href: null }} />
-      <Tabs.Screen name="club-onboarding" options={{ href: null }} />
-    </Tabs>
+    <View style={{ flex: 1 }}>
+      {isAlsoCoach && <SwitchBackBanner label="Back to Coach" onPress={backToCoach} />}
+      <Stack initialRouteName="dashboard" screenOptions={{ headerShown: false }} />
+      <ClubAdminSideMenu showSettings={isOwner} />
+    </View>
   );
 }

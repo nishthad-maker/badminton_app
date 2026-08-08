@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { notifyWeeklyPlan } from '../lib/notifications';
 import { getMyClub, getClubRosterForCoach } from '../lib/club';
 import workouts from '../data/workouts';
+import { localDateStr } from '../lib/scheduling';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -148,7 +149,7 @@ export default function AssignWeeklyPlanScreen() {
     const now = new Date();
     const monday = new Date(now);
     monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-    const weekStart = monday.toISOString().split('T')[0];
+    const weekStart = localDateStr(monday);
 
     const inserts = selectedPlayerIds.map(pid => ({
       coach_id: session.user.id,

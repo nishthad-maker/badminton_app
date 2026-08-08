@@ -2,19 +2,23 @@ import { View, StyleSheet, ScrollView, TouchableOpacity, Modal, useWindowDimensi
 import { Text } from '@/components/Text';
 import { TextInput } from '@/components/TextInput';
 import { Icon } from '@/components/icons/Icon';
-import { MiniDatePicker } from '@/components/MiniDatePicker';
+import { MiniDatePicker, MiniDateRangePicker } from '@/components/MiniDatePicker';
 import { TimePicker } from '@/components/TimePicker';
 import { CoachDayGrid, CoachDayBlock } from '@/components/CoachDayGrid';
+import { WeeklyGrid, GridBlock } from '@/components/WeeklyGrid';
 import { SearchInput } from '@/components/SearchInput';
 import { useState, useCallback, useEffect } from 'react';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Theme, Fonts, CategoryTheme } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
 import { showAlert, showConfirm } from '../../lib/ui';
-import { getMyClub, searchClubRosterPlayers, PlayerSearchResult } from '../../lib/club';
+import { getMyClub, getClubHours, searchClubRosterPlayers, PlayerSearchResult } from '../../lib/club';
+import { colorForId } from '../../lib/colors';
 import { getClubCourts, Court } from '../../lib/courts';
-import { getGroupLessons, getRoster, addTimeSlot, GroupLesson, RosterPlayer } from '../../lib/lessons';
-import { DAY_NAMES, formatTime12h, timeToMinutes, firstName } from '../../lib/scheduling';
+import { getGroupLessons, getRoster, addTimeSlot, updateTimeSlot, deleteTimeSlot, GroupLesson, RosterPlayer } from '../../lib/lessons';
+import { getClubMaintenanceBlocksForDate, MaintenanceBlock } from '../../lib/maintenanceBlocks';
+import { getRentalsForDate, createCourtRental, CourtRental } from '../../lib/rentals';
+import { DAY_NAMES, formatTime12h, formatDateLong, timeToMinutes, firstName, localDateStr } from '../../lib/scheduling';
 import { notifyWaitlistPromoted, notifyScheduleRequestApproved, notifyScheduleRequestRejected } from '../../lib/notifications';
 import {
   requestLessonCancellation, getPendingCancellationRequests, approveCancellationRequest, declineCancellationRequest,
@@ -22,8 +26,10 @@ import {
 } from '../../lib/cancellationRequests';
 import { NoClubPrompt } from '@/components/NoClubPrompt';
 import { SetupLockedPlaceholder } from '@/components/SetupLockedPlaceholder';
+import { CoachTimeOffModal } from '@/components/CoachTimeOffModal';
+import { getPlayerPrivateLessonPlans, addSessionsToPlan, PrivateLessonPlan } from '../../lib/privateLessonPlans';
 
-const todayStr = () => new Date().toISOString().split('T')[0];
+const todayStr = () => localDateStr(new Date());
 
 // Fixed, consistent colors for the day-grid blocks (both By court and By
 // coach views) — a lesson's TYPE reads the same everywhere rather than
@@ -38,6 +44,11 @@ const todayStr = () => new Date().toISOString().split('T')[0];
 const PRIVATE_BLOCK_COLOR = CategoryTheme.strength;
 const GROUP_BLOCK_COLOR = CategoryTheme.endurance;
 const OPEN_BLOCK_COLOR = CategoryTheme.recovery;
+// Maintenance/rental blocks aren't part of the 4-entry CategoryTheme
+// palette (all 4 are already spoken for on this screen) — ad hoc literals,
+// scoped to just this screen.
+const MAINTENANCE_BLOCK_COLOR = { bg: '#E4E1DC', fg: '#5C594F' };
+const RENTAL_BLOCK_COLOR = { bg: '#E6D9F5', fg: '#6B3FA0' };
 
 const startOfWeek = (d: Date) => {
   const copy = new Date(d);
@@ -48,12 +59,11 @@ const startOfWeek = (d: Date) => {
 
 const minutesToTime = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 
-// A club has no configured operating-hours field, so the day-agenda's
-// open/booked timeline assumes this fixed window for every court. If a real
-// club reports open slots outside these hours (or hidden ones inside them),
-// this constant — not a per-club setting — is the thing to revisit.
-const DAY_WINDOW_START_MIN = 8 * 60;
-const DAY_WINDOW_END_MIN = 20 * 60;
+// Fallback window when a club hasn't set its own open_time/close_time yet
+// (club_settings, editable in Club Settings) — the real hours are loaded
+// into dayWindowStart/dayWindowEnd state in load() below.
+const DEFAULT_DAY_WINDOW_START_MIN = 8 * 60;
+const DEFAULT_DAY_WINDOW_END_MIN = 20 * 60;
 // Gaps shorter than this aren't worth surfacing as a bookable "Open" card.
 const MIN_OPEN_GAP_MINUTES = 30;
 
@@ -62,8 +72,9 @@ type Coach = { id: string; full_name: string };
 type LessonEntry = {
   id: string; player_id: string; player_name: string; day_of_week: number; start_time: string; end_time: string;
   valid_until: string | null; coach_id: string; coach_name: string; court_id: string | null; court_name: string | null;
+  plan_id: string | null;
 };
-type WaitEntry = { id: string; player_id: string; player_name: string; priority: number; status: string; offered_at: string | null; expires_at: string | null };
+type WaitEntry = { id: string; player_id: string; player_name: string; priority: number; status: string; offered_at: string | null; expires_at: string | null; preferred_note: string | null };
 type ScheduleRequestEntry = {
   id: string; child_id: string; child_name: string; parent_id: string; day_of_week: number; start_time: string; end_time: string;
   replaces_schedule_assignment_id: string | null;
@@ -77,7 +88,12 @@ type ScheduleRequestEntry = {
 // by-coach view onto the logged-in coach with no coach picker and no way to
 // switch to the club-wide view, since this instance of the screen is only
 // ever meant to show one person's own day.
-export default function ClubCalendarScreen({ embedded = false, lockToSelf = false }: { embedded?: boolean; lockToSelf?: boolean } = {}) {
+// restrictBooking: 'lessons' when rendered inside training.tsx's Calendar
+// tab — the "Book" flow there only offers Private/Group; Member/rental
+// booking now lives on its own screen (rental.tsx). Rentals still DISPLAY
+// here for context (a coach shouldn't think a rented-out court is free),
+// just can't be created from this screen anymore.
+export default function ClubCalendarScreen({ embedded = false, lockToSelf = false, restrictBooking }: { embedded?: boolean; lockToSelf?: boolean; restrictBooking?: 'lessons' } = {}) {
   const params = useLocalSearchParams<{ view?: string; coachId?: string }>();
 
   // Both grid modes below only ever show one column at a time (one court, or
@@ -100,11 +116,12 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
   const [busyId, setBusyId] = useState<string | null>(null);
 
   // By Coach view
-  const [coachViewMode, setCoachViewMode] = useState<'court' | 'coach'>('court');
+  const [coachViewMode, setCoachViewMode] = useState<'court' | 'coach' | 'week'>('court');
   const [selectedCourtId, setSelectedCourtId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [dayCancellations, setDayCancellations] = useState<Record<string, string>>({}); // schedule_assignment_id -> reason, for the selected date
   const [selectedCoachId, setSelectedCoachId] = useState<string | null>(null);
+  const [timeOffModalVisible, setTimeOffModalVisible] = useState(false);
   const [waitlist, setWaitlist] = useState<WaitEntry[]>([]);
   const [claimHours, setClaimHours] = useState(24);
   const [scheduleRequests, setScheduleRequests] = useState<ScheduleRequestEntry[]>([]);
@@ -119,6 +136,15 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
   // Group lesson roster modal (opened by tapping a group block/card)
   const [rosterTierId, setRosterTierId] = useState<string | null>(null);
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
+  // Which lesson_time_slots row the roster modal was opened FROM (tapping a
+  // specific day/time block, not the "Group Lessons" list) — lets the modal
+  // offer reschedule/remove for that one slot. Null when opened generically.
+  const [rosterSlotId, setRosterSlotId] = useState<string | null>(null);
+  const [slotRescheduleOpen, setSlotRescheduleOpen] = useState(false);
+  const [slotRescheduleDay, setSlotRescheduleDay] = useState(1);
+  const [slotRescheduleStart, setSlotRescheduleStart] = useState('16:00');
+  const [slotRescheduleEnd, setSlotRescheduleEnd] = useState('17:00');
+  const [slotRescheduleSaving, setSlotRescheduleSaving] = useState(false);
 
   // Tournament block modal
   const [blockLesson, setBlockLesson] = useState<LessonEntry | null>(null);
@@ -134,6 +160,23 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
   const [myCancelRequests, setMyCancelRequests] = useState<CancellationRequest[]>([]);
   const [pendingCancelRequests, setPendingCancelRequests] = useState<CancellationRequest[]>([]);
 
+  // Manage-lesson modal — opened by tapping a private lesson block directly
+  // (Courts or Coaches view), instead of the old read-only alert. Reuses
+  // cancelLesson/endLesson for two of its three actions; "Reschedule" is new.
+  const [manageLesson, setManageLesson] = useState<LessonEntry | null>(null);
+  const [manageLessonMode, setManageLessonMode] = useState<'view' | 'reschedule'>('view');
+  const [rescheduleCoachId, setRescheduleCoachId] = useState<string | null>(null);
+  const [rescheduleDay, setRescheduleDay] = useState(1);
+  const [rescheduleStart, setRescheduleStart] = useState('16:00');
+  const [rescheduleEnd, setRescheduleEnd] = useState('17:00');
+  const [reschedulingSaving, setReschedulingSaving] = useState(false);
+  // The plan-based session budget behind the tapped lesson, if any (null for
+  // a one-off "just this week" booking, which has no plan/budget concept).
+  const [manageLessonPlan, setManageLessonPlan] = useState<PrivateLessonPlan | null>(null);
+  const [manageTopUpOpen, setManageTopUpOpen] = useState(false);
+  const [manageTopUpAmount, setManageTopUpAmount] = useState('5');
+  const [manageTopUpSaving, setManageTopUpSaving] = useState(false);
+
   // Promote-from-waitlist modal
   const [promoteEntry, setPromoteEntry] = useState<WaitEntry | null>(null);
   const [promoteDay, setPromoteDay] = useState(1);
@@ -146,7 +189,7 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
   // which one the pending booking will actually use.
   const [bookSlot, setBookSlot] = useState<{ courtIds: string[]; courtNames: string[]; freeCoachIds: string[] } | null>(null);
   const [bookCourtId, setBookCourtId] = useState<string | null>(null);
-  const [bookMode, setBookMode] = useState<'choose' | 'private' | 'group'>('choose');
+  const [bookMode, setBookMode] = useState<'choose' | 'private' | 'group' | 'rental'>('choose');
   const [bookStart, setBookStart] = useState('16:00');
   const [bookEnd, setBookEnd] = useState('17:00');
   const [bookCoachId, setBookCoachId] = useState<string | null>(null);
@@ -154,7 +197,20 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
   const [bookPlayerResults, setBookPlayerResults] = useState<PlayerSearchResult[]>([]);
   const [bookPlayer, setBookPlayer] = useState<PlayerSearchResult | null>(null);
   const [bookGroupLessonId, setBookGroupLessonId] = useState<string | null>(null);
+  const [renterName, setRenterName] = useState('');
+  const [renterEmail, setRenterEmail] = useState('');
+  const [renterPhone, setRenterPhone] = useState('');
   const [bookSaving, setBookSaving] = useState(false);
+
+  // Maintenance blocks + rentals fold into the same "not open" gap-walk as
+  // lessons — both are per-date, so they're fetched alongside
+  // dayCancellations rather than club-wide.
+  const [dayMaintenanceBlocks, setDayMaintenanceBlocks] = useState<MaintenanceBlock[]>([]);
+  const [dayRentals, setDayRentals] = useState<CourtRental[]>([]);
+  // Real club hours replace the old hardcoded 8am-8pm window, falling back
+  // to it when a club hasn't set its own hours yet.
+  const [dayWindowStart, setDayWindowStart] = useState(DEFAULT_DAY_WINDOW_START_MIN);
+  const [dayWindowEnd, setDayWindowEnd] = useState(DEFAULT_DAY_WINDOW_END_MIN);
 
   const load = async () => {
     const club = await getMyClub();
@@ -201,14 +257,19 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
     setSelectedCourtId((prev) => prev ?? clubCourts[0]?.id ?? null);
     setGroupLessons(await getGroupLessons(club.clubId));
 
+    const hours = await getClubHours(club.clubId);
+    setDayWindowStart(hours.openTime ? timeToMinutes(hours.openTime) : DEFAULT_DAY_WINDOW_START_MIN);
+    setDayWindowEnd(hours.closeTime ? timeToMinutes(hours.closeTime) : DEFAULT_DAY_WINDOW_END_MIN);
+
     const { data: lessonRows } = await supabase
       .from('schedule_assignments')
-      .select('id, player_id, day_of_week, start_time, end_time, valid_until, coach_id, court_id, profiles!schedule_assignments_player_id_fkey(full_name), coach:profiles!schedule_assignments_coach_id_fkey(full_name), courts(name)')
+      .select('id, player_id, day_of_week, start_time, end_time, valid_until, coach_id, court_id, plan_id, profiles!schedule_assignments_player_id_fkey(full_name), coach:profiles!schedule_assignments_coach_id_fkey(full_name), courts(name)')
       .eq('club_id', club.clubId);
     setAllLessons((lessonRows ?? []).map((l: any) => ({
       id: l.id, player_id: l.player_id, player_name: l.profiles?.full_name ?? 'Player',
       day_of_week: l.day_of_week, start_time: l.start_time, end_time: l.end_time, valid_until: l.valid_until,
       coach_id: l.coach_id, coach_name: l.coach?.full_name ?? 'Coach', court_id: l.court_id, court_name: l.courts?.name ?? null,
+      plan_id: l.plan_id,
     })));
 
     setLoading(false);
@@ -237,7 +298,7 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
     setClaimHours(settingsRow?.waitlist_claim_hours ?? 24);
     const { data: waitRows } = await supabase
       .from('waitlist_entries')
-      .select('id, player_id, priority, status, offered_at, expires_at, profiles(full_name)')
+      .select('id, player_id, priority, status, offered_at, expires_at, preferred_note, profiles!waitlist_entries_player_id_fkey(full_name)')
       .eq('club_id', clubId)
       .eq('coach_id', selectedCoachId)
       .in('status', ['waiting', 'offered'])
@@ -245,6 +306,7 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
     setWaitlist((waitRows ?? []).map((w: any) => ({
       id: w.id, player_id: w.player_id, player_name: w.profiles?.full_name ?? 'Player',
       priority: w.priority, status: w.status, offered_at: w.offered_at, expires_at: w.expires_at,
+      preferred_note: w.preferred_note ?? null,
     })));
   }, [clubId, selectedCoachId]);
 
@@ -290,7 +352,7 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
   // table the existing "Cancel One Date" action writes to) for just the
   // selected date's private lessons.
   useEffect(() => {
-    const dateStr = selectedDate.toISOString().split('T')[0];
+    const dateStr = localDateStr(selectedDate);
     const dayOfWeek = selectedDate.getDay();
     const ids = allLessons.filter((l) => l.day_of_week === dayOfWeek).map((l) => l.id);
     if (ids.length === 0) { setDayCancellations({}); return; }
@@ -306,11 +368,76 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
       });
   }, [selectedDate, allLessons]);
 
+  // Maintenance blocks + rentals are both single-date rows (not recurring
+  // templates like lessons), so they're refetched per selected date rather
+  // than pulled club-wide in load() above.
+  useEffect(() => {
+    if (!clubId) { setDayMaintenanceBlocks([]); setDayRentals([]); return; }
+    const dateStr = localDateStr(selectedDate);
+    getClubMaintenanceBlocksForDate(clubId, dateStr).then(setDayMaintenanceBlocks);
+    getRentalsForDate(clubId, dateStr).then(setDayRentals);
+  }, [clubId, selectedDate]);
+
   const endLesson = (lesson: LessonEntry) => {
     showConfirm('End this lesson?', `Stop ${firstName(lesson.player_name)}'s recurring lesson entirely?`, async () => {
       await supabase.from('schedule_assignments').delete().eq('id', lesson.id);
       load();
     });
+  };
+
+  const openManageLesson = async (lesson: LessonEntry) => {
+    setManageLesson(lesson);
+    setManageLessonMode('view');
+    setRescheduleCoachId(lesson.coach_id);
+    setRescheduleDay(lesson.day_of_week);
+    setRescheduleStart(lesson.start_time.slice(0, 5));
+    setRescheduleEnd(lesson.end_time.slice(0, 5));
+    setManageLessonPlan(null);
+    setManageTopUpOpen(false);
+    if (lesson.plan_id && clubId) {
+      const plans = await getPlayerPrivateLessonPlans(clubId, lesson.player_id);
+      setManageLessonPlan(plans.find((p) => p.id === lesson.plan_id) ?? null);
+    }
+  };
+
+  const closeManageLesson = () => {
+    setManageLesson(null);
+    setManageLessonMode('view');
+    setManageLessonPlan(null);
+    setManageTopUpOpen(false);
+  };
+
+  const submitManageTopUp = async () => {
+    if (!manageLessonPlan) return;
+    const n = parseInt(manageTopUpAmount, 10);
+    if (!Number.isFinite(n) || n <= 0) { showAlert('Invalid amount', 'Enter how many sessions to add.'); return; }
+    setManageTopUpSaving(true);
+    const res = await addSessionsToPlan(manageLessonPlan.id, n);
+    setManageTopUpSaving(false);
+    if (!res.ok) { showAlert('Error', res.message ?? 'Could not add sessions.'); return; }
+    setManageTopUpOpen(false);
+    setManageTopUpAmount('5');
+    if (clubId && manageLesson) {
+      const plans = await getPlayerPrivateLessonPlans(clubId, manageLesson.player_id);
+      setManageLessonPlan(plans.find((p) => p.id === manageLessonPlan.id) ?? null);
+    }
+    load();
+  };
+
+  // A permanent edit to the recurring template (coach/day/time) — not a
+  // one-off exception, which is what "Cancel This Date" (the existing
+  // cancelLesson flow) is for.
+  const submitReschedule = async () => {
+    if (!manageLesson || !rescheduleCoachId) { showAlert('Missing coach', 'Pick a coach.'); return; }
+    if (!rescheduleStart || !rescheduleEnd || rescheduleStart >= rescheduleEnd) { showAlert('Invalid time', 'Pick a start and end time, with end after start.'); return; }
+    setReschedulingSaving(true);
+    const { error } = await supabase.from('schedule_assignments').update({
+      coach_id: rescheduleCoachId, day_of_week: rescheduleDay, start_time: rescheduleStart, end_time: rescheduleEnd,
+    }).eq('id', manageLesson.id);
+    setReschedulingSaving(false);
+    if (error) { showAlert('Error', 'Could not reschedule that lesson.'); return; }
+    closeManageLesson();
+    load();
   };
 
   const closeCancelModal = () => {
@@ -324,7 +451,7 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
     if (canFullyManage) {
       await supabase.from('schedule_exceptions').insert({ schedule_assignment_id: cancelLesson.id, date: cancelDate, reason: 'cancelled' });
       closeCancelModal();
-      showAlert('Cancelled', `${firstName(cancelLesson.player_name)}'s lesson on ${cancelDate} was cancelled.`);
+      showAlert('Cancelled', `${firstName(cancelLesson.player_name)}'s lesson on ${formatDateLong(cancelDate)} was cancelled.`);
       load();
       return;
     }
@@ -337,12 +464,12 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
     setSubmittingCancel(false);
     if (!res.ok) { showAlert('Error', res.message || 'Could not submit that request.'); return; }
     closeCancelModal();
-    showAlert('Sent to your club', `Your request to cancel ${cancelDate} is waiting on approval.`);
+    showAlert('Sent to your club', `Your request to cancel ${formatDateLong(cancelDate)} is waiting on approval.`);
     loadCancelRequests();
   };
 
   const approveCancelReq = (request: CancellationRequest, label: string) => {
-    showConfirm('Approve this cancellation?', `${label} on ${request.cancelDate} will be marked cancelled.`, async () => {
+    showConfirm('Approve this cancellation?', `${label} on ${formatDateLong(request.cancelDate)} will be marked cancelled.`, async () => {
       const res = await approveCancellationRequest(request, label);
       if (!res.ok) { showAlert('Error', 'Could not approve this request.'); return; }
       loadCancelRequests();
@@ -351,7 +478,7 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
   };
 
   const declineCancelReq = (request: CancellationRequest, label: string) => {
-    showConfirm('Decline this cancellation?', `${label} on ${request.cancelDate} will stay on the schedule.`, async () => {
+    showConfirm('Decline this cancellation?', `${label} on ${formatDateLong(request.cancelDate)} will stay on the schedule.`, async () => {
       const res = await declineCancellationRequest(request, label);
       if (!res.ok) { showAlert('Error', 'Could not decline this request.'); return; }
       loadCancelRequests();
@@ -436,25 +563,16 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
   const approveScheduleRequest = async (request: ScheduleRequestEntry) => {
     if (!clubId || !selectedCoachId) return;
     setBusyId(request.id);
-    const { data: { session } } = await supabase.auth.getSession();
-    const { error } = await supabase.from('schedule_assignments').insert({
-      club_id: clubId,
-      player_id: request.child_id,
-      coach_id: selectedCoachId,
-      day_of_week: request.day_of_week,
-      start_time: request.start_time,
-      end_time: request.end_time,
-      valid_from: todayStr(),
-    });
+    // Atomic RPC: insert the new lesson, drop the one it replaces, and mark
+    // the request approved all in one transaction — see
+    // 20260805160000_atomic_schedule_request_approval.sql for why this used
+    // to be three separate unguarded calls and what that broke.
+    const { error } = await supabase.rpc('approve_schedule_request', { p_request_id: request.id, p_coach_id: selectedCoachId });
     if (error) {
       setBusyId(null);
       showAlert('Error', 'Could not create the lesson. Please try again.');
       return;
     }
-    if (request.replaces_schedule_assignment_id) {
-      await supabase.from('schedule_assignments').delete().eq('id', request.replaces_schedule_assignment_id);
-    }
-    await supabase.from('schedule_requests').update({ status: 'approved', reviewed_by: session?.user.id, reviewed_at: new Date().toISOString() }).eq('id', request.id);
     await notifyScheduleRequestApproved(request.parent_id, request.child_name, `${DAY_NAMES[request.day_of_week]} ${formatTime12h(request.start_time)}–${formatTime12h(request.end_time)}`);
     setBusyId(null);
     loadScheduleRequests();
@@ -472,9 +590,53 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
     });
   };
 
-  const openTierRoster = async (groupTierId: string) => {
+  const openTierRoster = async (groupTierId: string, slotId?: string) => {
     setRosterTierId(groupTierId);
+    setRosterSlotId(slotId ?? null);
+    setSlotRescheduleOpen(false);
     setRoster(await getRoster(groupTierId));
+  };
+
+  const closeTierRoster = () => {
+    setRosterTierId(null);
+    setRosterSlotId(null);
+    setSlotRescheduleOpen(false);
+  };
+
+  // Group lessons don't have a single "the coach" field on a slot — coach
+  // assignment is the lesson-level main/assistant roster, already editable
+  // in tiers.tsx — so a slot reschedule is day/time only, not coach.
+  const openSlotReschedule = (slot: { day_of_week: number; start_time: string; end_time: string }) => {
+    setSlotRescheduleDay(slot.day_of_week);
+    setSlotRescheduleStart(slot.start_time.slice(0, 5));
+    setSlotRescheduleEnd(slot.end_time.slice(0, 5));
+    setSlotRescheduleOpen(true);
+  };
+
+  const submitSlotReschedule = async () => {
+    if (!rosterSlotId) return;
+    if (!slotRescheduleStart || !slotRescheduleEnd || slotRescheduleStart >= slotRescheduleEnd) { showAlert('Invalid time', 'Pick a start and end time, with end after start.'); return; }
+    setSlotRescheduleSaving(true);
+    // updateTimeSlot replaces the slot's court list wholesale with whatever
+    // courtIds is passed — carry the slot's existing courts through
+    // unchanged, or a plain day/time reschedule would silently strip them.
+    const existingSlot = groupLessons.find((t) => t.id === rosterTierId)?.slots.find((s) => s.id === rosterSlotId);
+    await updateTimeSlot(rosterSlotId, {
+      day: slotRescheduleDay, start: slotRescheduleStart, end: slotRescheduleEnd,
+      isRecurring: true, oneTimeDate: null, courtIds: existingSlot?.court_ids ?? [],
+    });
+    setSlotRescheduleSaving(false);
+    closeTierRoster();
+    load();
+  };
+
+  const removeSlot = () => {
+    if (!rosterSlotId) return;
+    showConfirm('Remove this slot?', 'This weekly time will no longer be part of the lesson.', async () => {
+      await deleteTimeSlot(rosterSlotId);
+      closeTierRoster();
+      load();
+    });
   };
 
   // ── Book an open court slot ──
@@ -488,6 +650,9 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
     setBookPlayerQuery('');
     setBookPlayerResults([]);
     setBookGroupLessonId(null);
+    setRenterName('');
+    setRenterEmail('');
+    setRenterPhone('');
   };
 
   const searchBookPlayers = async (q: string) => {
@@ -502,7 +667,7 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
     if (!bookPlayer) { showAlert('Missing player', 'Pick a player.'); return; }
     if (!bookStart || !bookEnd || bookStart >= bookEnd) { showAlert('Invalid time', 'Pick a start and end time, with end after start.'); return; }
     setBookSaving(true);
-    const dateStr = selectedDate.toISOString().split('T')[0];
+    const dateStr = localDateStr(selectedDate);
     const { error } = await supabase.from('schedule_assignments').insert({
       club_id: clubId, player_id: bookPlayer.id, coach_id: bookCoachId,
       day_of_week: selectedDate.getDay(), start_time: bookStart, end_time: bookEnd,
@@ -518,12 +683,50 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
     if (!bookSlot || !bookCourtId || !bookGroupLessonId) { showAlert('Missing lesson', 'Pick which group lesson this slot is for.'); return; }
     if (!bookStart || !bookEnd || bookStart >= bookEnd) { showAlert('Invalid time', 'Pick a start and end time, with end after start.'); return; }
     setBookSaving(true);
-    const dateStr = selectedDate.toISOString().split('T')[0];
+    const dateStr = localDateStr(selectedDate);
     await addTimeSlot(bookGroupLessonId, {
       day: selectedDate.getDay(), start: bookStart, end: bookEnd,
       isRecurring: false, oneTimeDate: dateStr, courtIds: [bookCourtId],
     });
     setBookSaving(false);
+    closeBookModal();
+    load();
+  };
+
+  const submitRentalBooking = async () => {
+    if (!clubId || !bookCourtId) return;
+    if (!renterName.trim()) { showAlert('Missing name', "Enter the member's name."); return; }
+    if (!renterEmail.trim()) { showAlert('Missing email', "Enter the member's email."); return; }
+    if (!bookStart || !bookEnd || bookStart >= bookEnd) { showAlert('Invalid time', 'Pick a start and end time, with end after start.'); return; }
+    setBookSaving(true);
+    const res = await createCourtRental({
+      clubId, courtId: bookCourtId, date: localDateStr(selectedDate),
+      startTime: bookStart, endTime: bookEnd, renterName, renterEmail, renterPhone: renterPhone || null,
+    });
+    setBookSaving(false);
+    if (!res.ok) { showAlert('Error', res.message ?? 'Could not book that rental.'); return; }
+    closeBookModal();
+    load();
+  };
+
+  const selectedDayOfWeek = selectedDate.getDay();
+
+  // A private lesson created via enroll-private.tsx never gets a court (the
+  // wizard has no court step — that's a physical-scheduling concern
+  // decided later, here). Surface any court-less private lesson whose day
+  // and time overlap this specific open slot, so the club can just assign
+  // it here instead of editing the row directly in the DB.
+  const courtlessLessonsForSlot = bookSlot
+    ? allLessons.filter((l) =>
+        !l.court_id && l.day_of_week === selectedDayOfWeek
+        && timeToMinutes(l.start_time) < timeToMinutes(bookEnd) && timeToMinutes(bookStart) < timeToMinutes(l.end_time)
+      )
+    : [];
+
+  const assignCourtToLesson = async (lesson: LessonEntry) => {
+    if (!bookCourtId) return;
+    const { error } = await supabase.from('schedule_assignments').update({ court_id: bookCourtId }).eq('id', lesson.id);
+    if (error) { showAlert('Error', 'Could not assign that court.'); return; }
     closeBookModal();
     load();
   };
@@ -550,9 +753,29 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
     d.setDate(d.getDate() + i);
     return d;
   });
-  const selectedDayOfWeek = selectedDate.getDay();
-
   const coachColumns = coaches.map((c) => ({ id: c.id, name: c.full_name }));
+
+  // A block is always shown on the specific date it falls on (day-scoped in
+  // Day view, or the matching weekday within the visible week in Week
+  // view), so the date to cancel is already known — no need to make the
+  // admin pick it again in a separate step.
+  const occurrenceDateFor = (lesson: LessonEntry) => {
+    const match = weekDays.find((d) => d.getDay() === lesson.day_of_week);
+    return localDateStr(match ?? selectedDate);
+  };
+
+  const cancelLessonDate = (lesson: LessonEntry) => {
+    const dateStr = occurrenceDateFor(lesson);
+    showConfirm(
+      'Cancel this date?',
+      `${firstName(lesson.player_name)}'s lesson on ${formatDateLong(dateStr)} will be cancelled.`,
+      async () => {
+        await supabase.from('schedule_exceptions').insert({ schedule_assignment_id: lesson.id, date: dateStr, reason: 'cancelled' });
+        load();
+      },
+      'Cancel Lesson'
+    );
+  };
 
   const dayPrivateBlocks: CoachDayBlock[] = allLessons
     .filter((l) => l.day_of_week === selectedDayOfWeek)
@@ -572,6 +795,30 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
         color: GROUP_BLOCK_COLOR,
       }));
   });
+
+  // ── All coaches, one week (coachViewMode === 'week') ──
+  // Shows the recurring weekly PATTERN (day-of-week + time, exactly what
+  // allLessons/groupLessons already carry), not exceptions/cancellations
+  // for one specific real week — "a typical week at a glance," matching how
+  // every other lens on this screen already treats a "day" as a
+  // day-of-week pattern first and a real date second. Color-coded per
+  // coach via colorForId (same helper coach avatars use elsewhere), so a
+  // coach reads as one consistent color across the whole grid — two
+  // coaches double-booked at once land in side-by-side lanes automatically
+  // (WeeklyGrid's own overlap handling), not stacked.
+  const weekGridBlocks: GridBlock[] = [
+    ...allLessons.map((l) => ({
+      id: l.id, dayOfWeek: l.day_of_week, startTime: l.start_time, endTime: l.end_time,
+      label: firstName(l.player_name), sublabel: l.coach_name, color: colorForId(l.coach_id),
+    })),
+    ...groupLessons.flatMap((lesson) =>
+      lesson.slots.map((s) => ({
+        id: `tier::${lesson.id}::${s.id}`, dayOfWeek: s.day_of_week, startTime: s.start_time, endTime: s.end_time,
+        label: lesson.name, sublabel: lesson.coaches[0]?.full_name ?? 'Group',
+        color: lesson.coaches[0] ? colorForId(lesson.coaches[0].coach_id) : GROUP_BLOCK_COLOR,
+      }))
+    ),
+  ];
 
   // ── One coach, one day (coachViewMode === 'coach') ──
 
@@ -599,7 +846,7 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
   };
 
   type CourtBooking = {
-    id: string; courtId: string; startMin: number; endMin: number; kind: 'private' | 'group';
+    id: string; courtId: string; startMin: number; endMin: number; kind: 'private' | 'group' | 'maintenance' | 'rental';
     title: string; chips: { label: string; color: { bg: string; fg: string } }[];
     onPress: () => void;
   };
@@ -611,7 +858,7 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
         id: l.id, courtId: l.court_id as string, startMin: timeToMinutes(l.start_time), endMin: timeToMinutes(l.end_time),
         kind: 'private' as const, title: cancelled ? `${firstName(l.player_name)} (Cancelled)` : firstName(l.player_name),
         chips: [{ label: l.coach_name, color: PRIVATE_BLOCK_COLOR }],
-        onPress: () => showAlert(firstName(l.player_name), `${l.coach_name}\n${formatTime12h(l.start_time)}–${formatTime12h(l.end_time)}`),
+        onPress: () => openManageLesson(l),
       };
     }),
     ...groupLessons.flatMap((lesson) =>
@@ -620,10 +867,22 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
           id: `tier::${lesson.id}::${s.id}::${courtId}`, courtId, startMin: timeToMinutes(s.start_time), endMin: timeToMinutes(s.end_time),
           kind: 'group' as const, title: lesson.name,
           chips: [{ label: `${lesson.roster_count} player${lesson.roster_count === 1 ? '' : 's'}`, color: GROUP_BLOCK_COLOR }],
-          onPress: () => openTierRoster(lesson.id),
+          onPress: () => openTierRoster(lesson.id, s.id),
         }))
       )
     ),
+    ...dayMaintenanceBlocks.map((b) => ({
+      id: `maint::${b.id}`, courtId: b.courtId, startMin: timeToMinutes(b.startTime), endMin: timeToMinutes(b.endTime),
+      kind: 'maintenance' as const, title: b.reason ?? 'Maintenance',
+      chips: [{ label: 'Closed', color: MAINTENANCE_BLOCK_COLOR }],
+      onPress: () => showAlert(b.reason ?? 'Maintenance', `${formatTime12h(b.startTime)}–${formatTime12h(b.endTime)}`),
+    })),
+    ...dayRentals.map((r) => ({
+      id: `rental::${r.id}`, courtId: r.courtId, startMin: timeToMinutes(r.startTime), endMin: timeToMinutes(r.endTime),
+      kind: 'rental' as const, title: r.renterName,
+      chips: [{ label: r.renterEmail, color: RENTAL_BLOCK_COLOR }],
+      onPress: () => showAlert(r.renterName, `${r.renterEmail}${r.renterPhone ? `\n${r.renterPhone}` : ''}\n${formatTime12h(r.startTime)}–${formatTime12h(r.endTime)}`),
+    })),
   ];
 
   // ── One court, one day, as an actual timeline (coachViewMode === 'court') ──
@@ -641,7 +900,7 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
   const courtDayBlocks: CourtGridBlock[] = [];
   if (selectedCourtId) {
     const bookings = courtBookings.filter((b) => b.courtId === selectedCourtId).sort((a, b) => a.startMin - b.startMin);
-    let cursor = DAY_WINDOW_START_MIN;
+    let cursor = dayWindowStart;
 
     const pushOpenBlock = (start: number, end: number) => {
       if (end - start < MIN_OPEN_GAP_MINUTES) return;
@@ -674,13 +933,19 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
       });
       cursor = Math.max(cursor, b.endMin);
     });
-    pushOpenBlock(cursor, DAY_WINDOW_END_MIN);
+    pushOpenBlock(cursor, dayWindowEnd);
   }
 
   const handleCourtBlockPress = (block: CourtGridBlock) => block.onPressOverride();
 
   const handleDayGridBlockPress = (block: CoachDayBlock) => {
-    if (block.id.startsWith('tier::')) { openTierRoster(block.id.split('::')[1]); return; }
+    if (block.id.startsWith('tier::')) {
+      const [, groupTierId, slotId] = block.id.split('::');
+      openTierRoster(groupTierId, slotId);
+      return;
+    }
+    const lesson = allLessons.find((l) => l.id === block.id);
+    if (lesson) { openManageLesson(lesson); return; }
     showAlert(block.label, `${block.sublabel ?? ''}\n${formatTime12h(block.startTime)}–${formatTime12h(block.endTime)}`);
   };
 
@@ -721,20 +986,25 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
                 <TouchableOpacity style={[styles.segmentBtn, coachViewMode === 'coach' && styles.segmentBtnActive]} onPress={() => setCoachViewMode('coach')}>
                   <Text style={[styles.segmentText, coachViewMode === 'coach' && styles.segmentTextActive]} maxFontSizeMultiplier={1.3}>Coaches</Text>
                 </TouchableOpacity>
+                <TouchableOpacity style={[styles.segmentBtn, coachViewMode === 'week' && styles.segmentBtnActive]} onPress={() => setCoachViewMode('week')}>
+                  <Text style={[styles.segmentText, coachViewMode === 'week' && styles.segmentTextActive]} maxFontSizeMultiplier={1.3}>Week</Text>
+                </TouchableOpacity>
               </View>
             )}
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }} contentContainerStyle={{ gap: 8 }}>
-              {weekDays.map((d) => {
-                const isSelected = d.toDateString() === selectedDate.toDateString();
-                return (
-                  <TouchableOpacity key={d.toISOString()} style={[styles.dayStripCell, isSelected && styles.dayStripCellActive]} onPress={() => setSelectedDate(d)}>
-                    <Text style={[styles.dayStripDayName, isSelected && styles.dayStripDayNameActive]} maxFontSizeMultiplier={1.2}>{DAY_NAMES[d.getDay()].slice(0, 3)}</Text>
-                    <Text style={[styles.dayStripDate, isSelected && styles.dayStripDateActive]} maxFontSizeMultiplier={1.2}>{d.getDate()}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+            {coachViewMode !== 'week' && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }} contentContainerStyle={{ gap: 8 }}>
+                {weekDays.map((d) => {
+                  const isSelected = d.toDateString() === selectedDate.toDateString();
+                  return (
+                    <TouchableOpacity key={d.toISOString()} style={[styles.dayStripCell, isSelected && styles.dayStripCellActive]} onPress={() => setSelectedDate(d)}>
+                      <Text style={[styles.dayStripDayName, isSelected && styles.dayStripDayNameActive]} maxFontSizeMultiplier={1.2}>{DAY_NAMES[d.getDay()].slice(0, 3)}</Text>
+                      <Text style={[styles.dayStripDate, isSelected && styles.dayStripDateActive]} maxFontSizeMultiplier={1.2}>{d.getDate()}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
 
             {coachViewMode === 'court' ? (
               <>
@@ -759,7 +1029,7 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
                   />
                 )}
               </>
-            ) : (
+            ) : coachViewMode === 'coach' ? (
               <>
                 {!lockToSelf && coaches.length > 0 && (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }} contentContainerStyle={{ gap: 10 }}>
@@ -780,6 +1050,14 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
                     columnWidth={gridColumnWidth}
                     hourHeight={72}
                   />
+                )}
+
+                {selectedCoachId && isOwner && (
+                  <TouchableOpacity style={styles.offTimeBtn} onPress={() => setTimeOffModalVisible(true)}>
+                    <Icon name="tune" size={18} color={Theme.eyebrowGreen} />
+                    <Text style={styles.offTimeBtnText} maxFontSizeMultiplier={1.3}>Break Time &amp; Days Off</Text>
+                    <Icon name="chevron-right" size={18} color={Theme.textSecondary} />
+                  </TouchableOpacity>
                 )}
 
                 {!canSeeAnyActions && (
@@ -849,6 +1127,9 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
                                 {entry.status === 'offered' && !isExpired(entry) && 'Offered — awaiting response'}
                                 {entry.status === 'offered' && isExpired(entry) && 'Offer expired — try next in line'}
                               </Text>
+                              {!!entry.preferred_note && (
+                                <Text style={styles.lessonMeta} maxFontSizeMultiplier={1.3}>Wants: {entry.preferred_note}</Text>
+                              )}
                             </View>
                             <View style={styles.lessonActions}>
                               <TouchableOpacity onPress={() => reorderWaitlist(i, -1)} disabled={i === 0 || busyId === entry.id}>
@@ -890,7 +1171,7 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
                             <View key={request.id} style={styles.lessonCard}>
                               <View style={{ flex: 1 }}>
                                 <Text style={styles.lessonName}>{label}</Text>
-                                <Text style={styles.lessonMeta} maxFontSizeMultiplier={1.3}>{request.cancelDate}{request.note ? ` · ${request.note}` : ''}</Text>
+                                <Text style={styles.lessonMeta} maxFontSizeMultiplier={1.3}>{formatDateLong(request.cancelDate)}{request.note ? ` · ${request.note}` : ''}</Text>
                               </View>
                               <View style={styles.lessonActions}>
                                 <TouchableOpacity style={styles.smallBtn} onPress={() => approveCancelReq(request, label)}>
@@ -933,7 +1214,7 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
                                 <Text style={styles.lessonName}>{firstName(lesson.player_name)}</Text>
                                 <Text style={styles.lessonMeta} maxFontSizeMultiplier={1.3}>{DAY_NAMES[lesson.day_of_week]} · {formatTime12h(lesson.start_time)}–{formatTime12h(lesson.end_time)}</Text>
                                 {!canFullyManage && myPendingReq && (
-                                  <Text style={styles.lessonMeta} maxFontSizeMultiplier={1.3}>Cancellation requested for {myPendingReq.cancelDate} — pending approval</Text>
+                                  <Text style={styles.lessonMeta} maxFontSizeMultiplier={1.3}>Cancellation requested for {formatDateLong(myPendingReq.cancelDate)} — pending approval</Text>
                                 )}
                               </View>
                               <View style={styles.lessonActions}>
@@ -966,6 +1247,24 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
                     )}
                   </>
                 )}
+              </>
+            ) : (
+              <>
+                {coaches.length > 0 && (
+                  <View style={styles.weekLegendRow}>
+                    {coaches.map((c) => (
+                      <View key={c.id} style={styles.weekLegendItem}>
+                        <View style={[styles.weekLegendSwatch, { backgroundColor: colorForId(c.id).bg }]} />
+                        <Text style={styles.weekLegendText} maxFontSizeMultiplier={1.2}>{firstName(c.full_name)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+                <WeeklyGrid
+                  blocks={weekGridBlocks}
+                  onPressBlock={(b) => handleDayGridBlockPress(b as unknown as CoachDayBlock)}
+                  hourHeight={48}
+                />
               </>
             )}
           </>
@@ -1017,10 +1316,10 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>{firstName(blockLesson?.player_name)} — start date</Text>
-              <MiniDatePicker value={blockStart} onChange={setBlockStart} minDate={todayStr()} accentColor={Theme.flameOrange} />
-              <Text style={[styles.formLabel, { marginTop: 16 }]} maxFontSizeMultiplier={1.3}>End date</Text>
-              <MiniDatePicker value={blockEnd} onChange={setBlockEnd} minDate={blockStart ?? todayStr()} accentColor={Theme.flameOrange} />
+              <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>
+                {firstName(blockLesson?.player_name)} — {!blockStart ? 'tap the first day.' : !blockEnd ? 'now tap the last day.' : `${formatDateLong(blockStart)} – ${formatDateLong(blockEnd)}`}
+              </Text>
+              <MiniDateRangePicker startValue={blockStart} endValue={blockEnd} onChangeStart={setBlockStart} onChangeEnd={setBlockEnd} minDate={todayStr()} accentColor={Theme.flameOrange} />
               <Text style={styles.hint} maxFontSizeMultiplier={1.3}>Lessons in this range auto-become tournament exceptions, and makeup credits are created for each missed date.</Text>
               <TouchableOpacity style={styles.saveBtn} onPress={submitTournamentBlock}>
                 <Text style={styles.saveBtnText}>Confirm Block</Text>
@@ -1063,17 +1362,55 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
         </View>
       </Modal>
 
-      {/* Group lesson roster modal */}
-      <Modal visible={!!rosterTierId} transparent animationType="fade" onRequestClose={() => setRosterTierId(null)}>
+      {/* Group lesson roster modal — when opened from tapping a specific
+          day/time block (rosterSlotId set), also offers reschedule/remove
+          for that one slot. Opened from the "Group Lessons" list instead
+          (no slotId) skips straight to just the roster. */}
+      <Modal visible={!!rosterTierId} transparent animationType="fade" onRequestClose={closeTierRoster}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{rosterTier?.name ?? 'Roster'}</Text>
-              <TouchableOpacity onPress={() => setRosterTierId(null)}>
+              <TouchableOpacity onPress={closeTierRoster}>
                 <Icon name="close-circle-outline" size={26} color={Theme.textPrimary} />
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
+              {rosterSlotId && (
+                slotRescheduleOpen ? (
+                  <View>
+                    <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Day</Text>
+                    <View style={styles.pillWrapRow}>
+                      {DAY_NAMES.map((d, i) => (
+                        <TouchableOpacity key={d} style={[styles.pill, slotRescheduleDay === i && styles.pillActive]} onPress={() => setSlotRescheduleDay(i)}>
+                          <Text style={[styles.pillText, slotRescheduleDay === i && styles.pillTextActive]} maxFontSizeMultiplier={1.3}>{d.slice(0, 3)}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Start</Text>
+                    <TimePicker value={slotRescheduleStart} onChange={setSlotRescheduleStart} />
+                    <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>End</Text>
+                    <TimePicker value={slotRescheduleEnd} onChange={setSlotRescheduleEnd} />
+                    <View style={styles.wizardNavRow}>
+                      <TouchableOpacity style={styles.navBackBtn} onPress={() => setSlotRescheduleOpen(false)}>
+                        <Text style={styles.navBackText} maxFontSizeMultiplier={1.3}>Back</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.saveBtn, styles.wizardSaveBtn, slotRescheduleSaving && styles.saveBtnDisabled]} onPress={submitSlotReschedule} disabled={slotRescheduleSaving}>
+                        <Text style={styles.saveBtnText}>{slotRescheduleSaving ? 'Saving...' : 'Save'}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.wizardNavRow}>
+                    <TouchableOpacity style={styles.smallBtn} onPress={() => openSlotReschedule(rosterTier!.slots.find((s) => s.id === rosterSlotId)!)}>
+                      <Text style={styles.smallBtnText}>Reschedule This Slot</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.smallBtn, { backgroundColor: 'rgba(231,76,60,0.12)' }]} onPress={removeSlot}>
+                      <Text style={[styles.smallBtnText, { color: '#E74C3C' }]}>Remove Slot</Text>
+                    </TouchableOpacity>
+                  </View>
+                )
+              )}
               {roster.length === 0 ? (
                 <Text style={styles.muted} maxFontSizeMultiplier={1.3}>No one assigned yet.</Text>
               ) : (
@@ -1082,6 +1419,116 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
                     <Text style={styles.playerName}>{firstName(r.player_name)}</Text>
                   </View>
                 ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Manage private lesson modal — opened by tapping a private lesson
+          block directly. Reschedule is a permanent edit to the recurring
+          template; the other two reuse the existing cancelLesson/endLesson
+          machinery from the Manage Lessons list. */}
+      <Modal visible={!!manageLesson} transparent animationType="fade" onRequestClose={closeManageLesson}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{firstName(manageLesson?.player_name)}</Text>
+              <TouchableOpacity onPress={closeManageLesson}>
+                <Icon name="close-circle-outline" size={26} color={Theme.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {manageLessonMode === 'view' ? (
+                <>
+                  <Text style={styles.hint} maxFontSizeMultiplier={1.3}>
+                    {manageLesson && `${DAY_NAMES[manageLesson.day_of_week]} · ${formatTime12h(manageLesson.start_time)}–${formatTime12h(manageLesson.end_time)} with ${manageLesson.coach_name}`}
+                  </Text>
+                  {manageLessonPlan && (
+                    <View style={styles.planRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.playerName}>
+                          {manageLessonPlan.sessionsUsed} / {manageLessonPlan.totalSessions} sessions used
+                          {manageLessonPlan.status === 'exhausted' ? ' · Exhausted' : ''}
+                        </Text>
+                        <Text style={styles.planSubtext} maxFontSizeMultiplier={1.3}>
+                          {Math.max(0, manageLessonPlan.totalSessions - manageLessonPlan.sessionsUsed)} remaining
+                        </Text>
+                      </View>
+                      {manageTopUpOpen ? (
+                        <View style={styles.topUpRow}>
+                          <TextInput style={styles.topUpInput} value={manageTopUpAmount} onChangeText={setManageTopUpAmount} keyboardType="number-pad" maxLength={3} />
+                          <TouchableOpacity onPress={submitManageTopUp} disabled={manageTopUpSaving}>
+                            <Icon name="check-circle-outline" size={22} color={Theme.eyebrowGreen} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => setManageTopUpOpen(false)}>
+                            <Icon name="close-circle-outline" size={22} color={Theme.textMuted} />
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <TouchableOpacity onPress={() => { setManageTopUpOpen(true); setManageTopUpAmount('5'); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                          <Icon name="plus-circle-outline" size={22} color={Theme.eyebrowGreen} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
+                  <TouchableOpacity style={styles.saveBtn} onPress={() => setManageLessonMode('reschedule')}>
+                    <Text style={styles.saveBtnText}>Reschedule</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.saveBtn, styles.saveBtnSecondary]}
+                    onPress={() => {
+                      if (manageLesson) {
+                        if (canFullyManage) {
+                          cancelLessonDate(manageLesson);
+                        } else {
+                          setCancelLesson(manageLesson);
+                          setCancelDate(occurrenceDateFor(manageLesson));
+                        }
+                      }
+                      closeManageLesson();
+                    }}
+                  >
+                    <Text style={[styles.saveBtnText, { color: Theme.eyebrowGreen }]}>Cancel This Date</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.saveBtn, { backgroundColor: 'rgba(231,76,60,0.12)' }]}
+                    onPress={() => { if (manageLesson) endLesson(manageLesson); closeManageLesson(); }}
+                  >
+                    <Text style={[styles.saveBtnText, { color: '#E74C3C' }]}>End Entirely</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Coach</Text>
+                  <View style={styles.pillWrapRow}>
+                    {coaches.map((c) => (
+                      <TouchableOpacity key={c.id} style={[styles.pill, rescheduleCoachId === c.id && styles.pillActive]} onPress={() => setRescheduleCoachId(c.id)}>
+                        <Text style={[styles.pillText, rescheduleCoachId === c.id && styles.pillTextActive]} maxFontSizeMultiplier={1.3}>{c.full_name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Day</Text>
+                  <View style={styles.pillWrapRow}>
+                    {DAY_NAMES.map((d, i) => (
+                      <TouchableOpacity key={d} style={[styles.pill, rescheduleDay === i && styles.pillActive]} onPress={() => setRescheduleDay(i)}>
+                        <Text style={[styles.pillText, rescheduleDay === i && styles.pillTextActive]} maxFontSizeMultiplier={1.3}>{d.slice(0, 3)}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Start</Text>
+                  <TimePicker value={rescheduleStart} onChange={setRescheduleStart} />
+                  <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>End</Text>
+                  <TimePicker value={rescheduleEnd} onChange={setRescheduleEnd} />
+                  <View style={styles.wizardNavRow}>
+                    <TouchableOpacity style={styles.navBackBtn} onPress={() => setManageLessonMode('view')}>
+                      <Text style={styles.navBackText} maxFontSizeMultiplier={1.3}>Back</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.saveBtn, styles.wizardSaveBtn, reschedulingSaving && styles.saveBtnDisabled]} onPress={submitReschedule} disabled={reschedulingSaving}>
+                      <Text style={styles.saveBtnText}>{reschedulingSaving ? 'Saving...' : 'Save'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
               )}
             </ScrollView>
           </View>
@@ -1119,12 +1566,30 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
                     </>
                   )}
 
+                  {courtlessLessonsForSlot.length > 0 && (
+                    <>
+                      <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Or assign an existing private lesson</Text>
+                      {courtlessLessonsForSlot.map((l) => (
+                        <TouchableOpacity key={l.id} style={styles.searchResultRow} onPress={() => assignCourtToLesson(l)}>
+                          <Text style={styles.playerName}>{firstName(l.player_name)}</Text>
+                          <Text style={styles.hint} maxFontSizeMultiplier={1.3}>{l.coach_name} · {formatTime12h(l.start_time)}–{formatTime12h(l.end_time)}</Text>
+                        </TouchableOpacity>
+                      ))}
+                      <Text style={[styles.hint, { marginTop: 4 }]} maxFontSizeMultiplier={1.3}>— or schedule something new —</Text>
+                    </>
+                  )}
+
                   <TouchableOpacity style={styles.saveBtn} onPress={() => setBookMode('private')}>
                     <Text style={styles.saveBtnText}>Private Lesson</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={[styles.saveBtn, styles.saveBtnSecondary]} onPress={() => setBookMode('group')}>
                     <Text style={[styles.saveBtnText, { color: Theme.eyebrowGreen }]}>Group Lesson</Text>
                   </TouchableOpacity>
+                  {restrictBooking !== 'lessons' && (
+                    <TouchableOpacity style={[styles.saveBtn, styles.saveBtnSecondary]} onPress={() => setBookMode('rental')}>
+                      <Text style={[styles.saveBtnText, { color: Theme.eyebrowGreen }]}>Member</Text>
+                    </TouchableOpacity>
+                  )}
                 </>
               )}
 
@@ -1207,17 +1672,53 @@ export default function ClubCalendarScreen({ embedded = false, lockToSelf = fals
                   </View>
                 </>
               )}
+
+              {bookMode === 'rental' && (
+                <>
+                  <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Start</Text>
+                  <TimePicker value={bookStart} onChange={setBookStart} />
+                  <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>End</Text>
+                  <TimePicker value={bookEnd} onChange={setBookEnd} />
+
+                  <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Member's name</Text>
+                  <TextInput style={styles.formInput} value={renterName} onChangeText={setRenterName} placeholder="Name" placeholderTextColor={Theme.textSecondary} />
+
+                  <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Email</Text>
+                  <TextInput style={styles.formInput} value={renterEmail} onChangeText={setRenterEmail} placeholder="Email" placeholderTextColor={Theme.textSecondary} keyboardType="email-address" autoCapitalize="none" />
+
+                  <Text style={styles.formLabel} maxFontSizeMultiplier={1.3}>Phone — optional</Text>
+                  <TextInput style={styles.formInput} value={renterPhone} onChangeText={setRenterPhone} placeholder="Phone number" placeholderTextColor={Theme.textSecondary} keyboardType="phone-pad" />
+
+                  <View style={styles.wizardNavRow}>
+                    <TouchableOpacity style={styles.navBackBtn} onPress={() => setBookMode('choose')}>
+                      <Text style={styles.navBackText} maxFontSizeMultiplier={1.3}>Back</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.saveBtn, styles.wizardSaveBtn, (bookSaving || !renterName.trim() || !renterEmail.trim()) && styles.saveBtnDisabled]} onPress={submitRentalBooking} disabled={bookSaving || !renterName.trim() || !renterEmail.trim()}>
+                      <Text style={styles.saveBtnText}>{bookSaving ? 'Booking...' : 'Book'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
             </ScrollView>
           </View>
         </View>
       </Modal>
+
+      {timeOffModalVisible && selectedCoachId && clubId && (
+        <CoachTimeOffModal
+          clubId={clubId}
+          coach={{ id: selectedCoachId, full_name: coaches.find((c) => c.id === selectedCoachId)?.full_name ?? 'Coach' }}
+          visible={timeOffModalVisible}
+          onClose={() => setTimeOffModalVisible(false)}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Theme.background },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingTop: 60, paddingBottom: 12 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingLeft: 60, paddingRight: 24, paddingTop: 60, paddingBottom: 12 },
   title: { fontFamily: Fonts.serifMedium, fontSize: 30, color: Theme.textPrimary },
   addBtn: { padding: 4 },
   scroll: { paddingHorizontal: 24, paddingBottom: 100 },
@@ -1234,6 +1735,10 @@ const styles = StyleSheet.create({
   },
   segmentBtn: { flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 12 },
   segmentBtnActive: { backgroundColor: Theme.eyebrowGreen },
+  weekLegendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 12 },
+  weekLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  weekLegendSwatch: { width: 10, height: 10, borderRadius: 5 },
+  weekLegendText: { fontFamily: Fonts.sansSemiBold, fontSize: 12, color: Theme.textSecondary },
   segmentText: { fontFamily: Fonts.sansSemiBold, fontSize: 16, color: Theme.eyebrowGreen },
   segmentTextActive: { color: '#FFFFFF' },
   dayStripCell: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, gap: 2 },
@@ -1251,6 +1756,11 @@ const styles = StyleSheet.create({
   priorityText: { fontFamily: Fonts.sansBold, fontSize: 15, color: Theme.eyebrowGreen },
   smallBtn: { backgroundColor: Theme.limeAccent, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
   smallBtnText: { fontFamily: Fonts.sansBold, fontSize: 14, color: Theme.limeAccentDark },
+  offTimeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Theme.cardWhite,
+    borderRadius: 12, borderWidth: 1, borderColor: Theme.divider, paddingVertical: 14, paddingHorizontal: 16, marginTop: 16,
+  },
+  offTimeBtnText: { flex: 1, fontFamily: Fonts.sansSemiBold, fontSize: 14, color: Theme.textPrimary },
   mgmtSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
   mgmtSectionTitle: { fontFamily: Fonts.sansBold, fontSize: 18, color: Theme.textPrimary },
   mgmtBadge: { backgroundColor: Theme.cardTinted, borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3, minWidth: 24, alignItems: 'center' },
@@ -1284,4 +1794,11 @@ const styles = StyleSheet.create({
   searchResultRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Theme.cardWhite, borderRadius: 12, padding: 14, marginBottom: 10 },
   searchResultRowSelected: { borderWidth: 2, borderColor: Theme.eyebrowGreen },
   playerName: { fontFamily: Fonts.sansSemiBold, fontSize: 16, color: Theme.textPrimary },
+  planRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Theme.cardTinted, borderRadius: 12, padding: 12, marginBottom: 14, gap: 10 },
+  planSubtext: { fontFamily: Fonts.sansRegular, fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
+  topUpRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  topUpInput: {
+    backgroundColor: Theme.background, borderRadius: 8, borderWidth: 1, borderColor: Theme.divider,
+    width: 44, height: 36, textAlign: 'center', fontFamily: Fonts.sansSemiBold, fontSize: 14, color: Theme.textPrimary,
+  },
 });

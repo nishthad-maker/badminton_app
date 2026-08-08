@@ -7,7 +7,7 @@ import { useFocusEffect } from 'expo-router';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
 import { showAlert, showConfirm } from '../../lib/ui';
-import { getMyClub } from '../../lib/club';
+import { getMyClub, searchClubRosterPlayers } from '../../lib/club';
 import { notifyPaymentApproved, notifyPaymentRejected } from '../../lib/notifications';
 import { NoClubPrompt } from '@/components/NoClubPrompt';
 
@@ -29,7 +29,7 @@ type Payment = {
   id: string;
   player_id: string;
   player_name: string;
-  related_to: 'private_lesson' | 'group_tier';
+  related_to: 'private_lesson' | 'group_tier' | 'other';
   label: string;
   payment_status: 'unpaid' | 'pending' | 'paid' | 'rejected';
   payment_method: string | null;
@@ -65,7 +65,7 @@ export default function PaymentsScreen() {
 
     const { data: rows } = await supabase
       .from('lesson_payments')
-      .select('*, profiles(full_name), schedule_assignments(coach:profiles!schedule_assignments_coach_id_fkey(full_name)), player_tier_assignments(group_tiers(name))')
+      .select('*, profiles!lesson_payments_player_id_fkey(full_name), schedule_assignments(coach:profiles!schedule_assignments_coach_id_fkey(full_name)), player_tier_assignments(group_tiers(name))')
       .eq('club_id', club.clubId)
       .order('created_at', { ascending: false });
 
@@ -76,7 +76,9 @@ export default function PaymentsScreen() {
       related_to: p.related_to,
       label: p.related_to === 'private_lesson'
         ? `Private lesson with ${p.schedule_assignments?.coach?.full_name ?? 'coach'}`
-        : (p.player_tier_assignments?.group_tiers?.name ?? 'Group tier'),
+        : p.related_to === 'group_tier'
+        ? (p.player_tier_assignments?.group_tiers?.name ?? 'Group tier')
+        : (p.note || 'Payment'),
       payment_status: p.payment_status,
       payment_method: p.payment_method,
       payment_proof_url: p.payment_proof_url,
@@ -88,10 +90,8 @@ export default function PaymentsScreen() {
   useFocusEffect(useCallback(() => { load(); }, []));
 
   const searchPlayers = async (q: string) => {
-    if (!q.trim()) { setPlayerResults([]); return; }
-    const safe = q.replace(/[,()]/g, '').replace(/[%_]/g, '\\$&');
-    const { data } = await supabase.from('profiles').select('id, full_name').eq('role', 'player').ilike('full_name', `%${safe}%`).limit(10);
-    setPlayerResults(data ?? []);
+    if (!q.trim() || !clubId) { setPlayerResults([]); return; }
+    setPlayerResults(await searchClubRosterPlayers(q, clubId));
   };
 
   const pickPlayer = async (player: PlayerResult) => {

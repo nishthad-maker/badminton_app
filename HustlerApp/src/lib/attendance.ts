@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import { notifyAttendanceChanged, notifyMakeupAvailable } from './notifications';
+import { notifyAttendanceChanged, notifyMakeupAvailable, notifyPostCutoffCancellation } from './notifications';
+import { formatTime12h, localDateStr } from './scheduling';
 
 export type AttendanceStatus = {
   attending: boolean;
@@ -61,33 +62,68 @@ export async function setAttendance(opts: {
   return { ok: true };
 }
 
-// Alerts the lesson's coach(es) when a player/parent (not the coach) marks
-// not-attending, and flags a makeup credit as available to the player —
-// mirrors exactly what toggle_attendance() itself just did server-side
+// Alerts the lesson's coach(es) AND the club owner (if not already one of
+// those coaches — no duplicate ping) when a player/parent (not the coach)
+// marks not-attending, and flags a makeup credit as available to the player
+// — mirrors exactly what toggle_attendance() itself just did server-side
 // (makeup_lesson_credits always for private, group_makeup_credits only when
 // the club's allow_group_makeup is on), so the player finds out about it.
+//
+// toggle_attendance() no longer blocks a late cancellation (see
+// 20260805120000_no_attendance_cutoff_lock.sql — real emergencies don't
+// respect a cutoff, and clubs don't consistently enforce it anyway) — the
+// club still finds out it was late, via the more urgent
+// notifyPostCutoffCancellation instead of the routine notifyAttendanceChanged.
 async function notifyAttendanceSideEffects(opts: {
-  groupTierId?: string; scheduleAssignmentId?: string; playerId: string; actorRole: 'player' | 'parent' | 'coach';
+  groupTierId?: string; scheduleAssignmentId?: string; playerId: string; lessonDate: string; actorRole: 'player' | 'parent' | 'coach';
 }) {
   const { data: player } = await supabase.from('profiles').select('full_name').eq('id', opts.playerId).single();
   const playerName = player?.full_name ?? 'A player';
 
+  const isLate = (startTime: string | null, cutoffHours: number | null) => {
+    if (!startTime) return false;
+    const lessonTs = new Date(`${opts.lessonDate}T${startTime}`);
+    return (lessonTs.getTime() - Date.now()) < (cutoffHours ?? 24) * 3600 * 1000;
+  };
+
   if (opts.scheduleAssignmentId) {
-    const { data: sa } = await supabase.from('schedule_assignments').select('coach_id').eq('id', opts.scheduleAssignmentId).single();
+    const { data: sa } = await supabase.from('schedule_assignments').select('coach_id, club_id, start_time').eq('id', opts.scheduleAssignmentId).single();
     if (sa) {
-      if (opts.actorRole !== 'coach') await notifyAttendanceChanged(sa.coach_id, playerName, 'a private lesson', false);
+      if (opts.actorRole !== 'coach') {
+        const [{ data: club }, { data: settings }] = await Promise.all([
+          supabase.from('clubs').select('owner_id').eq('id', sa.club_id).single(),
+          supabase.from('club_settings').select('cancellation_notice_hours').eq('club_id', sa.club_id).single(),
+        ]);
+        const recipients = new Set([sa.coach_id, ...(club?.owner_id ? [club.owner_id] : [])]);
+        const late = isLate(sa.start_time, settings?.cancellation_notice_hours ?? null);
+        const label = `Private lesson today at ${formatTime12h(sa.start_time)}`;
+        for (const id of recipients) {
+          if (late) await notifyPostCutoffCancellation(id, playerName, label);
+          else await notifyAttendanceChanged(id, playerName, 'a private lesson', false);
+        }
+      }
       await notifyMakeupAvailable(opts.playerId, 'a private lesson');
     }
   } else if (opts.groupTierId) {
-    const [{ data: tier }, { data: coaches }] = await Promise.all([
+    const [{ data: tier }, { data: coaches }, { data: slots }] = await Promise.all([
       supabase.from('group_tiers').select('club_id, name').eq('id', opts.groupTierId).single(),
       supabase.from('lesson_coaches').select('coach_id').eq('group_tier_id', opts.groupTierId).eq('role', 'main'),
+      supabase.from('lesson_time_slots').select('start_time, is_recurring, day_of_week, one_time_date').eq('group_tier_id', opts.groupTierId),
     ]);
     if (tier) {
+      const { data: settings } = await supabase.from('club_settings').select('cancellation_notice_hours, allow_group_makeup').eq('club_id', tier.club_id).single();
       if (opts.actorRole !== 'coach') {
-        for (const c of coaches ?? []) await notifyAttendanceChanged(c.coach_id, playerName, tier.name, false);
+        const { data: club } = await supabase.from('clubs').select('owner_id').eq('id', tier.club_id).single();
+        const dow = new Date(`${opts.lessonDate}T00:00:00`).getDay();
+        const matchingSlot = (slots ?? []).find((s: any) => (s.is_recurring && s.day_of_week === dow) || (!s.is_recurring && s.one_time_date === opts.lessonDate));
+        const recipients = new Set([...(coaches ?? []).map((c) => c.coach_id), ...(club?.owner_id ? [club.owner_id] : [])]);
+        const late = isLate(matchingSlot?.start_time ?? null, settings?.cancellation_notice_hours ?? null);
+        const label = `${tier.name} today${matchingSlot?.start_time ? ` at ${formatTime12h(matchingSlot.start_time)}` : ''}`;
+        for (const id of recipients) {
+          if (late) await notifyPostCutoffCancellation(id, playerName, label);
+          else await notifyAttendanceChanged(id, playerName, tier.name, false);
+        }
       }
-      const { data: settings } = await supabase.from('club_settings').select('allow_group_makeup').eq('club_id', tier.club_id).single();
       if (settings?.allow_group_makeup) await notifyMakeupAvailable(opts.playerId, tier.name);
     }
   }
@@ -100,5 +136,5 @@ export function nextOccurrenceDate(dayOfWeek: number, from: Date = new Date()): 
   const d = new Date(from);
   const diff = (dayOfWeek - d.getDay() + 7) % 7;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().split('T')[0];
+  return localDateStr(d);
 }

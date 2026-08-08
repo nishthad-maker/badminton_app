@@ -70,8 +70,8 @@ export async function scheduleRoutineReminders(
 
     const id = await Notifications.scheduleNotificationAsync({
       content: {
-        title: '🏸 Time for your routine',
-        body: `${routineName} is on your schedule right now — let's go.`,
+        title: 'Time for your routine',
+        body: `${routineName} is on your schedule now.`,
         data: { screen: 'routines', routineId },
       },
       trigger: {

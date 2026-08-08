@@ -13,7 +13,7 @@ export const containsBlockedWords = (text: string): boolean => {
 };
 
 const ADJECTIVES = ['Swift', 'Quick', 'Sharp', 'Bold', 'Steady', 'Sonic', 'Power', 'Rapid', 'Iron', 'Fierce'];
-const NOUNS = ['Smasher', 'Drive', 'Rally', 'Shuttle', 'Player', 'Ace', 'Net', 'Court', 'Hustler', 'Pro'];
+const NOUNS = ['Smasher', 'Drive', 'Rally', 'Shuttle', 'Player', 'Ace', 'Net', 'Court', 'Slam', 'Pro'];
 
 const generateUsername = (): string => {
   const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
@@ -27,7 +27,7 @@ export const getOrCreateUsername = async (userId: string): Promise<string> => {
     .from('usernames')
     .select('username')
     .eq('user_id', userId)
-    .single();
+    .maybeSingle();
 
   if (existing?.username) return existing.username;
 

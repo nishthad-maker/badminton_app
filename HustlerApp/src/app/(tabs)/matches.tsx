@@ -6,6 +6,8 @@ import { useState, useCallback } from 'react';
 import { Icon } from '@/components/icons/Icon';
 import { Theme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
+import { getAllTournaments, UpcomingTournament } from '../../lib/parentDashboard';
+import { PepTalkModal } from '@/components/PepTalkModal';
 
 type MatchRow = {
   id: string;
@@ -14,25 +16,34 @@ type MatchRow = {
   result: 'win' | 'loss' | 'unsure' | null;
   match_type: 'singles' | 'doubles' | null;
   created_at: string;
+  tournament_block_id: string | null;
 };
 
 export default function MatchesScreen() {
+  const [myId, setMyId] = useState<string | null>(null);
   const [recentMatches, setRecentMatches] = useState<MatchRow[]>([]);
+  const [tournaments, setTournaments] = useState<UpcomingTournament[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showPepTalk, setShowPepTalk] = useState(false);
 
   const load = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) { setLoading(false); setRefreshing(false); return; }
     const me = session.user.id;
+    setMyId(me);
 
-    const { data: logs } = await supabase
-      .from('opponent_logs')
-      .select('id, opponent_id, opponent_name, result, match_type, created_at')
-      .eq('player_id', me)
-      .order('created_at', { ascending: false });
+    const [{ data: logs }, tourneys] = await Promise.all([
+      supabase
+        .from('opponent_logs')
+        .select('id, opponent_id, opponent_name, result, match_type, created_at, tournament_block_id')
+        .eq('player_id', me)
+        .order('created_at', { ascending: false }),
+      getAllTournaments(me),
+    ]);
     setRecentMatches((logs ?? []) as MatchRow[]);
+    setTournaments(tourneys);
 
     setLoading(false);
     setRefreshing(false);
@@ -42,7 +53,18 @@ export default function MatchesScreen() {
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
-  const filtered = recentMatches.filter(m => (m.opponent_name ?? '').toLowerCase().includes(search.trim().toLowerCase()));
+  // Search doubles as a tournament search too — searching "Nationals" turns
+  // up every opponent played during that tournament, no separate
+  // tournament-list view needed to get there (a tournament's own dates are
+  // already on the Calendar; match-tagging happens when logging a match).
+  const tournamentNameById = new Map(tournaments.map(t => [t.id, t.name]));
+  const filtered = recentMatches.filter(m => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    if ((m.opponent_name ?? '').toLowerCase().includes(q)) return true;
+    const tourneyName = m.tournament_block_id ? tournamentNameById.get(m.tournament_block_id) : null;
+    return !!tourneyName && tourneyName.toLowerCase().includes(q);
+  });
 
   // One card per opponent — dedupe repeat matches against the same person,
   // keeping the most recent result (filtered is already newest-first) and a count.
@@ -82,7 +104,7 @@ export default function MatchesScreen() {
         <Icon name="magnify" size={21} color="#0C447C" />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search opponents..."
+          placeholder="Search opponents or tournaments..."
           placeholderTextColor={Theme.textSecondary}
           value={search}
           onChangeText={setSearch}
@@ -94,16 +116,21 @@ export default function MatchesScreen() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Theme.eyebrowGreen} colors={[Theme.eyebrowGreen]} />}
       >
-        <TouchableOpacity style={styles.analysisCard} onPress={() => router.push('/game-analysis')}>
-          <View style={styles.analysisIconBox}>
-            <Icon name="chart-timeline-variant" size={28} color="#44403C" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.analysisTitle}>Game analysis</Text>
-            <Text style={styles.analysisDesc}>See patterns across your matches as you log more games.</Text>
-          </View>
-          <Icon name="chevron-right" size={24} color={Theme.textMuted} />
-        </TouchableOpacity>
+        <View style={styles.tileRow}>
+          <TouchableOpacity style={styles.tile} onPress={() => router.push('/game-analysis')}>
+            <View style={styles.analysisIconBox}>
+              <Icon name="chart-timeline-variant" size={38} color="#44403C" />
+            </View>
+            <Text style={styles.tileTitle}>Game analysis</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.tile} onPress={() => setShowPepTalk(true)}>
+            <View style={styles.pepTalkIconBox}>
+              <Icon name="heart-pulse" size={38} color={Theme.flameOrange} />
+            </View>
+            <Text style={styles.tileTitle}>Mental Prep</Text>
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Recent matches</Text>
@@ -119,7 +146,7 @@ export default function MatchesScreen() {
             <Text style={styles.emptyDesc}>Log a match after you play to start building your scouting book.</Text>
           </View>
         ) : groupedMatches.length === 0 ? (
-          <Text style={styles.muted}>No opponents match "{search}".</Text>
+          <Text style={styles.muted}>Nothing matches "{search}".</Text>
         ) : (
           groupedMatches.map(g => (
             <TouchableOpacity key={g.key} style={styles.card} onPress={() => openMatch(g)}>
@@ -144,6 +171,8 @@ export default function MatchesScreen() {
           ))
         )}
       </ScrollView>
+
+      <PepTalkModal visible={showPepTalk} onClose={() => setShowPepTalk(false)} />
     </View>
   );
 }
@@ -162,10 +191,11 @@ const styles = StyleSheet.create({
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Theme.cardWhite, borderRadius: 32, paddingHorizontal: 22, marginBottom: 24 },
   searchInput: { flex: 1, color: Theme.textPrimary, fontSize: 17, paddingVertical: 17, outlineStyle: 'none' } as any,
   scroll: { paddingBottom: 170 },
-  analysisCard: { flexDirection: 'row', alignItems: 'center', gap: 16, backgroundColor: Theme.cardWhite, borderRadius: 22, padding: 22, marginBottom: 28, borderWidth: 1, borderColor: Theme.divider },
-  analysisIconBox: { width: 54, height: 54, borderRadius: 16, backgroundColor: '#E7E5E0', alignItems: 'center', justifyContent: 'center' },
-  analysisTitle: { fontSize: 19, fontWeight: '700', color: Theme.textPrimary },
-  analysisDesc: { fontSize: 15, color: Theme.textSecondary, marginTop: 4, lineHeight: 20 },
+  tileRow: { flexDirection: 'row', gap: 14, marginBottom: 28 },
+  tile: { flex: 1, aspectRatio: 1, backgroundColor: Theme.cardWhite, borderRadius: 22, borderWidth: 1, borderColor: Theme.divider, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 12 },
+  tileTitle: { fontSize: 16, fontWeight: '700', color: Theme.textPrimary, textAlign: 'center' },
+  analysisIconBox: { width: 76, height: 76, borderRadius: 20, backgroundColor: '#E7E5E0', alignItems: 'center', justifyContent: 'center' },
+  pepTalkIconBox: { width: 76, height: 76, borderRadius: 20, backgroundColor: '#FCE7D2', alignItems: 'center', justifyContent: 'center' },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 16 },
   sectionTitle: { fontFamily: Fonts.serifMedium, fontSize: 28, color: Theme.textPrimary },
   sectionCount: { fontSize: 15, color: Theme.textSecondary, fontWeight: '600', marginBottom: 4 },

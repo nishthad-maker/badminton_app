@@ -7,6 +7,7 @@ import { Theme, CategoryTheme, Fonts } from '@/constants/theme';
 import { supabase } from '../../lib/supabase';
 import { getPlayerClubMembership } from '../../lib/club';
 import { getClubCoachesForPlayer } from '../../lib/playerClub';
+import { PepTalkModal } from '@/components/PepTalkModal';
 
 const CATEGORIES = [
   { key: 'strength', title: 'Strength Training', sub: 'Legs, Core, Upper Body', icon: 'dumbbell' },
@@ -19,6 +20,7 @@ export default function TrainScreen() {
   const [customCounts, setCustomCounts] = useState<Record<string, number>>({});
   const [routineCount, setRoutineCount] = useState(0);
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+  const [showPepTalk, setShowPepTalk] = useState(false);
 
   // Coach Plan card's club/coach connection tag — a lightweight lookup
   // (just the club name + priority coach), not the full membership detail
@@ -174,6 +176,20 @@ export default function TrainScreen() {
             </View>
           </TouchableOpacity>
 
+          {/* Mental Prep — for a rough training day, not tied to any logged
+              data (unlike the categories above), just an on-demand boost. */}
+          <TouchableOpacity style={styles.cardVertical} onPress={() => setShowPepTalk(true)}>
+            <View style={[styles.iconCircle, { backgroundColor: '#FCE7D2' }]}>
+              <Icon name="heart-pulse" size={26} color={Theme.flameOrange} />
+            </View>
+            <Text style={styles.cardTitleLg}>Mental Prep</Text>
+            <Text style={styles.cardDesc}>Having a rough training day? Get a quick pep talk.</Text>
+            <View style={styles.cardLinkRow}>
+              <Text style={[styles.cardLinkText, { color: Theme.flameOrange }]}>Get a pep talk</Text>
+              <Icon name="chevron-right" size={18} color={Theme.flameOrange} />
+            </View>
+          </TouchableOpacity>
+
           <View style={styles.sectionDivider} />
 
           {/* Coach Plan — highlights workouts/routines assigned by the coach */}
@@ -209,6 +225,8 @@ export default function TrainScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <PepTalkModal visible={showPepTalk} onClose={() => setShowPepTalk(false)} />
     </View>
   );
 }

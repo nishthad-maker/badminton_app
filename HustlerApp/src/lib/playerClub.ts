@@ -3,9 +3,30 @@ import { getRoster, RosterPlayer } from './lessons';
 import {
   getChildLessons, getChildGroupLessons, getUpcomingTournaments, createTournamentBlock,
   getClubCoaches, getCoachBusyWindows, isSlotOpen, submitScheduleRequest, getMyScheduleRequests,
-  joinWaitlist, getMyWaitlistEntries, leaveWaitlist,
-  ChildLesson, ChildGroupLesson, UpcomingTournament, ClubCoach, ScheduleRequestRow, MyWaitlistEntry,
+  joinWaitlist, getMyWaitlistEntries, leaveWaitlist, getClubCourtAvailability, isAnyCourtOpen,
+  getChildPayments,
+  ChildLesson, ChildGroupLesson, UpcomingTournament, ClubCoach, ScheduleRequestRow, MyWaitlistEntry, ClubCourtAvailability, ChildPayment,
 } from './parentDashboard';
+
+// A player without a linked parent (or who doesn't want one involved) can
+// report their own club payment too — reuses the same read query parents
+// use (it just takes a playerId/clubId, nothing parent-specific about the
+// read side) but needs its own insert: submitPaymentReport always stamps
+// reported_by_parent_id, which the player-self-report RLS policy requires
+// to stay null (see 20260805130000_player_self_report_payment.sql).
+export const getMyPayments = getChildPayments;
+export type { ChildPayment };
+
+export async function submitPlayerPaymentReport(opts: {
+  clubId: string; playerId: string; note: string; method: 'cash' | 'card' | 'e_transfer' | 'other';
+}): Promise<{ ok: boolean; message?: string }> {
+  const { error } = await supabase.from('lesson_payments').insert({
+    club_id: opts.clubId, player_id: opts.playerId, related_to: 'other',
+    note: opts.note.trim(), payment_method: opts.method, payment_status: 'pending',
+  });
+  if (error) return { ok: false, message: 'Could not submit the payment report.' };
+  return { ok: true };
+}
 
 // Thin player-facing wrappers around the (generically-named) parent
 // dashboard queries — they already take an arbitrary playerId + clubId, so
@@ -22,7 +43,9 @@ export type { ChildLesson, ChildGroupLesson, UpcomingTournament, ClubCoach, Sche
 // 20260729100000_player_scheduling_paths.sql).
 export const getCoachesForScheduling = getClubCoaches;
 export const getCoachAvailability = getCoachBusyWindows;
-export { isSlotOpen };
+export const getCourtAvailability = getClubCourtAvailability;
+export { isSlotOpen, isAnyCourtOpen };
+export type { ClubCourtAvailability };
 
 export async function requestReschedule(opts: {
   playerId: string; coachId: string; clubId: string; dayOfWeek: number; start: string; end: string;

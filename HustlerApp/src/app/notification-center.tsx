@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { formatTimeAgo } from '../lib/community';
 import {
   getMyNotifications, markAllNotificationsSeen, getNotificationPreferences, setNotificationPreference,
+  deleteNotification, clearAllNotifications,
   NOTIFICATION_CATEGORIES, AppNotification,
 } from '../lib/notifications';
 
@@ -56,16 +57,34 @@ export default function NotificationCenterScreen() {
     await setNotificationPreference(myId, category, next);
   };
 
+  const removeOne = async (id: string) => {
+    setItems((prev) => prev.filter((n) => n.id !== id));
+    await deleteNotification(id);
+  };
+
+  const clearAll = async () => {
+    if (!myId || items.length === 0) return;
+    setItems([]);
+    await clearAllNotifications(myId);
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/' as any); }}>
           <Icon name="arrow-left" size={24} color={Theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.title}>Notifications</Text>
-        <TouchableOpacity onPress={() => setShowSettings((v) => !v)}>
-          <Icon name="cog-outline" size={24} color={Theme.textPrimary} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {items.length > 0 && (
+            <TouchableOpacity onPress={clearAll} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Icon name="trash-can-outline" size={22} color={Theme.textPrimary} />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={() => setShowSettings((v) => !v)}>
+            <Icon name="cog-outline" size={24} color={Theme.textPrimary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? (
@@ -99,23 +118,27 @@ export default function NotificationCenterScreen() {
             </View>
           ) : (
             items.map((n) => (
-              <TouchableOpacity
-                key={n.id}
-                style={[styles.row, !n.seen && styles.rowUnread]}
-                onPress={() => { if (n.screen) router.push(`/${n.screen}` as any); }}
-                disabled={!n.screen}
-                activeOpacity={n.screen ? 0.7 : 1}
-              >
-                <View style={styles.rowIcon}>
-                  <Icon name={(CATEGORY_ICON[n.category ?? n.type] ?? 'bell-outline') as any} size={20} color={Theme.eyebrowGreen} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rowTitle}>{n.title ?? n.type}</Text>
-                  {n.body && <Text style={styles.rowSubtitle} numberOfLines={2}>{n.body}</Text>}
-                  <Text style={styles.rowTime}>{formatTimeAgo(n.created_at)}</Text>
-                </View>
-                {!n.seen && <View style={styles.unreadDot} />}
-              </TouchableOpacity>
+              <View key={n.id} style={[styles.row, !n.seen && styles.rowUnread]}>
+                <TouchableOpacity
+                  style={styles.rowMain}
+                  onPress={() => { if (n.screen) router.push(`/${n.screen}` as any); }}
+                  disabled={!n.screen}
+                  activeOpacity={n.screen ? 0.7 : 1}
+                >
+                  <View style={styles.rowIcon}>
+                    <Icon name={(CATEGORY_ICON[n.category ?? n.type] ?? 'bell-outline') as any} size={20} color="#FFFFFF" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle}>{n.title ?? n.type}</Text>
+                    {n.body && <Text style={styles.rowSubtitle} numberOfLines={2}>{n.body}</Text>}
+                    <Text style={styles.rowTime}>{formatTimeAgo(n.created_at)}</Text>
+                  </View>
+                  {!n.seen && <View style={styles.unreadDot} />}
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => removeOne(n.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Icon name="trash-can-outline" size={16} color={Theme.textMuted} />
+                </TouchableOpacity>
+              </View>
             ))
           )}
         </ScrollView>
@@ -127,15 +150,17 @@ export default function NotificationCenterScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Theme.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 24, paddingTop: 60, paddingBottom: 8 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 18 },
   title: { fontFamily: Fonts.serifMedium, fontSize: 28, color: Theme.textPrimary },
   scroll: { padding: 24, paddingTop: 12, paddingBottom: 60 },
   settingsCard: { backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 16, marginBottom: 16 },
   settingsTitle: { fontFamily: Fonts.sansBold, fontSize: 14, color: Theme.textMuted, letterSpacing: 1, marginBottom: 8 },
   settingsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderTopWidth: 1, borderTopColor: Theme.divider },
   settingsLabel: { fontSize: 14, color: Theme.textPrimary, flex: 1 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 14, marginBottom: 10 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Theme.cardWhite, borderRadius: 14, padding: 14, marginBottom: 10 },
+  rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
   rowUnread: { backgroundColor: Theme.cardTinted },
-  rowIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Theme.cardTinted },
+  rowIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Theme.eyebrowGreen },
   rowTitle: { fontSize: 15, fontWeight: '600', color: Theme.textPrimary },
   rowSubtitle: { fontSize: 13, color: Theme.textSecondary, marginTop: 2 },
   rowTime: { fontSize: 12, color: Theme.textMuted, marginTop: 4 },

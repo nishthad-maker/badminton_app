@@ -6,6 +6,8 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Theme, Fonts } from '@/constants/theme';
 import { showConfirm } from '../lib/ui';
+import { roleFromProfile, ROLE_HOME_ROUTE } from '../lib/roleRouting';
+import { getPreferredViewMode } from '../lib/viewMode';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -53,17 +55,13 @@ export default function LoginScreen() {
 
       setLoading(false);
 
-      if (profile?.is_coach) {
-        // Coaches skip player onboarding and go to their roster home.
-        router.replace('/(coach-tabs)/players' as any);
-      } else if (profile?.role === 'club') {
-        router.replace('/(club-admin)/dashboard' as any);
-      } else if (profile?.role === 'parent') {
-        router.replace('/(parent-tabs)/home' as any);
-      } else if (!profile?.age) {
+      const preferredView = await getPreferredViewMode();
+      const role = roleFromProfile(profile, preferredView);
+      if (role === 'player' && !profile?.age) {
+        // Only a player goes through onboarding — coaches skip it entirely.
         router.replace('/onboarding' as any);
       } else {
-        router.replace('/(tabs)' as any);
+        router.replace(ROLE_HOME_ROUTE[role] as any);
       }
     } else {
       setLoading(false);
@@ -80,7 +78,9 @@ export default function LoginScreen() {
       />
 
       <View style={styles.card}>
-        <Text style={styles.title}>Login</Text>
+        <Text style={styles.eyebrow}>WELCOME BACK</Text>
+        <Text style={styles.title}>Log In</Text>
+        <Text style={styles.subtitle}>Enter your details to continue.</Text>
 
         {noAccountFound && (
           <TouchableOpacity style={styles.noAccountBanner} onPress={() => router.push('/signup' as any)}>
@@ -139,39 +139,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logo: { width: 160, height: 60, marginBottom: 32 },
-  card: { backgroundColor: Theme.cardWhite, borderRadius: 16, padding: 24, width: '100%' },
-  title: { fontFamily: Fonts.serifMedium, fontSize: 22, color: Theme.textPrimary, marginBottom: 24 },
-  noAccountBanner: { backgroundColor: Theme.cardTinted, borderRadius: 10, padding: 14, marginBottom: 16 },
-  noAccountBannerText: { color: Theme.textPrimary, fontSize: 14, lineHeight: 20 },
+  logo: { width: 190, height: 72, marginBottom: 36 },
+  card: {
+    backgroundColor: Theme.cardWhite,
+    borderRadius: 22,
+    padding: 28,
+    width: '100%',
+    maxWidth: 440,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  eyebrow: { fontFamily: Fonts.sansBold, fontSize: 13, color: Theme.eyebrowGreen, letterSpacing: 1.5, marginBottom: 8 },
+  title: { fontFamily: Fonts.serifMedium, fontSize: 32, color: Theme.textPrimary, marginBottom: 8 },
+  subtitle: { fontSize: 15, color: Theme.textSecondary, lineHeight: 21, marginBottom: 26 },
+  noAccountBanner: { backgroundColor: Theme.cardTinted, borderRadius: 10, padding: 14, marginBottom: 18 },
+  noAccountBannerText: { color: Theme.textPrimary, fontSize: 15, lineHeight: 21 },
   noAccountBannerLink: { color: Theme.eyebrowGreen, fontWeight: 'bold' },
-  label: { fontSize: 13, color: Theme.textSecondary, marginBottom: 8 },
+  label: { fontSize: 15, fontWeight: '600', color: Theme.textSecondary, marginBottom: 8 },
   input: {
     backgroundColor: Theme.background,
-    borderRadius: 10,
-    padding: 14,
+    borderRadius: 12,
+    padding: 16,
     color: Theme.textPrimary,
-    fontSize: 15,
-    marginBottom: 16,
+    fontSize: 17,
+    marginBottom: 18,
     borderWidth: 1,
     borderColor: Theme.divider,
   },
   forgotText: {
     color: Theme.textSecondary,
-    fontSize: 13,
+    fontSize: 14,
     textAlign: 'left',
     textDecorationLine: 'underline',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   button: {
     backgroundColor: Theme.limeAccent,
     borderRadius: 30,
-    paddingVertical: 14,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 15 },
-  linkText: { color: Theme.textSecondary, fontSize: 13, textAlign: 'center' },
+  buttonText: { color: Theme.limeAccentDark, fontWeight: 'bold', fontSize: 17 },
+  linkText: { color: Theme.textSecondary, fontSize: 16, textAlign: 'center' },
   link: { color: Theme.eyebrowGreen, fontWeight: 'bold' },
 });

@@ -37,3 +37,23 @@ export async function sendChatMediaMessage(params: {
   if (error) return null;
   return { url, mediaType };
 }
+
+export async function sendMatchVoiceMessage(params: {
+  opponentLogId: string;
+  senderId: string;
+  uri: string;
+  durationSeconds: number;
+}): Promise<{ url: string; durationSeconds: number } | null> {
+  const url = await uploadToCloudinary(params.uri, 'audio', 'hustler_match_feedback_voice_notes');
+  if (!url) return null;
+  const { error } = await supabase.from('opponent_log_messages').insert({
+    opponent_log_id: params.opponentLogId,
+    sender_id: params.senderId,
+    message: '',
+    media_url: url,
+    media_type: 'audio',
+    media_duration_seconds: params.durationSeconds,
+  });
+  if (error) return null;
+  return { url, durationSeconds: params.durationSeconds };
+}
